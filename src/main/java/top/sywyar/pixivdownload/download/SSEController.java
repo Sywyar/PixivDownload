@@ -3,6 +3,7 @@ package top.sywyar.pixivdownload.download;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.event.EventListener;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -34,17 +35,17 @@ public class SSEController {
 
         // 设置完成和超时处理
         emitter.onCompletion(() -> {
-            emitters.remove(artworkId);
+            safeRemoveEmitter(artworkId);
             System.out.println("SSE连接完成: " + artworkId);
         });
 
         emitter.onTimeout(() -> {
-            emitters.remove(artworkId);
+            safeRemoveEmitter(artworkId);
             System.out.println("SSE连接超时: " + artworkId);
         });
 
         emitter.onError((e) -> {
-            emitters.remove(artworkId);
+            safeRemoveEmitter(artworkId);
             System.out.println("SSE连接错误: " + artworkId + ", " + e.getMessage());
         });
 
@@ -54,16 +55,56 @@ public class SSEController {
         // 定期发送心跳
         scheduler.scheduleAtFixedRate(() -> {
             try {
-                emitter.send(SseEmitter.event()
-                        .id(String.valueOf(System.currentTimeMillis()))
-                        .name("heartbeat")
-                        .data("ping"));
+                if (isEmitterValid(artworkId)) {
+                    emitter.send(SseEmitter.event()
+                            .id(String.valueOf(System.currentTimeMillis()))
+                            .name("heartbeat")
+                            .data("ping"));
+                }
             } catch (IOException e) {
-                emitters.remove(artworkId);
+                safeRemoveEmitter(artworkId);
             }
         }, 30, 30, TimeUnit.SECONDS);
 
         return emitter;
+    }
+
+    /**
+     * 安全关闭SSE连接
+     */
+    @PostMapping("/close/{artworkId}")
+    public ResponseEntity<String> closeSSEConnection(@PathVariable Long artworkId) {
+        try {
+            safeRemoveEmitter(artworkId);
+            System.out.println("SSE连接安全关闭: " + artworkId);
+            return ResponseEntity.ok("SSE连接已安全关闭");
+        } catch (Exception e) {
+            System.out.println("关闭SSE连接时出错: " + artworkId + ", " + e.getMessage());
+            return ResponseEntity.status(500).body("关闭连接时出错: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 安全移除emitter，避免重复移除和空指针异常
+     */
+    private void safeRemoveEmitter(Long artworkId) {
+        SseEmitter emitter = emitters.remove(artworkId);
+        if (emitter != null) {
+            try {
+                emitter.complete();
+            } catch (Exception e) {
+                // 忽略完成时的异常
+                System.out.println("完成emitter时出现异常: " + e.getMessage());
+            }
+        }
+    }
+
+    /**
+     * 检查emitter是否有效
+     */
+    private boolean isEmitterValid(Long artworkId) {
+        SseEmitter emitter = emitters.get(artworkId);
+        return emitter != null;
     }
 
     /**
