@@ -7,6 +7,7 @@ import org.apache.http.client.methods.HttpGet;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClients;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -25,6 +26,9 @@ public class DownloadService {
     @Autowired
     private DownloadConfig downloadConfig;
 
+    @Autowired
+    private ApplicationEventPublisher eventPublisher;
+
     // 存储下载状态
     private final ConcurrentHashMap<Long, DownloadStatus> downloadStatusMap = new ConcurrentHashMap<>();
 
@@ -33,6 +37,9 @@ public class DownloadService {
         // 初始化下载状态
         DownloadStatus status = new DownloadStatus(artworkId, imageUrls.size());
         downloadStatusMap.put(artworkId, status);
+        
+        // 发送初始状态更新
+        eventPublisher.publishEvent(new DownloadProgressEvent(this, artworkId, status));
 
         try {
             // 获取下一个文件夹索引
@@ -74,6 +81,9 @@ public class DownloadService {
                 // 重要修复：在开始下载每张图片前更新当前图片索引
                 status.setCurrentImageIndex(i);
                 status.setDownloadedCount(successCount.get()); // 更新已下载数量
+                
+                // 发送图片开始下载状态更新
+                eventPublisher.publishEvent(new DownloadProgressEvent(this, artworkId, status));
 
                 try {
                     String extension = getFileExtension(imageUrl);
@@ -83,6 +93,9 @@ public class DownloadService {
                     if (downloadImage(httpClient, imageUrl, filePath, referer, cookie)) {
                         successCount.incrementAndGet();
                         status.setDownloadedCount(successCount.get()); // 更新成功下载数量
+                        
+                        // 发送图片下载完成状态更新
+                        eventPublisher.publishEvent(new DownloadProgressEvent(this, artworkId, status));
                     }
 
                     // 延迟避免请求过快
@@ -107,6 +120,9 @@ public class DownloadService {
             System.out.println("下载完成: 作品 " + artworkId +
                     ", 成功下载 " + successCount.get() + "/" + imageUrls.size() +
                     " 张图片到 " + downloadPath);
+            
+            // 发送最终完成状态更新
+            eventPublisher.publishEvent(new DownloadProgressEvent(this, artworkId, status));
 
         } catch (Exception e) {
             System.err.println("下载过程出错: " + e.getMessage());
