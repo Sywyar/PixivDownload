@@ -390,15 +390,25 @@ https://www.pixiv.net/artworks/136536736 | #第五人格 お誘い - こめり�
         stopBtn.addEventListener('click', stopBatchDownload);
 
         // 检查后端状态
-        checkBackendStatus().then(available => {
-            const statusDiv = document.getElementById('batch-backend-status');
-            if (statusDiv) {
-                statusDiv.innerHTML = available ?
-                    '✅ 后端服务可用' :
-                '❌ 后端服务未启动';
-                statusDiv.style.color = available ? '#28a745' : '#dc3545';
-            }
-        });
+        function updateBackendStatusDisplay() {
+            checkBackendStatus().then(available => {
+                const statusDiv = document.getElementById('batch-backend-status');
+                if (statusDiv) {
+                    statusDiv.innerHTML = available ?
+                        '✅ 后端服务可用' :
+                    '❌ 后端服务未启动';
+                    statusDiv.style.color = available ? '#28a745' : '#dc3545';
+                }
+            });
+        }
+        
+        // 初始更新
+        updateBackendStatusDisplay();
+        
+        // 添加交互时更新服务器状态的事件监听
+        container.addEventListener('click', updateBackendStatusDisplay);
+        container.addEventListener('focusin', updateBackendStatusDisplay);
+        document.getElementById('ntab-data-input').addEventListener('input', updateBackendStatusDisplay);
 
         // 加载保存的队列
         loadSavedQueue();
@@ -760,12 +770,18 @@ https://www.pixiv.net/artworks/136536736 | #第五人格 お誘い - こめり�
         });
         statusCheckIntervals.clear();
 
+        // 重置索引，确保下次从0开始
+        currentDownloadIndex = -1;
+        currentArtworkId = null;
+        
         // 更新显示
         updateQueueDisplay();
         updateStats();
-
-        // 保存队列状态
-        saveQueueState();
+        updateCurrentDownloadDisplay();
+        
+        // 清除保存的队列状态，确保下次从0开始
+        GM_setValue('batchDownloadQueue', null);
+        GM_setValue('batchDownloadState', null);
     }
 
     // 下载单个作品
