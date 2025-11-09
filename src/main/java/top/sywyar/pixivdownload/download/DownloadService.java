@@ -1,5 +1,6 @@
 package top.sywyar.pixivdownload.download;
 
+import lombok.extern.slf4j.Slf4j;
 import org.apache.http.HttpHost;
 import org.apache.http.client.config.RequestConfig;
 import org.apache.http.client.methods.CloseableHttpResponse;
@@ -20,6 +21,7 @@ import java.nio.file.Paths;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
+@Slf4j
 @Service
 public class DownloadService {
 
@@ -37,14 +39,14 @@ public class DownloadService {
         // 初始化下载状态
         DownloadStatus status = new DownloadStatus(artworkId, imageUrls.size());
         downloadStatusMap.put(artworkId, status);
-        
+
         // 发送初始状态更新
         eventPublisher.publishEvent(new DownloadProgressEvent(this, artworkId, status));
 
         try {
             // 获取下一个文件夹索引
             int folderIndex = getNextFolderIndex();
-            String folderName = String.valueOf(folderIndex);
+            String folderName = String.valueOf(folderIndex == Integer.MAX_VALUE ? "temp" : folderIndex);
             status.setFolderName(folderName);
 
             // 创建文件夹结构
@@ -81,7 +83,7 @@ public class DownloadService {
                 // 重要修复：在开始下载每张图片前更新当前图片索引
                 status.setCurrentImageIndex(i);
                 status.setDownloadedCount(successCount.get()); // 更新已下载数量
-                
+
                 // 发送图片开始下载状态更新
                 eventPublisher.publishEvent(new DownloadProgressEvent(this, artworkId, status));
 
@@ -93,7 +95,7 @@ public class DownloadService {
                     if (downloadImage(httpClient, imageUrl, filePath, referer, cookie)) {
                         successCount.incrementAndGet();
                         status.setDownloadedCount(successCount.get()); // 更新成功下载数量
-                        
+
                         // 发送图片下载完成状态更新
                         eventPublisher.publishEvent(new DownloadProgressEvent(this, artworkId, status));
                     }
@@ -120,13 +122,12 @@ public class DownloadService {
             System.out.println("下载完成: 作品 " + artworkId +
                     ", 成功下载 " + successCount.get() + "/" + imageUrls.size() +
                     " 张图片到 " + downloadPath);
-            
+
             // 发送最终完成状态更新
             eventPublisher.publishEvent(new DownloadProgressEvent(this, artworkId, status));
 
         } catch (Exception e) {
-            System.err.println("下载过程出错: " + e.getMessage());
-            e.printStackTrace();
+            log.error("下载出错", e);
             status.setCompleted(true);
             status.setFailed(true);
             status.setErrorMessage(e.getMessage());
@@ -226,22 +227,14 @@ public class DownloadService {
     }
 
     private synchronized int getNextFolderIndex() {
-        try {
-            Path indexFile = Paths.get(downloadConfig.getRootFolder(), "folder_index.txt");
-            int index = 0;
-
-            if (Files.exists(indexFile)) {
-                String content = Files.readString(indexFile).trim();
-                index = Integer.parseInt(content);
+        Path indexFile = Paths.get(downloadConfig.getRootFolder());
+        for (int i = 0; i < Integer.MAX_VALUE; i++) {
+            if (!Files.exists(indexFile.resolve(String.valueOf(i)))) {
+                return i;
             }
-
-            Files.writeString(indexFile, String.valueOf(index + 1));
-            return index;
-
-        } catch (Exception e) {
-            System.err.println("获取文件夹索引失败: " + e.getMessage());
-            return 0;
         }
+        log.error("获取下一个文件夹失败，使用temp文件夹");
+        return Integer.MAX_VALUE;
     }
 
     private synchronized void recordDownload(Long artworkId, String folderName, int count) {

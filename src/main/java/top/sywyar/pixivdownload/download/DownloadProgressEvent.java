@@ -1,7 +1,9 @@
 package top.sywyar.pixivdownload.download;
 
+import lombok.Getter;
 import org.springframework.context.ApplicationEvent;
 
+@Getter
 public class DownloadProgressEvent extends ApplicationEvent {
     private final Long artworkId;
     private final DownloadStatus downloadStatus;
@@ -17,12 +19,5 @@ public class DownloadProgressEvent extends ApplicationEvent {
         this.artworkId = artworkId;
         this.downloadStatus = downloadStatus;
     }
-    
-    public Long getArtworkId() {
-        return artworkId;
-    }
-    
-    public DownloadStatus getDownloadStatus() {
-        return downloadStatus;
-    }
+
 }
