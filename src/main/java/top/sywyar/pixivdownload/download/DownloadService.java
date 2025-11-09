@@ -1,5 +1,6 @@
 package top.sywyar.pixivdownload.download;
 
+import com.sywyar.superjsonobject.SuperJsonObject;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.http.HttpHost;
 import org.apache.http.client.config.RequestConfig;
@@ -35,7 +36,7 @@ public class DownloadService {
     private final ConcurrentHashMap<Long, DownloadStatus> downloadStatusMap = new ConcurrentHashMap<>();
 
     @Async
-    public void downloadImages(Long artworkId, java.util.List<String> imageUrls, String referer, String cookie) {
+    public void downloadImages(Long artworkId, String title, java.util.List<String> imageUrls, String referer, String cookie) {
         // 初始化下载状态
         DownloadStatus status = new DownloadStatus(artworkId, imageUrls.size());
         downloadStatusMap.put(artworkId, status);
@@ -91,10 +92,11 @@ public class DownloadService {
                     String extension = getFileExtension(imageUrl);
                     String filename = artworkId + "_p" + i + "." + extension;
                     Path filePath = downloadPath.resolve(filename);
-
                     if (downloadImage(httpClient, imageUrl, filePath, referer, cookie)) {
                         successCount.incrementAndGet();
                         status.setDownloadedCount(successCount.get()); // 更新成功下载数量
+
+                        log.info("作品：{}，下载进度：{}/{}", artworkId, successCount.get(), imageUrls.size());
 
                         // 发送图片下载完成状态更新
                         eventPublisher.publishEvent(new DownloadProgressEvent(this, artworkId, status));
@@ -111,7 +113,7 @@ public class DownloadService {
             httpClient.close();
 
             // 记录下载信息
-            recordDownload(artworkId, folderName, successCount.get());
+            recordDownload(artworkId, title, status.getDownloadPath(), successCount.get());
 
             // 更新下载状态为完成
             status.setCompleted(true);
@@ -119,9 +121,7 @@ public class DownloadService {
             status.setFailedCount(imageUrls.size() - successCount.get());
             status.setCurrentImageIndex(-1); // 完成后重置索引
 
-            System.out.println("下载完成: 作品 " + artworkId +
-                    ", 成功下载 " + successCount.get() + "/" + imageUrls.size() +
-                    " 张图片到 " + downloadPath);
+            log.info("下载完成: 作品 {}, 成功下载 {}/{} 张图片到 {}", artworkId, successCount.get(), imageUrls.size(), downloadPath);
 
             // 发送最终完成状态更新
             eventPublisher.publishEvent(new DownloadProgressEvent(this, artworkId, status));
@@ -186,7 +186,7 @@ public class DownloadService {
 
                     // 检查响应状态
                     if (response.getStatusLine().getStatusCode() != 200) {
-                        System.err.println("HTTP错误: " + response.getStatusLine().getStatusCode() + " for " + imageUrl);
+                        log.error("HTTP错误: {} for {}", response.getStatusLine().getStatusCode(), imageUrl);
                         retryCount++;
                         continue;
                     }
@@ -201,8 +201,7 @@ public class DownloadService {
                 }
             } catch (Exception e) {
                 retryCount++;
-                System.err.println("下载失败: " + imageUrl + ", 错误: " + e.getMessage() +
-                        ", 重试 " + retryCount + "/" + maxRetries);
+                log.error("下载失败：{}，错误:{}，重试：{}/{}", imageUrl, e.getMessage(), retryCount, maxRetries);
 
                 if (retryCount < maxRetries) {
                     try {
@@ -212,7 +211,7 @@ public class DownloadService {
                         return false;
                     }
                 } else {
-                    System.err.println("重试次数用尽，放弃下载: " + imageUrl);
+                    log.error("重试次数用尽，放弃下载: {}", imageUrl);
                     return false;
                 }
             }
@@ -237,18 +236,23 @@ public class DownloadService {
         return Integer.MAX_VALUE;
     }
 
-    private synchronized void recordDownload(Long artworkId, String folderName, int count) {
+    private synchronized void recordDownload(Long artworkId, String title, String folderPath, int count) {
         try {
-            Path recordFile = Paths.get(downloadConfig.getRootFolder(), "download_history.csv");
-            String record = artworkId + "," + folderName + "," + count + "," +
-                    java.time.LocalDateTime.now() + "\n";
+            Path recordFile = Paths.get(downloadConfig.getRootFolder(), "download_history.json");
+            SuperJsonObject json = new SuperJsonObject(recordFile.toFile());
 
-            if (!Files.exists(recordFile)) {
-                Files.writeString(recordFile, "artwork_id,folder,image_count,download_time\n");
-            }
+            SuperJsonObject downloaded = json.has("downloaded") ? json.getAsSuperJsonObject("downloaded") : new SuperJsonObject();
+            SuperJsonObject artwork = new SuperJsonObject();
+            artwork.addProperty("id", artworkId);
+            artwork.addProperty("title", title);
+            artwork.addProperty("folder", folderPath);
+            artwork.addProperty("count", count);
+            artwork.addProperty("time", System.currentTimeMillis());
 
-            Files.writeString(recordFile, record, java.nio.file.StandardOpenOption.APPEND);
+            downloaded.add(String.valueOf(artworkId), artwork);
+            json.add("downloaded", downloaded);
 
+            json.save();
         } catch (Exception e) {
             System.err.println("记录下载历史失败: " + e.getMessage());
         }

@@ -85,9 +85,9 @@
             });
         },
 
-        sendDownloadRequest(artworkId, imageUrls) {
+        sendDownloadRequest(artworkId, imageUrls, title) {
             return new Promise((resolve, reject) => {
-                const payload = { artworkId: parseInt(artworkId), imageUrls, referer: 'https://www.pixiv.net/' };
+                const payload = { artworkId: parseInt(artworkId), imageUrls, title, referer: 'https://www.pixiv.net/' };
                 GM_xmlhttpRequest({
                     method: 'POST',
                     url: CONFIG.BACKEND_URL,
@@ -361,7 +361,7 @@
                 const ssePromise = this._waitForFinalStatusBySSE(item.id, CONFIG.STATUS_TIMEOUT_MS);
 
                 // 发送后端下载请求（不阻塞 SSE）
-                await Api.sendDownloadRequest(item.id, urls);
+                await Api.sendDownloadRequest(item.id, urls, item.title);
 
                 // 等待 SSE 最终结果或 timeout
                 const final = await ssePromise;

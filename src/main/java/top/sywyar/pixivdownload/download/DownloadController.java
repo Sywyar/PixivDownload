@@ -21,6 +21,7 @@ public class DownloadController {
             // 异步处理下载任务
             downloadService.downloadImages(
                     request.getArtworkId(),
+                    request.getTitle(),
                     request.getImageUrls(),
                     request.getReferer(),
                     request.getCookie()  // 传递Cookie

@@ -14,6 +14,9 @@ public class DownloadRequest {
     @NotNull(message = "作品ID不能为空")
     private Long artworkId;
 
+    @NotNull(message = "作品名称不能为空")
+    private String title;
+
     @NotEmpty(message = "图片URL列表不能为空")
     private List<String> imageUrls;
 
