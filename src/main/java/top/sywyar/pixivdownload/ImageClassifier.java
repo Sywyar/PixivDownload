@@ -1,5 +1,7 @@
 package top.sywyar.pixivdownload;
 
+import lombok.extern.slf4j.Slf4j;
+
 import javax.swing.*;
 import java.awt.*;
 import java.io.File;
@@ -10,6 +12,7 @@ import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 
+@Slf4j
 public class ImageClassifier extends JFrame {
     private File parentFolder;
     private List<File> subFolders;
@@ -61,7 +64,7 @@ public class ImageClassifier extends JFrame {
         try {
             UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error(e.getMessage(), e);
         }
 
         setTitle("图片分类工具 - 批量移动模式");
@@ -486,23 +489,12 @@ public class ImageClassifier extends JFrame {
     }
 
     private int findNextFolderNumber(File parentFolder) {
-        File[] subDirs = parentFolder.listFiles(File::isDirectory);
-        int maxNumber = -1;
-
-        if (subDirs != null) {
-            for (File dir : subDirs) {
-                try {
-                    int number = Integer.parseInt(dir.getName());
-                    if (number > maxNumber) {
-                        maxNumber = number;
-                    }
-                } catch (NumberFormatException e) {
-                    // 忽略非数字文件夹
-                }
+        for (int i = 0; i < Integer.MAX_VALUE; i++) {
+            if (!Files.exists(parentFolder.toPath().resolve(String.valueOf(i)))) {
+                return i;
             }
         }
-
-        return maxNumber + 1;
+        return Integer.MAX_VALUE;
     }
 
     private void moveToNextFolder() {

@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 import java.io.FileOutputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -34,6 +35,8 @@ public class DownloadService {
 
     // 存储下载状态
     private final ConcurrentHashMap<Long, DownloadStatus> downloadStatusMap = new ConcurrentHashMap<>();
+
+    private SuperJsonObject download_history;
 
     @Async
     public void downloadImages(Long artworkId, String title, java.util.List<String> imageUrls, String referer, String cookie) {
@@ -157,6 +160,27 @@ public class DownloadService {
         }
     }
 
+    public SuperJsonObject getDownloadedRecord(Long artworkId) {
+        try {
+            initDownloadHistory();
+
+            SuperJsonObject downloaded = download_history.getOrDefault("downloaded", new SuperJsonObject());
+            return downloaded.getOrDefault(String.valueOf(artworkId), null);
+        } catch (IOException e) {
+            log.error("作品：{}，下载历史获取失败", artworkId, e);
+            return null;
+        }
+
+    }
+
+    private void initDownloadHistory() throws IOException {
+        if (download_history == null) {
+            Path recordFile = Paths.get(downloadConfig.getRootFolder(), "download_history.json");
+            Files.createFile(recordFile);
+            SuperJsonObject.Writer((new SuperJsonObject()).toString(), recordFile.toString());
+            download_history = new SuperJsonObject(recordFile.toFile());
+        }
+    }
 
     private boolean downloadImage(CloseableHttpClient httpClient, String imageUrl, Path filePath, String referer, String cookie) {
         int maxRetries = 3;
@@ -238,23 +262,22 @@ public class DownloadService {
 
     private synchronized void recordDownload(Long artworkId, String title, String folderPath, int count) {
         try {
-            Path recordFile = Paths.get(downloadConfig.getRootFolder(), "download_history.json");
-            SuperJsonObject json = new SuperJsonObject(recordFile.toFile());
+            initDownloadHistory();
+            SuperJsonObject downloaded = download_history.getOrDefault("downloaded", new SuperJsonObject());
 
-            SuperJsonObject downloaded = json.has("downloaded") ? json.getAsSuperJsonObject("downloaded") : new SuperJsonObject();
             SuperJsonObject artwork = new SuperJsonObject();
-            artwork.addProperty("id", artworkId);
+            //artwork.addProperty("artworkId", artworkId);
             artwork.addProperty("title", title);
-            artwork.addProperty("folder", folderPath);
+            artwork.addProperty("folder", Path.of(folderPath).toAbsolutePath().toString());
             artwork.addProperty("count", count);
-            artwork.addProperty("time", System.currentTimeMillis());
+            artwork.addProperty("time", System.currentTimeMillis() / 1000);
 
             downloaded.add(String.valueOf(artworkId), artwork);
-            json.add("downloaded", downloaded);
+            download_history.add("downloaded", downloaded);
 
-            json.save();
+            download_history.save();
         } catch (Exception e) {
-            System.err.println("记录下载历史失败: " + e.getMessage());
+            log.error("记录下载历史失败: {}", e.getMessage(), e);
         }
     }
 }

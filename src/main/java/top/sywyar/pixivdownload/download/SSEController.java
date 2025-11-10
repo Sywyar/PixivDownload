@@ -1,6 +1,6 @@
 package top.sywyar.pixivdownload.download;
 
-import org.springframework.beans.factory.annotation.Autowired;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -15,6 +15,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
+@Slf4j
 @RestController
 @RequestMapping("/api/sse")
 @CrossOrigin(origins = "*")
@@ -36,17 +37,17 @@ public class SSEController {
         // 设置完成和超时处理
         emitter.onCompletion(() -> {
             safeRemoveEmitter(artworkId);
-            System.out.println("SSE连接完成: " + artworkId);
+            log.info("SSE连接完成: {}", artworkId);
         });
 
         emitter.onTimeout(() -> {
             safeRemoveEmitter(artworkId);
-            System.out.println("SSE连接超时: " + artworkId);
+            log.error("SSE连接超时: {}", artworkId);
         });
 
         emitter.onError((e) -> {
             safeRemoveEmitter(artworkId);
-            System.out.println("SSE连接错误: " + artworkId + ", " + e.getMessage());
+            log.error("SSE连接错误: {}, {}", artworkId, e.getMessage());
         });
 
         // 立即发送初始状态
@@ -76,10 +77,10 @@ public class SSEController {
     public ResponseEntity<String> closeSSEConnection(@PathVariable Long artworkId) {
         try {
             safeRemoveEmitter(artworkId);
-            System.out.println("SSE连接安全关闭: " + artworkId);
+            log.info("SSE连接安全关闭: {}", artworkId);
             return ResponseEntity.ok("SSE连接已安全关闭");
         } catch (Exception e) {
-            System.out.println("关闭SSE连接时出错: " + artworkId + ", " + e.getMessage());
+            log.error("关闭SSE连接时出错: {},", artworkId, e);
             return ResponseEntity.status(500).body("关闭连接时出错: " + e.getMessage());
         }
     }
@@ -94,7 +95,7 @@ public class SSEController {
                 emitter.complete();
             } catch (Exception e) {
                 // 忽略完成时的异常
-                System.out.println("完成emitter时出现异常: " + e.getMessage());
+                log.error("完成emitter时出现异常", e);
             }
         }
     }
@@ -120,7 +121,7 @@ public class SSEController {
                 statusData.put("status", "连接中");
                 statusData.put("message", "SSE连接已建立");
                 statusData.put("success", true);
-                
+
                 emitter.send(SseEmitter.event()
                         .id(String.valueOf(System.currentTimeMillis()))
                         .name("download-status")
@@ -142,14 +143,14 @@ public class SSEController {
             try {
                 // 获取下载状态信息
                 DownloadStatus downloadStatus = event.getDownloadStatus();
-                
+
                 // 发送进度更新事件
                 Map<String, Object> statusData = new HashMap<>();
                 statusData.put("artworkId", artworkId);
                 statusData.put("status", "进度更新");
                 statusData.put("message", "下载进度已更新");
                 statusData.put("success", true);
-                
+
                 // 如果存在下载状态，添加详细信息
                 if (downloadStatus != null) {
                     statusData.put("currentImageIndex", downloadStatus.getCurrentImageIndex());
@@ -159,14 +160,14 @@ public class SSEController {
                     statusData.put("failed", downloadStatus.isFailed());
                     statusData.put("cancelled", downloadStatus.isCancelled());
                     statusData.put("folderName", downloadStatus.getFolderName());
-                    
+
                     // 计算进度百分比
                     if (downloadStatus.getTotalImages() > 0) {
                         int progress = (int) ((double) downloadStatus.getDownloadedCount() / downloadStatus.getTotalImages() * 100);
                         statusData.put("progress", progress);
                     }
                 }
-                
+
                 emitter.send(SseEmitter.event()
                         .id(String.valueOf(System.currentTimeMillis()))
                         .name("download-status")
@@ -176,7 +177,7 @@ public class SSEController {
             }
         }
     }
-    
+
     /**
      * 从DownloadService调用此方法来推送实时更新
      */

@@ -1,5 +1,6 @@
 package top.sywyar.pixivdownload.download;
 
+import com.sywyar.superjsonobject.SuperJsonObject;
 import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -68,6 +69,26 @@ public class DownloadController {
                 status.getProgressPercentage(),
                 status.getDownloadPath()
         ));
+    }
+
+    @GetMapping("/downloaded/{artworkId}")
+    public ResponseEntity<DownloadedResponse> getDownloaded(@PathVariable Long artworkId) {
+        SuperJsonObject artwork = downloadService.getDownloadedRecord(artworkId);
+        if (artwork == null) {
+            return ResponseEntity.ok(null);
+        }
+        boolean moved = artwork.has("moved");
+
+        return ResponseEntity.ok(new DownloadedResponse.DownloadedResponseBuilder()
+                .setArtworkId(artworkId)
+                .setTitle(artwork.getAsString("title"))
+                .setFolder(artwork.getAsString("folder"))
+                .setCount(artwork.getAsInt("count"))
+                .setTime(artwork.getAsLong("time"))
+                .setMoved(moved)
+                .setMoveFolder(moved ? artwork.getAsSuperJsonObject("moved").getAsString("moveFolder") : null)
+                .setMoveTime(moved ? artwork.getAsSuperJsonObject("moved").getAsLong("moveTime") : null)
+                .build());
     }
 
     // 新增：取消下载
