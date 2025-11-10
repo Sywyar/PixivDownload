@@ -85,7 +85,7 @@ public class DownloadController {
         if (artwork == null) {
             return ResponseEntity.ok(null);
         }
-        boolean moved = artwork.has("moved");
+        boolean moved = artwork.getAsBoolean("moved");
 
         return ResponseEntity.ok(new DownloadedResponse.DownloadedResponseBuilder()
                 .setArtworkId(artworkId)
@@ -94,8 +94,8 @@ public class DownloadController {
                 .setCount(artwork.getAsInt("count"))
                 .setTime(artwork.getAsLong("time"))
                 .setMoved(moved)
-                .setMoveFolder(moved ? artwork.getAsSuperJsonObject("moved").getAsString("moveFolder") : null)
-                .setMoveTime(moved ? artwork.getAsSuperJsonObject("moved").getAsLong("moveTime") : null)
+                .setMoveFolder(moved ? artwork.getAsString("moveFolder") : null)
+                .setMoveTime(moved ? artwork.getAsLong("moveTime") : null)
                 .build());
     }
 
