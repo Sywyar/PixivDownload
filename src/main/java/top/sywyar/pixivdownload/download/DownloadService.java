@@ -353,6 +353,11 @@ public class DownloadService {
 
             SuperJsonObject artwork = downloaded.getAsSuperJsonObject(String.valueOf(artworkId));
 
+            int count = artwork.getAsInt("count");
+            if (count <= page || page < 0) {
+                return new ThumbnailResponse(false, null, null, 0, 0, 0, artworkId + "作品没有第" + page + "页");
+            }
+
             String dirPath;
             if (artwork.has("moved") && artwork.getAsBoolean("moved")) {
                 dirPath = artwork.getAsString("moveFolder");
@@ -362,11 +367,8 @@ public class DownloadService {
 
             File imageFile;
             String extension = artwork.getAsString("extensions");
-            if (artwork.getAsInt("count") == 1) {
-                if (page != 0) {
-                    return new ThumbnailResponse(false, null, null, 0, 0, 0, artworkId + "作品没有第" + page + "页");
-                }
 
+            if (count == 1) {
                 imageFile = Paths.get(dirPath, artworkId + "_p0." + extension).toFile();
             } else {
                 String fileName = artworkId + "_p" + page;
