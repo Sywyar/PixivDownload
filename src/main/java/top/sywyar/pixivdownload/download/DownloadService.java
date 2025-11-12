@@ -9,12 +9,14 @@ import org.apache.http.client.methods.HttpGet;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClients;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import top.sywyar.pixivdownload.download.config.DownloadConfig;
 import top.sywyar.pixivdownload.download.response.ImageResponse;
+import top.sywyar.pixivdownload.download.response.StatisticsResponse;
 import top.sywyar.pixivdownload.imageclassifier.ThumbnailManager;
 
 import javax.imageio.ImageIO;
@@ -24,7 +26,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
 @Slf4j
@@ -37,10 +39,20 @@ public class DownloadService {
     @Autowired
     private ApplicationEventPublisher eventPublisher;
 
+    @Autowired
+    @Qualifier("statisticsFileTaskExecutor")
+    private Executor statisticsFileTaskExecutor;
+
+    @Autowired
+    @Qualifier("downloadHistoryFileTaskExecutor")
+    private Executor downloadHistoryFileTaskExecutor;
+
     // 存储下载状态
     private final ConcurrentHashMap<Long, DownloadStatus> downloadStatusMap = new ConcurrentHashMap<>();
 
     private SuperJsonObject download_history;
+
+    private SuperJsonObject statistics;
 
     @Async
     public void downloadImages(Long artworkId, String title, java.util.List<String> imageUrls, String referer, String cookie) {
@@ -125,6 +137,7 @@ public class DownloadService {
 
             // 记录下载信息
             recordDownload(artworkId, title, status.getDownloadPath(), fileExtensions, successCount.get());
+            recordStatistics(imageUrls.size());
 
             // 更新下载状态为完成
             status.setCompleted(true);
@@ -253,8 +266,7 @@ public class DownloadService {
         return Integer.MAX_VALUE;
     }
 
-    @Async("downloadHistoryFileTaskExecutor")
-    protected void initDownloadHistory() throws IOException {
+    private void initDownloadHistory() throws IOException {
         if (download_history == null) {
             Path recordFile = Paths.get(downloadConfig.getRootFolder(), "download_history.json");
             if (!Files.exists(recordFile)) {
@@ -262,6 +274,23 @@ public class DownloadService {
                 SuperJsonObject.Writer((new SuperJsonObject()).toString(), recordFile.toString());
             }
             download_history = new SuperJsonObject(recordFile.toFile());
+        }
+    }
+
+    private void noAsyncInitDownloadHistory() throws Exception {
+        CompletableFuture<Exception> future = CompletableFuture.supplyAsync(() -> {
+            try {
+                initDownloadHistory();
+                return null;
+            } catch (IOException e) {
+                return e;
+            }
+        }, downloadHistoryFileTaskExecutor);
+
+        Exception exception = future.get(10, TimeUnit.SECONDS);
+
+        if (future.get() != null) {
+            throw exception;
         }
     }
 
@@ -316,7 +345,9 @@ public class DownloadService {
 
     public List<String> getDownloadedRecord() {
         try {
-            initDownloadHistory();
+            noAsyncInitDownloadHistory();
+
+
             List<String> downloaded = new LinkedList<>();
 
             SuperJsonObject downloadedRecord = download_history.deepCopy().getOrDefault("downloaded", new SuperJsonObject());
@@ -324,7 +355,7 @@ public class DownloadService {
             downloadedRecord.asMap().forEach((k, v) -> downloaded.add(String.valueOf(k)));
 
             return downloaded;
-        } catch (IOException e) {
+        } catch (Exception e) {
             log.error("获取历史下载错误：: {}", e.getMessage(), e);
             return new LinkedList<>();
         }
@@ -332,11 +363,11 @@ public class DownloadService {
 
     public SuperJsonObject getDownloadedRecord(Long artworkId) {
         try {
-            initDownloadHistory();
+            noAsyncInitDownloadHistory();
 
             SuperJsonObject downloaded = download_history.deepCopy().getOrDefault("downloaded", new SuperJsonObject());
             return downloaded.getOrDefault(String.valueOf(artworkId), null);
-        } catch (IOException e) {
+        } catch (Exception e) {
             log.error("作品：{}，下载历史获取失败", artworkId, e);
             return null;
         }
@@ -344,7 +375,7 @@ public class DownloadService {
 
     public ImageResponse getImageResponse(Long artworkId, int page, boolean thumbnail) {
         try {
-            initDownloadHistory();
+            noAsyncInitDownloadHistory();
 
             SuperJsonObject downloaded = download_history.deepCopy().getOrDefault("downloaded", new SuperJsonObject());
             if (!downloaded.has(String.valueOf(artworkId))) {
@@ -397,7 +428,7 @@ public class DownloadService {
             String base64Image = Base64.getEncoder().encodeToString(bass.toByteArray());
 
             return new ImageResponse(true, base64Image, extension, base64Image.length(), image.getWidth(), image.getHeight(), "成功获取图片缩略图");
-        } catch (IOException e) {
+        } catch (Exception e) {
             log.error("获取图片失败，作品：{}，页码：{}，是否缩略：{}，原因：{}", artworkId, page, thumbnail, e.getMessage(), e);
             return new ImageResponse(false, null, null, 0, 0, 0, "获取图片失败，原因:" + e.getMessage());
         }
@@ -434,6 +465,64 @@ public class DownloadService {
             return fileName.substring(0, dotIndex);
         }
         return fileName;
+    }
+
+    private void initStatistics() throws IOException {
+        if (statistics == null) {
+            Path statisticsFile = Paths.get(downloadConfig.getRootFolder(), "statistics.json");
+            if (!Files.exists(statisticsFile)) {
+                Files.createFile(statisticsFile);
+                SuperJsonObject.Writer((new SuperJsonObject()).toString(), statisticsFile.toString());
+            }
+            statistics = new SuperJsonObject(statisticsFile.toFile());
+        }
+    }
+
+    private void noAsyncInitStatistics() throws Exception {
+        CompletableFuture<Exception> future = CompletableFuture.supplyAsync(() -> {
+            try {
+                initStatistics();
+                return null;
+            } catch (IOException e) {
+                return e;
+            }
+        }, statisticsFileTaskExecutor);
+
+        Exception exception = future.get(10, TimeUnit.SECONDS);
+
+        if (future.get() != null) {
+            throw exception;
+        }
+    }
+
+    @Async("statisticsFileTaskExecutor")
+    public void recordStatistics(int count) throws IOException {
+        initStatistics();
+
+        int totalArtworks = statistics.has("totalArtworks") ? statistics.getAsInt("totalArtworks") : 0;
+        int totalImages = statistics.has("totalImages") ? statistics.getAsInt("totalImages") : 0;
+
+        totalArtworks++;
+        totalImages += count;
+
+        statistics.addProperty("totalArtworks", totalArtworks);
+        statistics.addProperty("totalImages", totalImages);
+
+        statistics.save();
+    }
+
+    public StatisticsResponse getStatistics() {
+        try {
+            noAsyncInitStatistics();
+
+            int totalArtworks = statistics.has("totalArtworks") ? statistics.getAsInt("totalArtworks") : 0;
+            int totalImages = statistics.has("totalImages") ? statistics.getAsInt("totalImages") : 0;
+
+            return new StatisticsResponse(true, totalArtworks, totalImages, "获取成功");
+        } catch (Exception e) {
+            log.error("获取统计信息失败", e);
+            return new StatisticsResponse(false, -1, -1, "获取统计信息失败，原因：" + e.getMessage());
+        }
     }
 
 }

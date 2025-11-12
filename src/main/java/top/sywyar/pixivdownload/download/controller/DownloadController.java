@@ -11,6 +11,7 @@ import top.sywyar.pixivdownload.download.DownloadService;
 import top.sywyar.pixivdownload.download.DownloadStatus;
 import top.sywyar.pixivdownload.download.response.*;
 
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 
@@ -108,6 +109,40 @@ public class DownloadController {
                 .setMoveFolder(moved ? artwork.getAsString("moveFolder") : null)
                 .setMoveTime(moved ? artwork.getAsLong("moveTime") : null)
                 .build());
+    }
+
+    @PostMapping("/downloaded/batch")
+    public ResponseEntity<List<DownloadedResponse>> getBatchArtworks(@RequestBody List<Long> artworkIds) {
+        List<DownloadedResponse> downloadedResponses = new LinkedList<>();
+        for (Long artworkId : artworkIds) {
+            SuperJsonObject artwork = downloadService.getDownloadedRecord(artworkId);
+            if (artwork == null) {
+                return ResponseEntity.ok(null);
+            }
+            boolean moved = artwork.getAsBoolean("moved");
+
+            downloadedResponses.add(new DownloadedResponse.DownloadedResponseBuilder()
+                    .setArtworkId(artworkId)
+                    .setTitle(artwork.getAsString("title"))
+                    .setFolder(artwork.getAsString("folder"))
+                    .setCount(artwork.getAsInt("count"))
+                    .setTime(artwork.getAsLong("time"))
+                    .setMoved(moved)
+                    .setMoveFolder(moved ? artwork.getAsString("moveFolder") : null)
+                    .setMoveTime(moved ? artwork.getAsLong("moveTime") : null)
+                    .build());
+        }
+        return ResponseEntity.ok(downloadedResponses);
+    }
+
+    @GetMapping("/downloaded/statistics")
+    public ResponseEntity<StatisticsResponse> getStatistics() {
+        StatisticsResponse response = downloadService.getStatistics();
+        if (response.isSuccess()){
+            return ResponseEntity.ok(response);
+        }else {
+            return ResponseEntity.badRequest().body(response);
+        }
     }
 
     @PostMapping("/downloaded/move/{artworkId}")
