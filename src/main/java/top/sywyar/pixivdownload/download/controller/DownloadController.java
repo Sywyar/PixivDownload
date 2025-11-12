@@ -9,10 +9,7 @@ import org.springframework.web.bind.annotation.*;
 import top.sywyar.pixivdownload.download.request.DownloadRequest;
 import top.sywyar.pixivdownload.download.DownloadService;
 import top.sywyar.pixivdownload.download.DownloadStatus;
-import top.sywyar.pixivdownload.download.response.DownloadResponse;
-import top.sywyar.pixivdownload.download.response.DownloadStatusResponse;
-import top.sywyar.pixivdownload.download.response.DownloadedResponse;
-import top.sywyar.pixivdownload.download.response.ThumbnailResponse;
+import top.sywyar.pixivdownload.download.response.*;
 
 import java.util.List;
 import java.util.Map;
@@ -132,13 +129,25 @@ public class DownloadController {
     }
 
     @GetMapping("/downloaded/thumbnail/{artworkId}/{page}")
-    public ResponseEntity<ThumbnailResponse> getThumbnail(
+    public ResponseEntity<ImageResponse> getThumbnail(
             @PathVariable Long artworkId,
             @PathVariable int page) {
-        ThumbnailResponse image;
-        if ((image = downloadService.getThumbnail(artworkId, page)) != null) {
+        ImageResponse image;
+        if ((image = downloadService.getImageResponse(artworkId, page, true)) != null) {
             return ResponseEntity.ok(image);
-        }else {
+        } else {
+            return ResponseEntity.status(404).build();
+        }
+    }
+
+    @GetMapping("/downloaded/image/{artworkId}/{page}")
+    public ResponseEntity<ImageResponse> getImage(
+            @PathVariable Long artworkId,
+            @PathVariable int page) {
+        ImageResponse image;
+        if ((image = downloadService.getImageResponse(artworkId, page, false)) != null) {
+            return ResponseEntity.ok(image);
+        } else {
             return ResponseEntity.status(404).build();
         }
     }

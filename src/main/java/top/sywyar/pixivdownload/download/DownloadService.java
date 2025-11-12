@@ -14,7 +14,7 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import top.sywyar.pixivdownload.download.config.DownloadConfig;
-import top.sywyar.pixivdownload.download.response.ThumbnailResponse;
+import top.sywyar.pixivdownload.download.response.ImageResponse;
 import top.sywyar.pixivdownload.imageclassifier.ThumbnailManager;
 
 import javax.imageio.ImageIO;
@@ -342,7 +342,7 @@ public class DownloadService {
         }
     }
 
-    public ThumbnailResponse getThumbnail(Long artworkId, int page) {
+    public ImageResponse getImageResponse(Long artworkId, int page, boolean thumbnail) {
         try {
             initDownloadHistory();
 
@@ -355,7 +355,7 @@ public class DownloadService {
 
             int count = artwork.getAsInt("count");
             if (count <= page || page < 0) {
-                return new ThumbnailResponse(false, null, null, 0, 0, 0, artworkId + "作品没有第" + page + "页");
+                return new ImageResponse(false, null, null, 0, 0, 0, artworkId + "作品没有第" + page + "页");
             }
 
             String dirPath;
@@ -377,24 +377,29 @@ public class DownloadService {
                 if (extensions.length > 1) {
                     imageFile = findFileByName(dirPath, fileName);
                     if (imageFile == null) {
-                        return new ThumbnailResponse(false, null, null, 0, 0, 0, artworkId + "作品找不到" + fileName);
+                        return new ImageResponse(false, null, null, 0, 0, 0, artworkId + "作品找不到" + fileName);
                     }
                     extension = getFileExtension(imageFile.getName());
                 } else {
                     imageFile = Paths.get(dirPath, fileName + "." + extension).toFile();
                 }
             }
-            BufferedImage image = ThumbnailManager.getThumbnail(imageFile, -1, -1);
+            BufferedImage image;
+            if (thumbnail) {
+                image = ThumbnailManager.getThumbnail(imageFile, -1, -1);
+            } else {
+                image = ImageIO.read(imageFile);
+            }
 
             ByteArrayOutputStream bass = new ByteArrayOutputStream();
             ImageIO.write(image, extension, bass);
 
             String base64Image = Base64.getEncoder().encodeToString(bass.toByteArray());
 
-            return new ThumbnailResponse(true, base64Image, extension, base64Image.length(), image.getWidth(), image.getHeight(), "成功获取图片缩略图");
+            return new ImageResponse(true, base64Image, extension, base64Image.length(), image.getWidth(), image.getHeight(), "成功获取图片缩略图");
         } catch (IOException e) {
-            log.error("获取缩略图失败，作品：{}，页码：{}，原因：{}", artworkId, page, e.getMessage(), e);
-            return new ThumbnailResponse(false, null, null, 0, 0, 0, "获取缩略图失败，原因:" + e.getMessage());
+            log.error("获取图片失败，作品：{}，页码：{}，是否缩略：{}，原因：{}", artworkId, page, thumbnail, e.getMessage(), e);
+            return new ImageResponse(false, null, null, 0, 0, 0, "获取图片失败，原因:" + e.getMessage());
         }
     }
 
