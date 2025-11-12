@@ -95,9 +95,11 @@ public class SSEController {
         if (emitter != null) {
             try {
                 emitter.complete();
+            } catch (IllegalStateException e) {
+                // 如果已经完成或发生错误，忽略这个异常
+                log.info("SseEmitter 已经完成或关闭，无需再次完成");
             } catch (Exception e) {
-                // 忽略完成时的异常
-                log.error("完成emitter时出现异常", e);
+                log.error("完成 SseEmitter 时出现异常", e);
             }
         }
     }
