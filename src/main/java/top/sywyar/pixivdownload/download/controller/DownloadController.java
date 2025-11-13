@@ -11,9 +11,7 @@ import top.sywyar.pixivdownload.download.DownloadService;
 import top.sywyar.pixivdownload.download.DownloadStatus;
 import top.sywyar.pixivdownload.download.response.*;
 
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 @RestController
 @RequestMapping("/api")
@@ -60,7 +58,7 @@ public class DownloadController {
     public ResponseEntity<DownloadStatusResponse> getDownloadStatus(@PathVariable Long artworkId) {
         DownloadStatus status = downloadService.getDownloadStatus(artworkId);
         if (status == null) {
-            return ResponseEntity.ok(new DownloadStatusResponse(false, "未找到该作品的下载状态", artworkId));
+            return ResponseEntity.ok(new DownloadStatusResponse(false, "未找到该作品的下载状态", artworkId, null));
         }
 
         log.info("artworkId: {},totalImages: {},downloadedCount: {}", artworkId, status.getTotalImages(), status.getDownloadedCount());
@@ -68,6 +66,7 @@ public class DownloadController {
                 true,
                 status.getStatusDescription(),
                 artworkId,
+                status.getTitle(),
                 status.getTotalImages(),
                 status.getDownloadedCount(),
                 status.getCurrentImageIndex(),
@@ -153,23 +152,48 @@ public class DownloadController {
     }
 
     @GetMapping("/downloaded/history/paged")
-    public ResponseEntity<List<DownloadedResponse>> getPagedHistory(
+    public ResponseEntity<Map<String, Object>> getPagedHistory(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size) {
-        List<DownloadedResponse> downloadedResponses = new LinkedList<>();
+        try {
+            List<DownloadedResponse> downloadedResponses = new LinkedList<>();
 
-        List<String> artWorkIds = downloadService.getDownloadedRecord();
+            List<Long> artWorkIds = downloadService.getSortTimeArtwork();
 
-        artWorkIds.sort(String.CASE_INSENSITIVE_ORDER);
+            long totalElements = artWorkIds.size();
 
-        for (int i = page * size; i < (page + 1) * size; i++) {
-            if (i >= artWorkIds.size()) {
-                return ResponseEntity.ok(downloadedResponses);
+            for (int i = page * size; i < (page + 1) * size; i++) {
+                if (i >= artWorkIds.size()) {
+                    break;
+                }
+                DownloadedResponse response = getArtWorkDownloadedResponse(artWorkIds.get(i));
+                if (response != null) {
+                    downloadedResponses.add(response);
+                }
             }
-            downloadedResponses.add(getArtWorkDownloadedResponse(Long.valueOf(artWorkIds.get(i))));
-        }
 
-        return ResponseEntity.ok(downloadedResponses);
+            // 返回包含分页元数据的Map
+            Map<String, Object> response = new HashMap<>();
+            response.put("content", downloadedResponses);
+            response.put("totalElements", totalElements);
+            response.put("page", page);
+            response.put("size", size);
+            response.put("totalPages", (int) Math.ceil((double) totalElements / size));
+
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            log.error("获取下载历史失败，第{}页，大小：{}，原因：{}", page, size, e.getMessage(), e);
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("content", new LinkedList<>());
+            response.put("totalElements", 0);
+            response.put("page", 0);
+            response.put("size", 0);
+            response.put("totalPages", 0);
+
+            return ResponseEntity.badRequest().body(response);
+
+        }
     }
 
     @GetMapping("/downloaded/thumbnail/{artworkId}/{page}")

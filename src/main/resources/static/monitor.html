@@ -234,7 +234,9 @@
         }
 
         @keyframes spin {
-            to { transform: rotate(360deg); }
+            to {
+                transform: rotate(360deg);
+            }
         }
 
         .btn-primary {
@@ -276,10 +278,11 @@
 
         .artwork-title {
             max-width: 200px;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
+            overflow: visible;
+            text-overflow: unset;
+            white-space: normal; /* 改为normal允许换行 */
             color: #ffffff;
+            word-wrap: break-word; /* 添加这个属性确保长单词也能换行 */
         }
 
         .time-badge {
@@ -350,6 +353,173 @@
 
         .modal {
             z-index: 1050;
+        }
+
+        /* 活跃下载样式优化 */
+        .active-downloads-container {
+            padding: 0.5rem;
+        }
+
+        .active-download-item {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 0.75rem;
+            border-left: 4px solid var(--primary-color);
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .active-download-item:hover {
+            background: rgba(255, 255, 255, 0.08);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+        }
+
+        .active-download-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .active-download-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 0.75rem;
+        }
+
+        .artwork-title {
+            font-weight: 700;
+            font-size: 1.1rem;
+            color: var(--primary-color);
+            margin-bottom: 0.25rem;
+        }
+
+        .artwork-id {
+            font-size: 0.9rem;
+            color: #ffffff;
+            line-height: 1.3;
+            max-width: 200px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .active-download-source {
+            font-size: 0.75rem;
+            color: #adb5bd;
+            margin-top: 0.25rem;
+        }
+
+        .download-progress-container {
+            margin-top: 0.5rem;
+        }
+
+        .progress-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.5rem;
+        }
+
+        .progress-count {
+            font-size: 0.85rem;
+            color: #adb5bd;
+        }
+
+        .progress-percentage {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--primary-color);
+        }
+
+        .active-download-progress {
+            height: 6px;
+            background-color: rgba(255, 255, 255, 0.1);
+            border-radius: 3px;
+            overflow: hidden;
+        }
+
+        .active-download-progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, var(--primary-color), var(--secondary-color));
+            border-radius: 3px;
+            transition: width 0.5s ease;
+            position: relative;
+        }
+
+        .active-download-progress-bar::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            bottom: 0;
+            right: 0;
+            background-image: linear-gradient(
+                    -45deg,
+                    rgba(255, 255, 255, 0.2) 25%,
+                    transparent 25%,
+                    transparent 50%,
+                    rgba(255, 255, 255, 0.2) 50%,
+                    rgba(255, 255, 255, 0.2) 75%,
+                    transparent 75%,
+                    transparent
+            );
+            background-size: 10px 10px;
+            animation: move 1s linear infinite;
+        }
+
+        @keyframes move {
+            0% {
+                background-position: 0 0;
+            }
+            100% {
+                background-position: 10px 0;
+            }
+        }
+
+        .download-status {
+            display: flex;
+            align-items: center;
+            margin-top: 0.75rem;
+            font-size: 0.8rem;
+        }
+
+        .status-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: var(--primary-color);
+            margin-right: 0.5rem;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% {
+                box-shadow: 0 0 0 0 rgba(111, 66, 193, 0.7);
+            }
+            70% {
+                box-shadow: 0 0 0 5px rgba(111, 66, 193, 0);
+            }
+            100% {
+                box-shadow: 0 0 0 0 rgba(111, 66, 193, 0);
+            }
+        }
+
+        .status-text {
+            color: #adb5bd;
+        }
+
+        /* 活跃下载为空时的样式 */
+        #emptyActiveState {
+            padding: 2rem 1rem;
+        }
+
+        #emptyActiveState i {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            opacity: 0.5;
+            color: var(--primary-color);
         }
     </style>
 </head>
@@ -447,7 +617,7 @@
                     <span class="badge bg-primary" id="activeCount">0</span>
                 </div>
                 <div class="card-body p-0">
-                    <div id="activeDownloadsList">
+                    <div id="activeDownloadsList" class="active-downloads-container">
                         <!-- 活跃下载将在这里动态生成 -->
                     </div>
                     <div id="emptyActiveState" class="empty-state d-none">
@@ -516,15 +686,17 @@
     let artworkModal = null;
     let imageModal = null;
 
+    let updateInterval;
+    let activeUpdateInterval;
+
     // DOM 加载完成后初始化
-    document.addEventListener('DOMContentLoaded', function() {
+    document.addEventListener('DOMContentLoaded', function () {
         // 初始化模态框
         artworkModal = new bootstrap.Modal(document.getElementById('artworkModal'));
         imageModal = new bootstrap.Modal(document.getElementById('imageModal'));
 
         // 监听模态框关闭事件
         document.getElementById('artworkModal').addEventListener('hidden.bs.modal', function () {
-            // 确保模态框完全关闭
             document.body.classList.remove('modal-open');
             const backdrops = document.getElementsByClassName('modal-backdrop');
             for (let i = 0; i < backdrops.length; i++) {
@@ -533,7 +705,6 @@
         });
 
         document.getElementById('imageModal').addEventListener('hidden.bs.modal', function () {
-            // 确保模态框完全关闭
             document.body.classList.remove('modal-open');
             const backdrops = document.getElementsByClassName('modal-backdrop');
             for (let i = 0; i < backdrops.length; i++) {
@@ -542,8 +713,108 @@
         });
 
         initializeDashboard();
-        setInterval(updateDashboard, 5000); // 每5秒更新一次
+
+        // 设置不同组件的更新频率
+        updateInterval = setInterval(updateDashboard, 5000); // 常规更新5秒一次
+        activeUpdateInterval = setInterval(updateActiveDownloads, 2000); // 活跃下载2秒一次
     });
+
+    // 添加页面可见性检测，当页面不可见时降低更新频率
+    document.addEventListener('visibilitychange', function () {
+        if (document.hidden) {
+            // 页面不可见，降低更新频率
+            clearInterval(activeUpdateInterval);
+            activeUpdateInterval = setInterval(updateActiveDownloads, 10000); // 10秒一次
+        } else {
+            // 页面可见，恢复正常更新频率
+            clearInterval(activeUpdateInterval);
+            activeUpdateInterval = setInterval(updateActiveDownloads, 2000); // 2秒一次
+            // 立即更新一次
+            updateActiveDownloads();
+        }
+    });
+
+    // 清理定时器（在页面卸载时）
+    window.addEventListener('beforeunload', function () {
+        if (updateInterval) clearInterval(updateInterval);
+        if (activeUpdateInterval) clearInterval(activeUpdateInterval);
+    });
+
+    // 更新活跃下载（高频更新）
+    async function updateActiveDownloads() {
+        try {
+            const response = await fetch('/api/download/status/active');
+            if (!response.ok) throw new Error('获取活跃下载失败');
+
+            const activeIds = await response.json();
+
+            // 获取每个活跃下载的详细信息
+            const downloadPromises = activeIds.map(id =>
+                fetch(`/api/download/status/${id}`).then(res => res.ok ? res.json() : null)
+            );
+
+            const downloads = await Promise.all(downloadPromises);
+
+            // 过滤掉已完成、失败或取消的下载
+            const newActiveDownloads = downloads.filter(download =>
+                download !== null &&
+                !download.completed &&
+                !download.failed &&
+                !download.cancelled
+            );
+
+            // 检查是否有变化
+            const hasChanges = JSON.stringify(activeDownloads) !== JSON.stringify(newActiveDownloads);
+
+            if (hasChanges) {
+                activeDownloads = newActiveDownloads;
+
+                // 更新活跃下载数量显示
+                document.getElementById('activeCount').textContent = activeDownloads.length;
+                document.getElementById('activeDownloads').textContent = activeDownloads.length;
+
+                // 渲染活跃下载列表
+                renderActiveDownloads();
+
+                // 如果有活跃下载变化，触发其他UI更新
+                if (activeDownloads.length > 0) {
+                    triggerOtherUpdates();
+                }
+            }
+        } catch (error) {
+            console.error('更新活跃下载时出错:', error);
+        }
+    }
+
+    function triggerOtherUpdates() {
+        // 更新统计信息（如果活跃下载数量发生变化）
+        updateStatisticsIfNeeded();
+
+        // 更新最后更新时间
+        updateLastUpdatedTime();
+
+        // 如果有下载完成，刷新历史记录
+        checkCompletedDownloads();
+    }
+
+    async function updateStatisticsIfNeeded() {
+        if (activeDownloads.length === 0) {
+            loadStatistics();
+        }
+    }
+
+
+    // 检查是否有下载完成并刷新历史记录
+    async function checkCompletedDownloads() {
+        const previousCount = localStorage.getItem('previousActiveCount') || 0;
+        if (activeDownloads.length < previousCount) {
+            // 有下载完成，刷新历史记录
+            loadPagedHistory(0, itemsPerPage);
+            currentPage = 1;
+        }
+        localStorage.setItem('previousActiveCount', activeDownloads.length);
+    }
+
 
     // 初始化仪表板
     function initializeDashboard() {
@@ -560,7 +831,7 @@
         document.getElementById('searchInput').addEventListener('input', filterArtworks);
 
         // 初始化刷新按钮
-        document.getElementById('refreshHistory').addEventListener('click', function() {
+        document.getElementById('refreshHistory').addEventListener('click', function () {
             loadStatistics();
             loadPagedHistory(0, itemsPerPage);
             currentPage = 1;
@@ -568,10 +839,12 @@
     }
 
     // 更新仪表板
+    // 更新仪表板（常规更新）
     function updateDashboard() {
         updateLastUpdatedTime();
-        loadActiveDownloads();
+        loadStatistics();
     }
+
 
     // 更新最后更新时间
     function updateLastUpdatedTime() {
@@ -592,10 +865,6 @@
             document.getElementById('totalArtworks').textContent = stats.totalArtworks || 0;
             document.getElementById('totalImages').textContent = stats.totalImages || 0;
             document.getElementById('totalMoved').textContent = stats.totalMoved || 0;
-
-            // 存储总作品数用于分页
-            totalArtworksCount = stats.totalArtworks || 0;
-
         } catch (error) {
             console.error('加载统计信息时出错:', error);
         }
@@ -607,9 +876,15 @@
             const response = await fetch(`/api/downloaded/history/paged?page=${page}&size=${size}`);
             if (!response.ok) throw new Error('获取分页历史记录失败');
 
-            const artworks = await response.json();
+            const data = await response.json();
+
+            const artworks = data.content || data; // 兼容不同后端响应格式
+
             allArtworks = artworks;
             filteredArtworks = [...allArtworks];
+
+            // 使用分页接口返回的总记录数，而不是统计接口的不重复作品数
+            totalArtworksCount = data.totalElements || artworks.length;
 
             // 渲染表格
             renderArtworkTable();
@@ -727,7 +1002,7 @@
         }
     }
 
-    // 渲染活跃下载列表
+    // 修改渲染活跃下载列表函数，添加实时进度更新
     function renderActiveDownloads() {
         const container = document.getElementById('activeDownloadsList');
         const emptyState = document.getElementById('emptyActiveState');
@@ -743,23 +1018,35 @@
         let html = '';
         activeDownloads.forEach(download => {
             const progress = download.progressPercentage || 0;
-            const statusClass = getStatusClass(download);
+            const downloadedCount = download.downloadedCount || 0;
+            const totalImages = download.totalImages || 0;
 
             html += `
-                <div class="p-3 border-bottom border-secondary download-item">
-                    <div class="d-flex justify-content-between align-items-center mb-2">
-                        <strong>${download.artworkId}</strong>
-                        <span class="status-badge ${statusClass}">${download.message}</span>
-                    </div>
-                    <div class="d-flex justify-content-between small mb-1">
-                        <span>${download.downloadedCount || 0}/${download.totalImages || 0}</span>
-                        <span>${progress.toFixed(1)}%</span>
-                    </div>
-                    <div class="progress">
-                        <div class="progress-bar" role="progressbar" style="width: ${progress}%"></div>
+            <div class="active-download-item" data-artwork-id="${download.artworkId}">
+                <div class="active-download-header">
+                    <div class="artwork-info">
+                        <div class="artwork-title" title="${download.title || '未知标题'}">
+                            ${download.title || '未知标题'}
+                        </div>
+                        <div class="artwork-id">${download.artworkId}</div>
+                        <div class="active-download-source">pixiv</div>
                     </div>
                 </div>
-                `;
+                <div class="download-progress-container">
+                    <div class="progress-info">
+                        <span class="progress-count">${downloadedCount}/${totalImages}</span>
+                        <span class="progress-percentage">${progress.toFixed(1)}%</span>
+                    </div>
+                    <div class="active-download-progress">
+                        <div class="active-download-progress-bar" style="width: ${progress}%"></div>
+                    </div>
+                </div>
+                <div class="download-status">
+                    <div class="status-indicator"></div>
+                    <span class="status-text">下载中...</span>
+                </div>
+            </div>
+        `;
         });
 
         container.innerHTML = html;
@@ -808,7 +1095,7 @@
         let html = '';
         filteredArtworks.forEach(artwork => {
             const downloadDate = new Date(artwork.time * 1000);
-            const formattedDate = `${downloadDate.getFullYear()}-${(downloadDate.getMonth()+1).toString().padStart(2, '0')}-${downloadDate.getDate().toString().padStart(2, '0')}`;
+            const formattedDate = `${downloadDate.getFullYear()}-${(downloadDate.getMonth() + 1).toString().padStart(2, '0')}-${downloadDate.getDate().toString().padStart(2, '0')}`;
             const formattedTime = `${downloadDate.getHours().toString().padStart(2, '0')}:${downloadDate.getMinutes().toString().padStart(2, '0')}`;
 
             const status = artwork.moved ? '已移动' : '已下载';
@@ -979,7 +1266,7 @@
                         <div class="thumbnail-container" style="cursor: pointer;" onclick="viewFullImage(${artwork.artworkId}, ${i})">
                             <div class="loading-spinner"></div>
                         </div>
-                        <div class="text-center small mt-1">第 ${i+1} 张</div>
+                        <div class="text-center small mt-1">第 ${i + 1} 张</div>
                     </div>
                     `;
             }

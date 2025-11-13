@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Pixiv N-Tab 批量下载器
 // @namespace    http://tampermonkey.net/
-// @version      1.1.0
+// @version      1.1.1
 // @description  解析 N-Tab 导出，批量提交作品给本地后端下载，支持并发/间隔/暂停(让当前完成)/继续/强制清除/持久化保存/SSE 实时进度。
 // @author       Rewritten by ChatGPT
 // @match        https://www.pixiv.net/
@@ -34,7 +34,8 @@
         MAX_CONCURRENT: 5,
         STATUS_TIMEOUT_MS: 300000,  // 等待最终状态超时 (5min)
         BACKEND_CHECK_TIMEOUT: 3000,
-        STORAGE_KEY: 'pixiv_ntab_batch_v1'
+        STORAGE_KEY: 'pixiv_ntab_batch_v1',
+        SKIP_HISTORY_KEY: 'pixiv_ntab_skip_history'
     };
 
     /* ========== 简单 DOM 帮助函数 ========== */
@@ -129,6 +130,29 @@
                     onerror: (e) => { resolve(null); }
                 });
             });
+        },
+
+        checkDownloaded(artworkId) {
+            return new Promise((resolve) => {
+                GM_xmlhttpRequest({
+                    method: 'GET',
+                    url: `http://localhost:6999/api/downloaded/${artworkId}`,
+                    onload: (res) => {
+                        try {
+                            if (res.status === 200) {
+                                const data = JSON.parse(res.responseText);
+                                resolve(!!data.artworkId); // 如果返回了作品ID，说明已下载
+                            } else {
+                                resolve(false);
+                            }
+                        } catch (e) {
+                            resolve(false);
+                        }
+                    },
+                    onerror: () => resolve(false),
+                    ontimeout: () => resolve(false)
+                });
+            });
         }
     };
 
@@ -194,8 +218,10 @@
                 completed: 0,
                 success: 0,
                 failed: 0,
-                active: 0
+                active: 0,
+                skipped: 0
             };
+            this.skipHistory = GM_getValue(CONFIG.SKIP_HISTORY_KEY, false);
         }
 
         loadFromStorage() {
@@ -207,7 +233,8 @@
                     this.queue = parsed.queue;
                     this.isRunning = !!parsed.isRunning;
                     this.isPaused = !!parsed.isPaused;
-                    this.stats = parsed.stats || { completed: 0, success: 0, failed: 0, active: 0 };
+                    this.stats = parsed.stats || { completed: 0, success: 0, failed: 0, active: 0, skipped: 0 };
+                    this.skipHistory = parsed.skipHistory !== undefined ? parsed.skipHistory : this.skipHistory;
                 }
             } catch (e) {
                 console.warn('loadFromStorage fail', e);
@@ -221,6 +248,7 @@
                     isRunning: this.isRunning,
                     isPaused: this.isPaused,
                     stats: this.stats,
+                    skipHistory: this.skipHistory,
                     savedAt: new Date().toISOString()
                 };
                 GM_setValue(CONFIG.STORAGE_KEY, JSON.stringify(snapshot));
@@ -230,7 +258,14 @@
         deleteStorage() {
             try {
                 GM_deleteValue(CONFIG.STORAGE_KEY);
+                GM_deleteValue(CONFIG.SKIP_HISTORY_KEY);
             } catch (e) { console.warn('delete storage fail', e); }
+        }
+
+        setSkipHistory(skip) {
+            this.skipHistory = skip;
+            GM_setValue(CONFIG.SKIP_HISTORY_KEY, skip);
+            this.saveToStorage();
         }
 
         setQueue(items) {
@@ -239,7 +274,7 @@
                 id: String(it.id),
                 title: it.title || `作品 ${it.id}`,
                 url: it.url || `https://www.pixiv.net/artworks/${it.id}`,
-                status: 'idle', // idle | pending | downloading | completed | failed | paused
+                status: 'idle', // idle | pending | downloading | completed | failed | paused | skipped
                 totalImages: 0,
                 downloadedCount: 0,
                 startTime: null,
@@ -316,7 +351,7 @@
                     const next = this._getNextPending();
                     if (!next) {
                         // 所有项是否都完成或失败？
-                        if (this.queue.every(q => ['completed','failed','idle','paused'].includes(q.status))) break;
+                        if (this.queue.every(q => ['completed','failed','idle','paused','skipped'].includes(q.status))) break;
                         await this._sleep(500);
                         continue;
                     }
@@ -346,6 +381,21 @@
         }
 
         async _processSingle({ idx, item }) {
+            // 新增：检查是否跳过历史下载
+            if (this.skipHistory) {
+                const isDownloaded = await Api.checkDownloaded(item.id);
+                if (isDownloaded) {
+                    item.status = 'skipped';
+                    item.lastMessage = '已跳过（历史记录中存在）';
+                    item.endTime = new Date().toISOString();
+                    this.updateStats();
+                    this.saveToStorage();
+                    this.ui.renderQueue(this.queue);
+                    this.ui.setStatus(`跳过：${item.title}（已下载过）`, 'warning');
+                    return; // 直接返回，不进行下载
+                }
+            }
+
             this.ui.setCurrent(item);
             this.ui.setStatus(`开始下载：${item.title}`, 'info');
             try {
@@ -501,7 +551,7 @@
 
             // 清空队列以及持久化
             this.queue = [];
-            this.stats = { completed: 0, success: 0, failed: 0, active: 0 };
+            this.stats = { completed: 0, success: 0, failed: 0, active: 0, skipped: 0 };
             try { this.deleteStorage(); } catch (e) { console.warn('delete storage fail', e); }
 
             this.ui.renderQueue(this.queue);
@@ -512,7 +562,8 @@
             this.stats.success = this.queue.filter(q => q.status === 'completed').length;
             this.stats.failed = this.queue.filter(q => q.status === 'failed').length;
             this.stats.active = this.queue.filter(q => q.status === 'downloading').length;
-            this.stats.completed = this.stats.success + this.stats.failed;
+            this.stats.skipped = this.queue.filter(q => q.status === 'skipped').length;
+            this.stats.completed = this.stats.success + this.stats.failed + this.stats.skipped;
             this.ui.updateStats(this.stats);
         }
 
@@ -543,7 +594,7 @@
 
             // 标题
             const title = $el('div', {
-                html: '🎨 N-Tab批量下载器 v1.1.0',
+                html: '🎨 N-Tab批量下载器 v1.1.1',
                 style: {
                     fontWeight: 'bold', marginBottom: '15px', color: '#333',
                     textAlign: 'center', fontSize: '16px', borderBottom: '2px solid #eee',
@@ -563,7 +614,7 @@
             // 统计信息
             const stats = $el('div', {
                 id: 'batch-stats',
-                innerText: '队列: 0 | 成功: 0 | 失败: 0 | 进行中: 0',
+                innerText: '队列: 0 | 成功: 0 | 失败: 0 | 进行中: 0 | 跳过: 0',
                 style: {
                     marginBottom: '10px', color: '#007bff', fontSize: '12px',
                     textAlign: 'center', fontWeight: 'bold'
@@ -598,6 +649,11 @@
                     <label style="font-size: 12px; margin-right: 10px; width: 120px;">最大并发数:</label>
                     <input type="number" id="max-concurrent" value="${CONFIG.DEFAULT_CONCURRENT}"
                            min="1" max="${CONFIG.MAX_CONCURRENT}" style="width: 60px; padding: 4px; border: 1px solid #ddd; border-radius: 4px;">
+                </div>
+                <div style="display: flex; align-items: center; margin-bottom: 10px;">
+                    <label style="font-size: 12px; margin-right: 10px; width: 120px;">跳过历史下载:</label>
+                    <input type="checkbox" id="skip-history" 
+                           style="width: 16px; height: 16px;">
                 </div>
             `;
 
@@ -668,6 +724,7 @@
                 textarea: textarea,
                 interval: container.querySelector('#download-interval'),
                 concurrent: container.querySelector('#max-concurrent'),
+                skipHistory: container.querySelector('#skip-history'),
                 parseBtn: container.querySelector('#parse-btn'),
                 startBtn: container.querySelector('#start-btn'),
                 pauseBtn: container.querySelector('#pause-btn'),
@@ -701,6 +758,13 @@
 
         bindManager(manager) {
             this.manager = manager;
+            // 设置跳过历史复选框的初始状态
+            this.elements.skipHistory.checked = manager.skipHistory;
+
+            // 添加事件监听
+            this.elements.skipHistory.addEventListener('change', (e) => {
+                this.manager.setSkipHistory(e.target.checked);
+            });
         }
 
         async handleStart() {
@@ -792,9 +856,10 @@
 
         updateStats(stats) {
             const pendingCount = this.manager.queue.filter(q =>
-                                                           q.status === 'pending' || q.status === 'idle' || q.status === 'paused'
-                                                          ).length;
-            this.elements.stats.textContent = `队列: ${pendingCount} | 成功: ${stats.success} | 失败: ${stats.failed} | 进行中: ${stats.active}`;
+                q.status === 'pending' || q.status === 'idle' || q.status === 'paused'
+            ).length;
+            this.elements.stats.textContent =
+                `队列: ${pendingCount} | 成功: ${stats.success} | 失败: ${stats.failed} | 进行中: ${stats.active} | 跳过: ${stats.skipped}`;
         }
 
         updateButtonsState(isRunning, isPaused) {
@@ -845,7 +910,8 @@
                 'completed': '#28a745',
                 'downloading': '#007bff',
                 'failed': '#dc3545',
-                'paused': '#6c757d'
+                'paused': '#6c757d',
+                'skipped': '#ffa500'
             };
             return colorMap[status] || '#6c757d';
         }
@@ -857,7 +923,8 @@
                 'downloading': '下载中',
                 'completed': '已完成',
                 'failed': '失败',
-                'paused': '暂停中'
+                'paused': '暂停中',
+                'skipped': '已跳过'
             };
             return statusMap[status] || status;
         }

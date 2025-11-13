@@ -12,6 +12,7 @@ public class DownloadStatusResponse {
     private boolean success;
     private String message;
     private Long artworkId;
+    private String title;
     private int totalImages;
     private int downloadedCount;
     private int currentImageIndex;
@@ -21,10 +22,11 @@ public class DownloadStatusResponse {
     private double progressPercentage;
     private String downloadPath;
 
-    public DownloadStatusResponse(boolean success, String message, Long artworkId) {
+    public DownloadStatusResponse(boolean success, String message, Long artworkId, String title) {
         this.success = success;
         this.message = message;
         this.artworkId = artworkId;
+        this.title = title;
     }
 
 }

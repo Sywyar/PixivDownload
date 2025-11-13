@@ -10,6 +10,7 @@ import java.time.LocalDateTime;
 public class DownloadStatus {
     // getters and setters
     private Long artworkId;
+    private String title;
     private int totalImages;
     private int downloadedCount;
     private int currentImageIndex;
@@ -24,8 +25,9 @@ public class DownloadStatus {
     private LocalDateTime startTime;
     private LocalDateTime endTime;
 
-    public DownloadStatus(Long artworkId, int totalImages) {
+    public DownloadStatus(Long artworkId, String title, int totalImages) {
         this.artworkId = artworkId;
+        this.title = title;
         this.totalImages = totalImages;
         this.startTime = LocalDateTime.now();
         this.downloadedCount = 0;

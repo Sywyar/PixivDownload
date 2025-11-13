@@ -47,6 +47,10 @@ public class DownloadService {
     @Qualifier("downloadHistoryFileTaskExecutor")
     private Executor downloadHistoryFileTaskExecutor;
 
+    @Autowired
+    @Qualifier("timeArtworkFileTaskExecutor")
+    private Executor timeArtworkFileTaskExecutor;
+
     // 存储下载状态
     private final ConcurrentHashMap<Long, DownloadStatus> downloadStatusMap = new ConcurrentHashMap<>();
 
@@ -54,10 +58,12 @@ public class DownloadService {
 
     private SuperJsonObject statistics;
 
+    private SuperJsonObject timeArtwork;
+
     @Async
     public void downloadImages(Long artworkId, String title, java.util.List<String> imageUrls, String referer, String cookie) {
         // 初始化下载状态
-        DownloadStatus status = new DownloadStatus(artworkId, imageUrls.size());
+        DownloadStatus status = new DownloadStatus(artworkId, title, imageUrls.size());
         downloadStatusMap.put(artworkId, status);
 
         // 发送初始状态更新
@@ -270,6 +276,7 @@ public class DownloadService {
         if (download_history == null) {
             Path recordFile = Paths.get(downloadConfig.getRootFolder(), "download_history.json");
             if (!Files.exists(recordFile)) {
+                Files.createDirectories(recordFile.getParent());
                 Files.createFile(recordFile);
                 SuperJsonObject.Writer((new SuperJsonObject()).toString(), recordFile.toString());
             }
@@ -301,12 +308,15 @@ public class DownloadService {
 
             SuperJsonObject downloaded = download_history.getOrDefault("downloaded", new SuperJsonObject());
 
+            Long time = recordTimeArtwork(artworkId);
+
             SuperJsonObject artwork = new SuperJsonObject();
             artwork.addProperty("title", title);
             artwork.addProperty("folder", Path.of(folderPath).toAbsolutePath().toString());
             artwork.addProperty("count", count);
             artwork.addProperty("extensions", String.join(",", fileExtensions));
-            artwork.addProperty("time", System.currentTimeMillis() / 1000);
+            artwork.addProperty("time", time);
+
 
             downloaded.add(String.valueOf(artworkId), artwork);
             download_history.add("downloaded", downloaded);
@@ -471,6 +481,7 @@ public class DownloadService {
         if (statistics == null) {
             Path statisticsFile = Paths.get(downloadConfig.getRootFolder(), "statistics.json");
             if (!Files.exists(statisticsFile)) {
+                Files.createDirectories(statisticsFile.getParent());
                 Files.createFile(statisticsFile);
                 SuperJsonObject.Writer((new SuperJsonObject()).toString(), statisticsFile.toString());
             }
@@ -536,4 +547,76 @@ public class DownloadService {
         }
     }
 
+    private void initTimeArtwork() throws IOException {
+        if (timeArtwork == null) {
+            Path timeArtworkFile = Paths.get(downloadConfig.getRootFolder(), "timeArtwork.json");
+            if (!Files.exists(timeArtworkFile)) {
+                Files.createDirectories(timeArtworkFile.getParent());
+                Files.createFile(timeArtworkFile);
+                SuperJsonObject.Writer((new SuperJsonObject()).toString(), timeArtworkFile.toString());
+            }
+            timeArtwork = new SuperJsonObject(timeArtworkFile.toFile());
+        }
+    }
+
+    private void noAsyncInitTimeArtwork() throws Exception {
+        CompletableFuture<Exception> future = CompletableFuture.supplyAsync(() -> {
+            try {
+                initTimeArtwork();
+                return null;
+            } catch (IOException e) {
+                return e;
+            }
+        }, timeArtworkFileTaskExecutor);
+
+        Exception exception = future.get(10, TimeUnit.SECONDS);
+
+        if (future.get() != null) {
+            throw exception;
+        }
+    }
+
+    private long recordTimeArtwork(Long artworkId) throws InterruptedException, ExecutionException {
+
+        CompletableFuture<Long> future = CompletableFuture.supplyAsync(() -> {
+            try {
+                initTimeArtwork();
+                return recordTimeArtwork(artworkId, System.currentTimeMillis() / 1000);
+            } catch (IOException e) {
+                return System.currentTimeMillis() / 1000;
+            }
+        }, timeArtworkFileTaskExecutor);
+
+        return future.get();
+    }
+
+    private long recordTimeArtwork(Long artworkId, Long time) throws IOException {
+        if (timeArtwork.has(String.valueOf(time))) {
+            return recordTimeArtwork(artworkId, time + 1);
+        }
+
+        timeArtwork.addProperty(String.valueOf(time), artworkId);
+
+        timeArtwork.save();
+
+        return time;
+    }
+
+    public List<Long> getSortTimeArtwork() throws Exception {
+        noAsyncInitTimeArtwork();
+
+        SuperJsonObject timeArtworkCopy = timeArtwork.deepCopy();
+
+        List<String> times = new LinkedList<>();
+
+        timeArtworkCopy.asMap().forEach((s, jsonElement) -> times.add(s));
+
+        times.sort(Comparator.comparing((String s) -> s.charAt(0)).reversed());
+
+        List<Long> timeArtworkIds = new LinkedList<>();
+        for (String time : times) {
+            timeArtworkIds.add(timeArtworkCopy.getAsLong(time));
+        }
+        return timeArtworkIds;
+    }
 }
