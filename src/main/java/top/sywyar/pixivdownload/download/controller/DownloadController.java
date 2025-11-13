@@ -24,7 +24,7 @@ public class DownloadController {
     @Autowired
     private DownloadService downloadService;
 
-    @PostMapping("download/pixiv")
+    @PostMapping("/download/pixiv")
     public ResponseEntity<DownloadResponse> downloadPixivImages(@Valid @RequestBody DownloadRequest request) {
         try {
             // 异步处理下载任务
@@ -50,13 +50,13 @@ public class DownloadController {
         }
     }
 
-    @GetMapping("download/status")
+    @GetMapping("/download/status")
     public ResponseEntity<DownloadResponse> getStatus() {
         return ResponseEntity.ok(new DownloadResponse(true, "服务运行正常"));
     }
 
     //获取作品下载状态
-    @GetMapping("download/status/{artworkId}")
+    @GetMapping("/download/status/{artworkId}")
     public ResponseEntity<DownloadStatusResponse> getDownloadStatus(@PathVariable Long artworkId) {
         DownloadStatus status = downloadService.getDownloadStatus(artworkId);
         if (status == null) {
@@ -93,22 +93,11 @@ public class DownloadController {
 
     @GetMapping("/downloaded/{artworkId}")
     public ResponseEntity<DownloadedResponse> getDownloaded(@PathVariable Long artworkId) {
-        SuperJsonObject artwork = downloadService.getDownloadedRecord(artworkId);
-        if (artwork == null) {
-            return ResponseEntity.ok(null);
+        DownloadedResponse downloadedResponse = getArtWorkDownloadedResponse(artworkId);
+        if (downloadedResponse == null) {
+            return ResponseEntity.status(400).build();
         }
-        boolean moved = artwork.getAsBoolean("moved");
-
-        return ResponseEntity.ok(new DownloadedResponse.DownloadedResponseBuilder()
-                .setArtworkId(artworkId)
-                .setTitle(artwork.getAsString("title"))
-                .setFolder(artwork.getAsString("folder"))
-                .setCount(artwork.getAsInt("count"))
-                .setTime(artwork.getAsLong("time"))
-                .setMoved(moved)
-                .setMoveFolder(moved ? artwork.getAsString("moveFolder") : null)
-                .setMoveTime(moved ? artwork.getAsLong("moveTime") : null)
-                .build());
+        return ResponseEntity.ok(downloadedResponse);
     }
 
     @PostMapping("/downloaded/batch")
@@ -138,9 +127,9 @@ public class DownloadController {
     @GetMapping("/downloaded/statistics")
     public ResponseEntity<StatisticsResponse> getStatistics() {
         StatisticsResponse response = downloadService.getStatistics();
-        if (response.isSuccess()){
+        if (response.isSuccess()) {
             return ResponseEntity.ok(response);
-        }else {
+        } else {
             return ResponseEntity.badRequest().body(response);
         }
     }
@@ -161,6 +150,26 @@ public class DownloadController {
     @GetMapping("/downloaded/history")
     public ResponseEntity<List<String>> getHistory() {
         return ResponseEntity.ok(downloadService.getDownloadedRecord());
+    }
+
+    @GetMapping("/downloaded/history/paged")
+    public ResponseEntity<List<DownloadedResponse>> getPagedHistory(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
+        List<DownloadedResponse> downloadedResponses = new LinkedList<>();
+
+        List<String> artWorkIds = downloadService.getDownloadedRecord();
+
+        artWorkIds.sort(String.CASE_INSENSITIVE_ORDER);
+
+        for (int i = page * size; i < (page + 1) * size; i++) {
+            if (i >= artWorkIds.size()) {
+                return ResponseEntity.ok(downloadedResponses);
+            }
+            downloadedResponses.add(getArtWorkDownloadedResponse(Long.valueOf(artWorkIds.get(i))));
+        }
+
+        return ResponseEntity.ok(downloadedResponses);
     }
 
     @GetMapping("/downloaded/thumbnail/{artworkId}/{page}")
@@ -185,5 +194,24 @@ public class DownloadController {
         } else {
             return ResponseEntity.status(404).build();
         }
+    }
+
+    public DownloadedResponse getArtWorkDownloadedResponse(Long artworkId) {
+        SuperJsonObject artwork = downloadService.getDownloadedRecord(artworkId);
+        if (artwork == null) {
+            return null;
+        }
+        boolean moved = artwork.has("moved") && artwork.getAsBoolean("moved");
+
+        return new DownloadedResponse.DownloadedResponseBuilder()
+                .setArtworkId(artworkId)
+                .setTitle(artwork.getAsString("title"))
+                .setFolder(artwork.getAsString("folder"))
+                .setCount(artwork.getAsInt("count"))
+                .setTime(artwork.getAsLong("time"))
+                .setMoved(moved)
+                .setMoveFolder(moved ? artwork.getAsString("moveFolder") : null)
+                .setMoveTime(moved ? artwork.getAsLong("moveTime") : null)
+                .build();
     }
 }

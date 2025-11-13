@@ -337,6 +337,7 @@ public class DownloadService {
 
             download_history.save();
 
+            recordMovedStatistics();
         } catch (Exception e) {
             log.error("移动记录失败: {}", e.getMessage(), e);
         }
@@ -347,12 +348,11 @@ public class DownloadService {
         try {
             noAsyncInitDownloadHistory();
 
-
             List<String> downloaded = new LinkedList<>();
 
             SuperJsonObject downloadedRecord = download_history.deepCopy().getOrDefault("downloaded", new SuperJsonObject());
 
-            downloadedRecord.asMap().forEach((k, v) -> downloaded.add(String.valueOf(k)));
+            downloadedRecord.asMap().forEach((k, v) -> downloaded.add(k));
 
             return downloaded;
         } catch (Exception e) {
@@ -511,17 +511,28 @@ public class DownloadService {
         statistics.save();
     }
 
+    @Async("statisticsFileTaskExecutor")
+    public void recordMovedStatistics() throws IOException {
+        initStatistics();
+
+        int totalMoved = statistics.has("totalMoved") ? statistics.getAsInt("totalMoved") : 0;
+        totalMoved++;
+        statistics.addProperty("totalMoved", totalMoved);
+        statistics.save();
+    }
+
     public StatisticsResponse getStatistics() {
         try {
             noAsyncInitStatistics();
 
             int totalArtworks = statistics.has("totalArtworks") ? statistics.getAsInt("totalArtworks") : 0;
             int totalImages = statistics.has("totalImages") ? statistics.getAsInt("totalImages") : 0;
+            int totalMoved = statistics.has("totalMoved") ? statistics.getAsInt("totalMoved") : 0;
 
-            return new StatisticsResponse(true, totalArtworks, totalImages, "获取成功");
+            return new StatisticsResponse(true, totalArtworks, totalImages, totalMoved, "获取成功");
         } catch (Exception e) {
             log.error("获取统计信息失败", e);
-            return new StatisticsResponse(false, -1, -1, "获取统计信息失败，原因：" + e.getMessage());
+            return new StatisticsResponse(false, -1, -1, -1, "获取统计信息失败，原因：" + e.getMessage());
         }
     }
 

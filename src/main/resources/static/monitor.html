@@ -1,0 +1,1044 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pixiv下载数据大屏</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --primary-color: #6f42c1;
+            --secondary-color: #6610f2;
+            --success-color: #20c997;
+            --info-color: #0dcaf0;
+            --warning-color: #fd7e14;
+            --danger-color: #dc3545;
+            --dark-color: #343a40;
+            --light-color: #f8f9fa;
+        }
+
+        body {
+            background-color: #1a1a2e;
+            color: #ffffff;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            overflow-x: hidden;
+        }
+
+        .dashboard-header {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 1rem 0;
+            margin-bottom: 2rem;
+        }
+
+        .dashboard-header .text-muted {
+            color: #ffffff !important; /* 将副标题改为白色 */
+        }
+
+        .stat-card {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+            border-left: 4px solid var(--primary-color);
+            transition: transform 0.3s, box-shadow 0.3s;
+            color: #ffffff;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+        }
+
+        .stat-card .stat-value {
+            font-size: 2rem;
+            font-weight: 700;
+            margin: 0;
+            color: #ffffff;
+        }
+
+        .stat-card .stat-label {
+            font-size: 0.9rem;
+            color: #adb5bd;
+            margin: 0;
+        }
+
+        .card {
+            background: rgba(255, 255, 255, 0.05);
+            border: none;
+            border-radius: 10px;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            color: #ffffff;
+        }
+
+        .card-header {
+            background: rgba(255, 255, 255, 0.08);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            font-weight: 600;
+            padding: 1rem 1.25rem;
+            border-radius: 10px 10px 0 0 !important;
+            color: #ffffff;
+        }
+
+        .table {
+            color: #ffffff;
+            margin-bottom: 0;
+            background-color: transparent;
+        }
+
+        .table th {
+            border-top: none;
+            font-weight: 600;
+            color: #adb5bd;
+            background: rgba(255, 255, 255, 0.05);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .table td {
+            border-color: rgba(255, 255, 255, 0.1);
+            vertical-align: middle;
+            padding: 0.75rem;
+            background-color: transparent;
+            color: #ffffff;
+        }
+
+        .table tbody tr {
+            transition: background-color 0.2s;
+            background-color: transparent;
+        }
+
+        .table tbody tr:hover {
+            background-color: rgba(111, 66, 193, 0.1);
+        }
+
+        .progress {
+            height: 8px;
+            background-color: rgba(255, 255, 255, 0.1);
+            margin-top: 5px;
+            border-radius: 4px;
+        }
+
+        .progress-bar {
+            background-color: var(--primary-color);
+            border-radius: 4px;
+        }
+
+        .thumbnail-container {
+            width: 80px;
+            height: 80px;
+            overflow: hidden;
+            border-radius: 5px;
+            background-color: rgba(255, 255, 255, 0.05);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: transform 0.2s;
+        }
+
+        .thumbnail-container:hover {
+            transform: scale(1.05);
+        }
+
+        .thumbnail {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: cover;
+        }
+
+        .status-badge {
+            padding: 0.35em 0.65em;
+            font-size: 0.75em;
+            font-weight: 600;
+            border-radius: 0.25rem;
+        }
+
+        .status-active {
+            background-color: rgba(32, 201, 151, 0.2);
+            color: var(--success-color);
+        }
+
+        .status-completed {
+            background-color: rgba(13, 202, 240, 0.2);
+            color: var(--info-color);
+        }
+
+        .status-failed {
+            background-color: rgba(220, 53, 69, 0.2);
+            color: var(--danger-color);
+        }
+
+        .status-cancelled {
+            background-color: rgba(108, 117, 125, 0.2);
+            color: var(--dark-color);
+        }
+
+        .status-moved {
+            background-color: rgba(111, 66, 193, 0.2);
+            color: var(--primary-color);
+        }
+
+        .search-box {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 5px;
+            color: #ffffff;
+            padding: 0.5rem 1rem;
+        }
+
+        .search-box:focus {
+            background: rgba(255, 255, 255, 0.08);
+            border-color: var(--primary-color);
+            color: #ffffff;
+            box-shadow: 0 0 0 0.2rem rgba(111, 66, 193, 0.25);
+        }
+
+        .pagination .page-link {
+            background-color: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: #ffffff;
+        }
+
+        .pagination .page-link:hover {
+            background-color: rgba(111, 66, 193, 0.2);
+            border-color: var(--primary-color);
+            color: #ffffff;
+        }
+
+        .pagination .page-item.active .page-link {
+            background-color: var(--primary-color);
+            border-color: var(--primary-color);
+        }
+
+        .last-updated {
+            font-size: 0.8rem;
+            color: #adb5bd;
+        }
+
+        .chart-container {
+            position: relative;
+            height: 300px;
+            width: 100%;
+        }
+
+        .loading-spinner {
+            display: inline-block;
+            width: 1rem;
+            height: 1rem;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: #fff;
+            animation: spin 1s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .btn-primary {
+            background-color: var(--primary-color);
+            border-color: var(--primary-color);
+        }
+
+        .btn-primary:hover {
+            background-color: var(--secondary-color);
+            border-color: var(--secondary-color);
+        }
+
+        .modal-content {
+            background-color: #2d3748;
+            color: #ffffff;
+            border-radius: 10px;
+        }
+
+        .modal-header {
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 10px 10px 0 0;
+            color: #ffffff;
+        }
+
+        .modal-footer {
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 0 0 10px 10px;
+        }
+
+        .btn-close {
+            filter: invert(1);
+        }
+
+        .image-modal img {
+            max-width: 100%;
+            max-height: 80vh;
+            border-radius: 5px;
+        }
+
+        .artwork-title {
+            max-width: 200px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            color: #ffffff;
+        }
+
+        .time-badge {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            color: #ffffff;
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .download-item {
+            border-left: 3px solid var(--primary-color);
+            padding-left: 1rem;
+            color: #ffffff;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 3rem 1rem;
+            color: #adb5bd;
+        }
+
+        .empty-state i {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            opacity: 0.5;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+        }
+
+        /* 确保表格整体背景色正确 */
+        .table-responsive {
+            background-color: transparent;
+            border-radius: 0 0 10px 10px;
+            overflow: hidden;
+        }
+
+        /* 表格行交替颜色效果 */
+        .table-striped tbody tr:nth-of-type(odd) {
+            background-color: rgba(255, 255, 255, 0.02);
+        }
+
+        /* 活跃下载列表字体颜色 */
+        #activeDownloadsList {
+            color: #ffffff;
+        }
+
+        /* 活跃下载列表中的文本 */
+        #activeDownloadsList strong,
+        #activeDownloadsList span,
+        #activeDownloadsList .progress {
+            color: #ffffff;
+        }
+
+        /* 修复模态框遮罩问题 */
+        .modal-backdrop {
+            z-index: 1040;
+        }
+
+        .modal {
+            z-index: 1050;
+        }
+    </style>
+</head>
+<body>
+<div class="dashboard-header">
+    <div class="container">
+        <div class="row align-items-center">
+            <div class="col-md-6">
+                <h1 class="h3 mb-0">
+                    <i class="fas fa-chart-line me-2"></i>Pixiv下载数据大屏
+                </h1>
+                <p class="mb-0 text-muted">实时监控下载状态与历史记录</p>
+            </div>
+            <div class="col-md-6 text-end">
+                <span class="last-updated">最后更新: <span id="lastUpdatedTime">--:--:--</span></span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="container">
+    <!-- 统计信息 -->
+    <div class="stats-grid mb-4">
+        <div class="stat-card">
+            <p class="stat-label">总下载作品</p>
+            <h2 class="stat-value" id="totalArtworks">0</h2>
+        </div>
+        <div class="stat-card">
+            <p class="stat-label">总下载图片</p>
+            <h2 class="stat-value" id="totalImages">0</h2>
+        </div>
+        <div class="stat-card">
+            <p class="stat-label">已移动作品</p>
+            <h2 class="stat-value" id="totalMoved">0</h2>
+        </div>
+        <div class="stat-card">
+            <p class="stat-label">活跃下载</p>
+            <h2 class="stat-value" id="activeDownloads">0</h2>
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- 左侧：下载历史 -->
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span><i class="fas fa-history me-2"></i>下载历史</span>
+                    <div class="d-flex">
+                        <input type="text" class="search-box me-2" id="searchInput" placeholder="搜索作品ID或标题...">
+                        <button class="btn btn-sm btn-primary" id="refreshHistory">
+                            <i class="fas fa-sync-alt"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover table-striped mb-0">
+                            <thead>
+                            <tr>
+                                <th width="15%">作品ID</th>
+                                <th width="25%">标题</th>
+                                <th width="10%">图片数量</th>
+                                <th width="20%">下载时间</th>
+                                <th width="15%">状态</th>
+                                <th width="15%">操作</th>
+                            </tr>
+                            </thead>
+                            <tbody id="historyTableBody">
+                            <!-- 历史记录将在这里动态生成 -->
+                            </tbody>
+                        </table>
+                    </div>
+                    <div id="emptyHistoryState" class="empty-state d-none">
+                        <i class="fas fa-inbox"></i>
+                        <h5>暂无下载历史</h5>
+                        <p class="text-muted">还没有任何作品被下载</p>
+                    </div>
+                </div>
+                <div class="card-footer">
+                    <nav>
+                        <ul class="pagination pagination-sm justify-content-center mb-0" id="pagination">
+                            <!-- 分页将在这里动态生成 -->
+                        </ul>
+                    </nav>
+                </div>
+            </div>
+        </div>
+
+        <!-- 右侧：下载状态和统计 -->
+        <div class="col-lg-4">
+            <!-- 活跃下载 -->
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span><i class="fas fa-sync-alt me-2"></i>活跃下载</span>
+                    <span class="badge bg-primary" id="activeCount">0</span>
+                </div>
+                <div class="card-body p-0">
+                    <div id="activeDownloadsList">
+                        <!-- 活跃下载将在这里动态生成 -->
+                    </div>
+                    <div id="emptyActiveState" class="empty-state d-none">
+                        <i class="fas fa-check-circle"></i>
+                        <h5>暂无活跃下载</h5>
+                        <p class="text-muted">当前没有正在进行的下载任务</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 下载统计图表 -->
+            <div class="card">
+                <div class="card-header"><i class="fas fa-chart-bar me-2"></i>下载统计</div>
+                <div class="card-body">
+                    <div class="chart-container">
+                        <canvas id="downloadStatsChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 作品详情模态框 -->
+<div class="modal fade" id="artworkModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">作品详情</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="artworkModalBody">
+                <!-- 作品详情将在这里动态生成 -->
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 图片查看模态框 -->
+<div class="modal fade image-modal" id="imageModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">图片预览</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body text-center">
+                <img id="modalImage" src="" alt="预览图片">
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+    // 全局变量
+    let allArtworks = [];
+    let filteredArtworks = [];
+    let currentPage = 1;
+    const itemsPerPage = 10;
+    let downloadStatsChart = null;
+    let activeDownloads = [];
+    let totalArtworksCount = 0;
+
+    // 模态框实例
+    let artworkModal = null;
+    let imageModal = null;
+
+    // DOM 加载完成后初始化
+    document.addEventListener('DOMContentLoaded', function() {
+        // 初始化模态框
+        artworkModal = new bootstrap.Modal(document.getElementById('artworkModal'));
+        imageModal = new bootstrap.Modal(document.getElementById('imageModal'));
+
+        // 监听模态框关闭事件
+        document.getElementById('artworkModal').addEventListener('hidden.bs.modal', function () {
+            // 确保模态框完全关闭
+            document.body.classList.remove('modal-open');
+            const backdrops = document.getElementsByClassName('modal-backdrop');
+            for (let i = 0; i < backdrops.length; i++) {
+                backdrops[i].remove();
+            }
+        });
+
+        document.getElementById('imageModal').addEventListener('hidden.bs.modal', function () {
+            // 确保模态框完全关闭
+            document.body.classList.remove('modal-open');
+            const backdrops = document.getElementsByClassName('modal-backdrop');
+            for (let i = 0; i < backdrops.length; i++) {
+                backdrops[i].remove();
+            }
+        });
+
+        initializeDashboard();
+        setInterval(updateDashboard, 5000); // 每5秒更新一次
+    });
+
+    // 初始化仪表板
+    function initializeDashboard() {
+        // 加载统计信息
+        loadStatistics();
+
+        // 加载下载历史（第一页）
+        loadPagedHistory(0, itemsPerPage);
+
+        // 加载活跃下载
+        loadActiveDownloads();
+
+        // 初始化搜索功能
+        document.getElementById('searchInput').addEventListener('input', filterArtworks);
+
+        // 初始化刷新按钮
+        document.getElementById('refreshHistory').addEventListener('click', function() {
+            loadStatistics();
+            loadPagedHistory(0, itemsPerPage);
+            currentPage = 1;
+        });
+    }
+
+    // 更新仪表板
+    function updateDashboard() {
+        updateLastUpdatedTime();
+        loadActiveDownloads();
+    }
+
+    // 更新最后更新时间
+    function updateLastUpdatedTime() {
+        const now = new Date();
+        document.getElementById('lastUpdatedTime').textContent =
+            `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
+    }
+
+    // 加载统计信息
+    async function loadStatistics() {
+        try {
+            const response = await fetch('/api/downloaded/statistics');
+            if (!response.ok) throw new Error('获取统计信息失败');
+
+            const stats = await response.json();
+
+            // 更新统计信息
+            document.getElementById('totalArtworks').textContent = stats.totalArtworks || 0;
+            document.getElementById('totalImages').textContent = stats.totalImages || 0;
+            document.getElementById('totalMoved').textContent = stats.totalMoved || 0;
+
+            // 存储总作品数用于分页
+            totalArtworksCount = stats.totalArtworks || 0;
+
+        } catch (error) {
+            console.error('加载统计信息时出错:', error);
+        }
+    }
+
+    // 加载分页历史记录
+    async function loadPagedHistory(page, size) {
+        try {
+            const response = await fetch(`/api/downloaded/history/paged?page=${page}&size=${size}`);
+            if (!response.ok) throw new Error('获取分页历史记录失败');
+
+            const artworks = await response.json();
+            allArtworks = artworks;
+            filteredArtworks = [...allArtworks];
+
+            // 渲染表格
+            renderArtworkTable();
+
+            // 更新图表
+            updateChart(artworks);
+
+        } catch (error) {
+            console.error('加载分页历史记录时出错:', error);
+            document.getElementById('historyTableBody').innerHTML =
+                '<tr><td colspan="6" class="text-center text-danger">加载失败，请刷新页面重试</td></tr>';
+        }
+    }
+
+    // 更新图表
+    function updateChart(artworks) {
+        const ctx = document.getElementById('downloadStatsChart').getContext('2d');
+
+        // 按月份统计下载量
+        const monthlyStats = {};
+        artworks.forEach(artwork => {
+            const date = new Date(artwork.time * 1000);
+            const monthKey = `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}`;
+
+            if (!monthlyStats[monthKey]) {
+                monthlyStats[monthKey] = 0;
+            }
+            monthlyStats[monthKey] += artwork.count;
+        });
+
+        const labels = Object.keys(monthlyStats).sort();
+        const data = labels.map(label => monthlyStats[label]);
+
+        if (downloadStatsChart) {
+            downloadStatsChart.destroy();
+        }
+
+        downloadStatsChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: '每月下载图片数',
+                    data: data,
+                    backgroundColor: 'rgba(111, 66, 193, 0.7)',
+                    borderColor: 'rgba(111, 66, 193, 1)',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        grid: {
+                            color: 'rgba(255, 255, 255, 0.1)'
+                        },
+                        ticks: {
+                            color: '#adb5bd'
+                        }
+                    },
+                    x: {
+                        grid: {
+                            color: 'rgba(255, 255, 255, 0.1)'
+                        },
+                        ticks: {
+                            color: '#adb5bd'
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        labels: {
+                            color: '#adb5bd'
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    // 加载活跃下载 - 修复：只显示真正活跃的下载
+    async function loadActiveDownloads() {
+        try {
+            const response = await fetch('/api/download/status/active');
+            if (!response.ok) throw new Error('获取活跃下载失败');
+
+            const activeIds = await response.json();
+
+            // 获取每个活跃下载的详细信息
+            const downloadPromises = activeIds.map(id =>
+                fetch(`/api/download/status/${id}`).then(res => res.ok ? res.json() : null)
+            );
+
+            const downloads = await Promise.all(downloadPromises);
+
+            // 过滤掉已完成、失败或取消的下载
+            activeDownloads = downloads.filter(download =>
+                download !== null &&
+                !download.completed &&
+                !download.failed &&
+                !download.cancelled
+            );
+
+            document.getElementById('activeCount').textContent = activeDownloads.length;
+            document.getElementById('activeDownloads').textContent = activeDownloads.length;
+
+            // 渲染活跃下载列表
+            renderActiveDownloads();
+        } catch (error) {
+            console.error('加载活跃下载时出错:', error);
+            document.getElementById('activeDownloadsList').innerHTML =
+                '<div class="p-3 text-center text-danger">加载失败</div>';
+        }
+    }
+
+    // 渲染活跃下载列表
+    function renderActiveDownloads() {
+        const container = document.getElementById('activeDownloadsList');
+        const emptyState = document.getElementById('emptyActiveState');
+
+        if (activeDownloads.length === 0) {
+            container.innerHTML = '';
+            emptyState.classList.remove('d-none');
+            return;
+        }
+
+        emptyState.classList.add('d-none');
+
+        let html = '';
+        activeDownloads.forEach(download => {
+            const progress = download.progressPercentage || 0;
+            const statusClass = getStatusClass(download);
+
+            html += `
+                <div class="p-3 border-bottom border-secondary download-item">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <strong>${download.artworkId}</strong>
+                        <span class="status-badge ${statusClass}">${download.message}</span>
+                    </div>
+                    <div class="d-flex justify-content-between small mb-1">
+                        <span>${download.downloadedCount || 0}/${download.totalImages || 0}</span>
+                        <span>${progress.toFixed(1)}%</span>
+                    </div>
+                    <div class="progress">
+                        <div class="progress-bar" role="progressbar" style="width: ${progress}%"></div>
+                    </div>
+                </div>
+                `;
+        });
+
+        container.innerHTML = html;
+    }
+
+    // 获取状态类名
+    function getStatusClass(download) {
+        if (download.completed) return 'status-completed';
+        if (download.failed) return 'status-failed';
+        if (download.cancelled) return 'status-cancelled';
+        return 'status-active';
+    }
+
+    // 过滤作品
+    function filterArtworks() {
+        const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+
+        if (searchTerm.trim() === '') {
+            filteredArtworks = [...allArtworks];
+        } else {
+            filteredArtworks = allArtworks.filter(artwork =>
+                artwork.artworkId.toString().includes(searchTerm) ||
+                (artwork.title && artwork.title.toLowerCase().includes(searchTerm))
+            );
+        }
+
+        currentPage = 1;
+        renderArtworkTable();
+    }
+
+    // 渲染作品表格
+    function renderArtworkTable() {
+        const tbody = document.getElementById('historyTableBody');
+        const emptyState = document.getElementById('emptyHistoryState');
+
+        if (filteredArtworks.length === 0) {
+            tbody.innerHTML = '';
+            emptyState.classList.remove('d-none');
+            document.getElementById('pagination').innerHTML = '';
+            return;
+        }
+
+        emptyState.classList.add('d-none');
+
+        // 渲染表格行
+        let html = '';
+        filteredArtworks.forEach(artwork => {
+            const downloadDate = new Date(artwork.time * 1000);
+            const formattedDate = `${downloadDate.getFullYear()}-${(downloadDate.getMonth()+1).toString().padStart(2, '0')}-${downloadDate.getDate().toString().padStart(2, '0')}`;
+            const formattedTime = `${downloadDate.getHours().toString().padStart(2, '0')}:${downloadDate.getMinutes().toString().padStart(2, '0')}`;
+
+            const status = artwork.moved ? '已移动' : '已下载';
+            const statusClass = artwork.moved ? 'status-moved' : 'status-completed';
+
+            html += `
+                <tr>
+                    <td><strong>${artwork.artworkId}</strong></td>
+                    <td class="artwork-title" title="${artwork.title || '未知标题'}">${artwork.title || '未知标题'}</td>
+                    <td><span class="badge bg-secondary">${artwork.count}</span></td>
+                    <td>
+                        <div>${formattedDate}</div>
+                        <div class="time-badge">${formattedTime}</div>
+                    </td>
+                    <td><span class="status-badge ${statusClass}">${status}</span></td>
+                    <td>
+                        <div class="action-buttons">
+                            <button class="btn btn-sm btn-outline-primary" onclick="viewArtworkDetails(${artwork.artworkId})" title="查看详情">
+                                <i class="fas fa-eye"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-info" onclick="viewThumbnails(${artwork.artworkId})" title="查看图片">
+                                <i class="fas fa-images"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+                `;
+        });
+
+        tbody.innerHTML = html;
+
+        // 渲染分页
+        renderPagination();
+    }
+
+    // 渲染分页
+    function renderPagination() {
+        const pagination = document.getElementById('pagination');
+        const totalPages = Math.ceil(totalArtworksCount / itemsPerPage);
+
+        if (totalPages <= 1) {
+            pagination.innerHTML = '';
+            return;
+        }
+
+        let html = '';
+
+        // 上一页按钮
+        html += `
+            <li class="page-item ${currentPage === 1 ? 'disabled' : ''}">
+                <a class="page-link" href="#" onclick="changePage(${currentPage - 1})">
+                    <i class="fas fa-chevron-left"></i>
+                </a>
+            </li>
+            `;
+
+        // 页码按钮
+        const maxVisiblePages = 5;
+        let startPage = Math.max(1, currentPage - Math.floor(maxVisiblePages / 2));
+        let endPage = Math.min(totalPages, startPage + maxVisiblePages - 1);
+
+        if (endPage - startPage + 1 < maxVisiblePages) {
+            startPage = Math.max(1, endPage - maxVisiblePages + 1);
+        }
+
+        for (let i = startPage; i <= endPage; i++) {
+            html += `
+                <li class="page-item ${i === currentPage ? 'active' : ''}">
+                    <a class="page-link" href="#" onclick="changePage(${i})">${i}</a>
+                </li>
+                `;
+        }
+
+        // 下一页按钮
+        html += `
+            <li class="page-item ${currentPage === totalPages ? 'disabled' : ''}">
+                <a class="page-link" href="#" onclick="changePage(${currentPage + 1})">
+                    <i class="fas fa-chevron-right"></i>
+                </a>
+            </li>
+            `;
+
+        pagination.innerHTML = html;
+    }
+
+    // 切换页面
+    function changePage(page) {
+        if (page < 1 || page > Math.ceil(totalArtworksCount / itemsPerPage)) return;
+
+        currentPage = page;
+        loadPagedHistory(page - 1, itemsPerPage);
+    }
+
+    // 查看作品详情
+    async function viewArtworkDetails(artworkId) {
+        try {
+            const response = await fetch(`/api/downloaded/${artworkId}`);
+            if (!response.ok) throw new Error('获取作品详情失败');
+
+            const artwork = await response.json();
+
+            const downloadDate = new Date(artwork.time * 1000).toLocaleString();
+            const moveDate = artwork.moveTime ? new Date(artwork.moveTime * 1000).toLocaleString() : '未移动';
+
+            const modalBody = document.getElementById('artworkModalBody');
+            modalBody.innerHTML = `
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6><i class="fas fa-info-circle me-2"></i>作品信息</h6>
+                        <ul class="list-unstyled">
+                            <li class="mb-2"><strong>作品ID:</strong> ${artwork.artworkId}</li>
+                            <li class="mb-2"><strong>标题:</strong> ${artwork.title || '未知标题'}</li>
+                            <li class="mb-2"><strong>图片数量:</strong> <span class="badge bg-secondary">${artwork.count}</span></li>
+                            <li class="mb-2"><strong>下载时间:</strong> ${downloadDate}</li>
+                            <li class="mb-2"><strong>状态:</strong> <span class="status-badge ${artwork.moved ? 'status-moved' : 'status-completed'}">${artwork.moved ? '已移动' : '已下载'}</span></li>
+                        </ul>
+                    </div>
+                    <div class="col-md-6">
+                        <h6><i class="fas fa-folder me-2"></i>存储信息</h6>
+                        <ul class="list-unstyled">
+                            <li class="mb-2"><strong>原始文件夹:</strong> <code class="text-truncate d-block">${artwork.folder}</code></li>
+                            ${artwork.moved ? `
+                            <li class="mb-2"><strong>移动后文件夹:</strong> <code class="text-truncate d-block">${artwork.moveFolder}</code></li>
+                            <li class="mb-2"><strong>移动时间:</strong> ${moveDate}</li>
+                            ` : ''}
+                        </ul>
+                    </div>
+                </div>
+                <div class="mt-3 text-center">
+                    <button class="btn btn-primary" onclick="viewThumbnails(${artwork.artworkId})">
+                        <i class="fas fa-images me-1"></i>查看图片
+                    </button>
+                </div>
+                `;
+
+            artworkModal.show();
+        } catch (error) {
+            console.error('查看作品详情时出错:', error);
+            alert('加载作品详情失败');
+        }
+    }
+
+    // 查看缩略图
+    async function viewThumbnails(artworkId) {
+        try {
+            // 获取作品信息以确定图片数量
+            const artworkResponse = await fetch(`/api/downloaded/${artworkId}`);
+            if (!artworkResponse.ok) throw new Error('获取作品信息失败');
+
+            const artwork = await artworkResponse.json();
+
+            // 创建缩略图网格
+            const modalBody = document.getElementById('artworkModalBody');
+            let thumbnailsHtml = `
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h6 class="mb-0">图片预览 (共 ${artwork.count} 张)</h6>
+                    <button class="btn btn-sm btn-outline-secondary" onclick="viewArtworkDetails(${artwork.artworkId})">
+                        <i class="fas fa-arrow-left me-1"></i>返回详情
+                    </button>
+                </div>
+                <div class="row">
+                `;
+
+            // 加载所有缩略图
+            for (let i = 0; i < artwork.count; i++) {
+                thumbnailsHtml += `
+                    <div class="col-3 mb-3">
+                        <div class="thumbnail-container" style="cursor: pointer;" onclick="viewFullImage(${artwork.artworkId}, ${i})">
+                            <div class="loading-spinner"></div>
+                        </div>
+                        <div class="text-center small mt-1">第 ${i+1} 张</div>
+                    </div>
+                    `;
+            }
+
+            thumbnailsHtml += '</div>';
+            modalBody.innerHTML = thumbnailsHtml;
+
+            // 异步加载缩略图
+            for (let i = 0; i < artwork.count; i++) {
+                loadThumbnail(artwork.artworkId, i);
+            }
+
+            artworkModal.show();
+        } catch (error) {
+            console.error('查看缩略图时出错:', error);
+            alert('加载缩略图失败');
+        }
+    }
+
+    // 加载缩略图
+    async function loadThumbnail(artworkId, page) {
+        try {
+            const response = await fetch(`/api/downloaded/thumbnail/${artworkId}/${page}`);
+            if (!response.ok) throw new Error('获取缩略图失败');
+
+            const imageData = await response.json();
+            if (imageData.success && imageData.image) {
+                const thumbnailContainer = document.querySelector(`.thumbnail-container[onclick="viewFullImage(${artworkId}, ${page})"]`);
+                if (thumbnailContainer) {
+                    thumbnailContainer.innerHTML = `<img src="data:image/${imageData.extension};base64,${imageData.image}" class="thumbnail" alt="缩略图">`;
+                }
+            }
+        } catch (error) {
+            console.error(`加载缩略图 ${artworkId}-${page} 时出错:`, error);
+            const thumbnailContainer = document.querySelector(`.thumbnail-container[onclick="viewFullImage(${artworkId}, ${page})"]`);
+            if (thumbnailContainer) {
+                thumbnailContainer.innerHTML = '<div class="text-center text-muted"><i class="fas fa-exclamation-circle"></i></div>';
+            }
+        }
+    }
+
+    // 查看完整图片
+    async function viewFullImage(artworkId, page) {
+        try {
+            const response = await fetch(`/api/downloaded/image/${artworkId}/${page}`);
+            if (!response.ok) throw new Error('获取完整图片失败');
+
+            const imageData = await response.json();
+            if (imageData.success && imageData.image) {
+                document.getElementById('modalImage').src = `data:image/${imageData.extension};base64,${imageData.image}`;
+                imageModal.show();
+            } else {
+                alert('加载图片失败');
+            }
+        } catch (error) {
+            console.error('查看完整图片时出错:', error);
+            alert('加载图片失败');
+        }
+    }
+</script>
+</body>
+</html>
