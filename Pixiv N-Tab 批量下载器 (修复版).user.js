@@ -320,7 +320,8 @@
                 const m = ln.match(regex);
                 if (m) {
                     const id = m[1];
-                    const title = ln.replace(/https?:\/\/www\.pixiv\.net\/artworks\/\d+\s*\|\s*/, '').trim();
+                    let title = ln.split('|')[1] || '';
+                    title = title.trim();
                     items.push({ id, title: title || `作品 ${id}`, url: `https://www.pixiv.net/artworks/${id}` });
                 }
             }
