@@ -1,6 +1,5 @@
 package top.sywyar.pixivdownload.download;
 
-import com.sywyar.superjsonobject.SuperJsonObject;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.http.HttpHost;
 import org.apache.http.client.config.RequestConfig;
@@ -9,12 +8,13 @@ import org.apache.http.client.methods.HttpGet;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClients;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import top.sywyar.pixivdownload.download.config.DownloadConfig;
+import top.sywyar.pixivdownload.download.db.ArtworkRecord;
+import top.sywyar.pixivdownload.download.db.PixivDatabase;
 import top.sywyar.pixivdownload.download.request.DownloadRequest;
 import top.sywyar.pixivdownload.download.response.ImageResponse;
 import top.sywyar.pixivdownload.download.response.StatisticsResponse;
@@ -27,7 +27,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
-import java.util.concurrent.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 @Slf4j
@@ -41,28 +41,13 @@ public class DownloadService {
     private ApplicationEventPublisher eventPublisher;
 
     @Autowired
-    @Qualifier("statisticsFileTaskExecutor")
-    private Executor statisticsFileTaskExecutor;
-
-    @Autowired
-    @Qualifier("downloadHistoryFileTaskExecutor")
-    private Executor downloadHistoryFileTaskExecutor;
-
-    @Autowired
-    @Qualifier("timeArtworkFileTaskExecutor")
-    private Executor timeArtworkFileTaskExecutor;
+    private PixivDatabase pixivDatabase;
 
     // 存储下载状态
     private final ConcurrentHashMap<Long, DownloadStatus> downloadStatusMap = new ConcurrentHashMap<>();
 
-    private SuperJsonObject download_history;
-
-    private SuperJsonObject statistics;
-
-    private SuperJsonObject timeArtwork;
-
     @Async
-    public void downloadImages(Long artworkId, String title, java.util.List<String> imageUrls, String referer, DownloadRequest.Other other, String cookie) {
+    public void downloadImages(Long artworkId, String title, List<String> imageUrls, String referer, DownloadRequest.Other other, String cookie) {
         // 初始化下载状态
         DownloadStatus status = new DownloadStatus(artworkId, title, imageUrls.size());
         downloadStatusMap.put(artworkId, status);
@@ -71,9 +56,6 @@ public class DownloadService {
         eventPublisher.publishEvent(new DownloadProgressEvent(this, artworkId, status));
 
         try {
-            // 获取下一个文件夹索引
-            /*int folderIndex = getNextFolderIndex();
-            String folderName = String.valueOf(folderIndex == Integer.MAX_VALUE ? "temp" : folderIndex);*/
             String folderName = String.valueOf(artworkId);
 
             // 创建文件夹结构
@@ -263,129 +245,47 @@ public class DownloadService {
         }
     }
 
-
     private String getFileExtension(String url) {
         if (!StringUtils.hasText(url)) return "jpg";
         String[] parts = url.split("\\.");
         return parts.length > 1 ? parts[parts.length - 1] : "jpg";
     }
 
-    private synchronized int getNextFolderIndex() {
-        Path indexFile = Paths.get(downloadConfig.getRootFolder());
-        for (int i = 0; i < Integer.MAX_VALUE; i++) {
-            if (!Files.exists(indexFile.resolve(String.valueOf(i)))) {
-                return i;
-            }
-        }
-        log.error("获取下一个文件夹失败，使用temp文件夹");
-        return Integer.MAX_VALUE;
-    }
-
-    private void initDownloadHistory() throws IOException {
-        if (download_history == null) {
-            Path recordFile = Paths.get(downloadConfig.getRootFolder(), "download_history.json");
-            if (!Files.exists(recordFile)) {
-                Files.createDirectories(recordFile.getParent());
-                Files.createFile(recordFile);
-                SuperJsonObject.Writer((new SuperJsonObject()).toString(), recordFile.toString());
-            }
-            download_history = new SuperJsonObject(recordFile.toFile());
-        }
-    }
-
-    private void noAsyncInitDownloadHistory() throws Exception {
-        CompletableFuture<Exception> future = CompletableFuture.supplyAsync(() -> {
-            try {
-                initDownloadHistory();
-                return null;
-            } catch (IOException e) {
-                return e;
-            }
-        }, downloadHistoryFileTaskExecutor);
-
-        Exception exception = future.get(10, TimeUnit.SECONDS);
-
-        if (future.get() != null) {
-            throw exception;
-        }
-    }
-
-    @Async("downloadHistoryFileTaskExecutor")
-    protected void recordDownload(Long artworkId, String title, String folderPath, HashSet<String> fileExtensions, int count) {
+    private void recordDownload(Long artworkId, String title, String folderPath, HashSet<String> fileExtensions, int count) {
         try {
-            initDownloadHistory();
-
-            SuperJsonObject downloaded = download_history.getOrDefault("downloaded", new SuperJsonObject());
-
-            Long time = recordTimeArtwork(artworkId);
-
-            SuperJsonObject artwork = new SuperJsonObject();
-            artwork.addProperty("title", title);
-            artwork.addProperty("folder", Path.of(folderPath).toAbsolutePath().toString());
-            artwork.addProperty("count", count);
-            artwork.addProperty("extensions", String.join(",", fileExtensions));
-            artwork.addProperty("time", time);
-
-
-            downloaded.add(String.valueOf(artworkId), artwork);
-            download_history.add("downloaded", downloaded);
-
-            download_history.save();
+            long time = pixivDatabase.getUniqueTime();
+            pixivDatabase.insertArtwork(
+                    artworkId, title,
+                    Path.of(folderPath).toAbsolutePath().toString(),
+                    count, String.join(",", fileExtensions), time
+            );
         } catch (Exception e) {
             log.error("记录下载历史失败: {}", e.getMessage(), e);
         }
-
     }
 
-    @Async("downloadHistoryFileTaskExecutor")
+    @Async
     public void moveArtWork(Long artworkId, String movePath, Long moveTime) {
         try {
-            initDownloadHistory();
-            SuperJsonObject downloaded = download_history.getOrDefault("downloaded", new SuperJsonObject());
-            if (!downloaded.has(String.valueOf(artworkId))) {
+            if (!pixivDatabase.hasArtwork(artworkId)) {
                 return;
             }
-
-            SuperJsonObject artwork = downloaded.getAsSuperJsonObject(String.valueOf(artworkId));
-            artwork.addProperty("moved", true);
-            artwork.addProperty("moveFolder", movePath);
-            artwork.addProperty("moveTime", moveTime);
-
-            downloaded.add(String.valueOf(artworkId), artwork);
-            download_history.add("downloaded", downloaded);
-
-            download_history.save();
-
-            recordMovedStatistics();
+            pixivDatabase.updateArtworkMove(artworkId, movePath, moveTime);
+            pixivDatabase.incrementMoved();
         } catch (Exception e) {
             log.error("移动记录失败: {}", e.getMessage(), e);
         }
     }
 
-
     public List<String> getDownloadedRecord() {
-        try {
-            noAsyncInitDownloadHistory();
-
-            List<String> downloaded = new LinkedList<>();
-
-            SuperJsonObject downloadedRecord = download_history.deepCopy().getOrDefault("downloaded", new SuperJsonObject());
-
-            downloadedRecord.asMap().forEach((k, v) -> downloaded.add(k));
-
-            return downloaded;
-        } catch (Exception e) {
-            log.error("获取历史下载错误：: {}", e.getMessage(), e);
-            return new LinkedList<>();
-        }
+        List<String> ids = new LinkedList<>();
+        pixivDatabase.getAllArtworkIds().forEach(id -> ids.add(String.valueOf(id)));
+        return ids;
     }
 
-    public SuperJsonObject getDownloadedRecord(Long artworkId) {
+    public ArtworkRecord getDownloadedRecord(Long artworkId) {
         try {
-            noAsyncInitDownloadHistory();
-
-            SuperJsonObject downloaded = download_history.deepCopy().getOrDefault("downloaded", new SuperJsonObject());
-            return downloaded.getOrDefault(String.valueOf(artworkId), null);
+            return pixivDatabase.getArtwork(artworkId);
         } catch (Exception e) {
             log.error("作品：{}，下载历史获取失败", artworkId, e);
             return null;
@@ -394,35 +294,24 @@ public class DownloadService {
 
     public ImageResponse getImageResponse(Long artworkId, int page, boolean thumbnail) {
         try {
-            noAsyncInitDownloadHistory();
-
-            SuperJsonObject downloaded = download_history.deepCopy().getOrDefault("downloaded", new SuperJsonObject());
-            if (!downloaded.has(String.valueOf(artworkId))) {
+            ArtworkRecord artwork = pixivDatabase.getArtwork(artworkId);
+            if (artwork == null) {
                 throw new RuntimeException("找不到作品");
             }
 
-            SuperJsonObject artwork = downloaded.getAsSuperJsonObject(String.valueOf(artworkId));
-
-            int count = artwork.getAsInt("count");
+            int count = artwork.count();
             if (count <= page || page < 0) {
                 return new ImageResponse(false, null, null, 0, 0, 0, artworkId + "作品没有第" + page + "页");
             }
 
-            String dirPath;
-            if (artwork.has("moved") && artwork.getAsBoolean("moved")) {
-                dirPath = artwork.getAsString("moveFolder");
-            } else {
-                dirPath = artwork.getAsString("folder");
-            }
+            String dirPath = artwork.moved() ? artwork.moveFolder() : artwork.folder();
+            String extension = artwork.extensions();
 
             File imageFile;
-            String extension = artwork.getAsString("extensions");
-
             if (count == 1) {
                 imageFile = Paths.get(dirPath, artworkId + "_p0." + extension).toFile();
             } else {
                 String fileName = artworkId + "_p" + page;
-
                 String[] extensions = extension.split(",");
                 if (extensions.length > 1) {
                     imageFile = findFileByName(dirPath, fileName);
@@ -434,6 +323,7 @@ public class DownloadService {
                     imageFile = Paths.get(dirPath, fileName + "." + extension).toFile();
                 }
             }
+
             BufferedImage image;
             if (thumbnail) {
                 image = ThumbnailManager.getThumbnail(imageFile, -1, -1);
@@ -443,7 +333,6 @@ public class DownloadService {
 
             ByteArrayOutputStream bass = new ByteArrayOutputStream();
             ImageIO.write(image, extension, bass);
-
             String base64Image = Base64.getEncoder().encodeToString(bass.toByteArray());
 
             return new ImageResponse(true, base64Image, extension, base64Image.length(), image.getWidth(), image.getHeight(), "成功获取图片缩略图");
@@ -455,23 +344,14 @@ public class DownloadService {
 
     public static File findFileByName(String directoryPath, String fileName) {
         File directory = new File(directoryPath);
-
         if (!directory.exists() || !directory.isDirectory()) {
             return null;
         }
-
-        // 列出目录中的所有文件
         File[] files = directory.listFiles();
-
         if (files != null) {
             for (File file : files) {
-                if (file.isFile()) {
-                    // 获取不带扩展名的文件名
-                    String baseName = getBaseName(file.getName());
-                    // 如果匹配，返回该文件
-                    if (baseName.equals(fileName)) {
-                        return file;
-                    }
+                if (file.isFile() && getBaseName(file.getName()).equals(fileName)) {
+                    return file;
                 }
             }
         }
@@ -480,152 +360,28 @@ public class DownloadService {
 
     private static String getBaseName(String fileName) {
         int dotIndex = fileName.lastIndexOf('.');
-        if (dotIndex > 0) {
-            return fileName.substring(0, dotIndex);
+        return dotIndex > 0 ? fileName.substring(0, dotIndex) : fileName;
+    }
+
+    public void recordStatistics(int count) {
+        try {
+            pixivDatabase.incrementStats(count);
+        } catch (Exception e) {
+            log.error("记录统计信息失败: {}", e.getMessage(), e);
         }
-        return fileName;
-    }
-
-    private void initStatistics() throws IOException {
-        if (statistics == null) {
-            Path statisticsFile = Paths.get(downloadConfig.getRootFolder(), "statistics.json");
-            if (!Files.exists(statisticsFile)) {
-                Files.createDirectories(statisticsFile.getParent());
-                Files.createFile(statisticsFile);
-                SuperJsonObject.Writer((new SuperJsonObject()).toString(), statisticsFile.toString());
-            }
-            statistics = new SuperJsonObject(statisticsFile.toFile());
-        }
-    }
-
-    private void noAsyncInitStatistics() throws Exception {
-        CompletableFuture<Exception> future = CompletableFuture.supplyAsync(() -> {
-            try {
-                initStatistics();
-                return null;
-            } catch (IOException e) {
-                return e;
-            }
-        }, statisticsFileTaskExecutor);
-
-        Exception exception = future.get(10, TimeUnit.SECONDS);
-
-        if (future.get() != null) {
-            throw exception;
-        }
-    }
-
-    @Async("statisticsFileTaskExecutor")
-    public void recordStatistics(int count) throws IOException {
-        initStatistics();
-
-        int totalArtworks = statistics.has("totalArtworks") ? statistics.getAsInt("totalArtworks") : 0;
-        int totalImages = statistics.has("totalImages") ? statistics.getAsInt("totalImages") : 0;
-
-        totalArtworks++;
-        totalImages += count;
-
-        statistics.addProperty("totalArtworks", totalArtworks);
-        statistics.addProperty("totalImages", totalImages);
-
-        statistics.save();
-    }
-
-    @Async("statisticsFileTaskExecutor")
-    public void recordMovedStatistics() throws IOException {
-        initStatistics();
-
-        int totalMoved = statistics.has("totalMoved") ? statistics.getAsInt("totalMoved") : 0;
-        totalMoved++;
-        statistics.addProperty("totalMoved", totalMoved);
-        statistics.save();
     }
 
     public StatisticsResponse getStatistics() {
         try {
-            noAsyncInitStatistics();
-
-            int totalArtworks = statistics.has("totalArtworks") ? statistics.getAsInt("totalArtworks") : 0;
-            int totalImages = statistics.has("totalImages") ? statistics.getAsInt("totalImages") : 0;
-            int totalMoved = statistics.has("totalMoved") ? statistics.getAsInt("totalMoved") : 0;
-
-            return new StatisticsResponse(true, totalArtworks, totalImages, totalMoved, "获取成功");
+            int[] stats = pixivDatabase.getStats();
+            return new StatisticsResponse(true, stats[0], stats[1], stats[2], "获取成功");
         } catch (Exception e) {
             log.error("获取统计信息失败", e);
             return new StatisticsResponse(false, -1, -1, -1, "获取统计信息失败，原因：" + e.getMessage());
         }
     }
 
-    private void initTimeArtwork() throws IOException {
-        if (timeArtwork == null) {
-            Path timeArtworkFile = Paths.get(downloadConfig.getRootFolder(), "timeArtwork.json");
-            if (!Files.exists(timeArtworkFile)) {
-                Files.createDirectories(timeArtworkFile.getParent());
-                Files.createFile(timeArtworkFile);
-                SuperJsonObject.Writer((new SuperJsonObject()).toString(), timeArtworkFile.toString());
-            }
-            timeArtwork = new SuperJsonObject(timeArtworkFile.toFile());
-        }
-    }
-
-    private void noAsyncInitTimeArtwork() throws Exception {
-        CompletableFuture<Exception> future = CompletableFuture.supplyAsync(() -> {
-            try {
-                initTimeArtwork();
-                return null;
-            } catch (IOException e) {
-                return e;
-            }
-        }, timeArtworkFileTaskExecutor);
-
-        Exception exception = future.get(10, TimeUnit.SECONDS);
-
-        if (future.get() != null) {
-            throw exception;
-        }
-    }
-
-    private long recordTimeArtwork(Long artworkId) throws InterruptedException, ExecutionException {
-
-        CompletableFuture<Long> future = CompletableFuture.supplyAsync(() -> {
-            try {
-                initTimeArtwork();
-                return recordTimeArtwork(artworkId, System.currentTimeMillis() / 1000);
-            } catch (IOException e) {
-                return System.currentTimeMillis() / 1000;
-            }
-        }, timeArtworkFileTaskExecutor);
-
-        return future.get();
-    }
-
-    private long recordTimeArtwork(Long artworkId, Long time) throws IOException {
-        if (timeArtwork.has(String.valueOf(time))) {
-            return recordTimeArtwork(artworkId, time + 1);
-        }
-
-        timeArtwork.addProperty(String.valueOf(time), artworkId);
-
-        timeArtwork.save();
-
-        return time;
-    }
-
-    public List<Long> getSortTimeArtwork() throws Exception {
-        noAsyncInitTimeArtwork();
-
-        SuperJsonObject timeArtworkCopy = timeArtwork.deepCopy();
-
-        List<String> times = new LinkedList<>();
-
-        timeArtworkCopy.asMap().forEach((s, jsonElement) -> times.add(s));
-
-        times.sort(Comparator.comparing((String s) -> s.charAt(0)).reversed());
-
-        List<Long> timeArtworkIds = new LinkedList<>();
-        for (String time : times) {
-            timeArtworkIds.add(timeArtworkCopy.getAsLong(time));
-        }
-        return timeArtworkIds;
+    public List<Long> getSortTimeArtwork() {
+        return pixivDatabase.getArtworkIdsSortedByTimeDesc();
     }
 }

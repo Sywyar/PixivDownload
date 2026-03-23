@@ -1,14 +1,14 @@
 package top.sywyar.pixivdownload.download.controller;
 
-import com.sywyar.superjsonobject.SuperJsonObject;
 import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import top.sywyar.pixivdownload.download.request.DownloadRequest;
 import top.sywyar.pixivdownload.download.DownloadService;
 import top.sywyar.pixivdownload.download.DownloadStatus;
+import top.sywyar.pixivdownload.download.db.ArtworkRecord;
+import top.sywyar.pixivdownload.download.request.DownloadRequest;
 import top.sywyar.pixivdownload.download.response.*;
 
 import java.util.*;
@@ -32,7 +32,7 @@ public class DownloadController {
                     request.getImageUrls(),
                     request.getReferer(),
                     request.getOther(),
-                    request.getCookie()  // 传递Cookie
+                    request.getCookie()
             );
 
             return ResponseEntity.ok(new DownloadResponse(
@@ -104,21 +104,19 @@ public class DownloadController {
     public ResponseEntity<List<DownloadedResponse>> getBatchArtworks(@RequestBody List<Long> artworkIds) {
         List<DownloadedResponse> downloadedResponses = new LinkedList<>();
         for (Long artworkId : artworkIds) {
-            SuperJsonObject artwork = downloadService.getDownloadedRecord(artworkId);
+            ArtworkRecord artwork = downloadService.getDownloadedRecord(artworkId);
             if (artwork == null) {
                 return ResponseEntity.ok(null);
             }
-            boolean moved = artwork.getAsBoolean("moved");
-
             downloadedResponses.add(new DownloadedResponse.DownloadedResponseBuilder()
-                    .setArtworkId(artworkId)
-                    .setTitle(artwork.getAsString("title"))
-                    .setFolder(artwork.getAsString("folder"))
-                    .setCount(artwork.getAsInt("count"))
-                    .setTime(artwork.getAsLong("time"))
-                    .setMoved(moved)
-                    .setMoveFolder(moved ? artwork.getAsString("moveFolder") : null)
-                    .setMoveTime(moved ? artwork.getAsLong("moveTime") : null)
+                    .setArtworkId(artwork.artworkId())
+                    .setTitle(artwork.title())
+                    .setFolder(artwork.folder())
+                    .setCount(artwork.count())
+                    .setTime(artwork.time())
+                    .setMoved(artwork.moved())
+                    .setMoveFolder(artwork.moveFolder())
+                    .setMoveTime(artwork.moveTime())
                     .build());
         }
         return ResponseEntity.ok(downloadedResponses);
@@ -173,7 +171,6 @@ public class DownloadController {
                 }
             }
 
-            // 返回包含分页元数据的Map
             Map<String, Object> response = new HashMap<>();
             response.put("content", downloadedResponses);
             response.put("totalElements", totalElements);
@@ -193,7 +190,6 @@ public class DownloadController {
             response.put("totalPages", 0);
 
             return ResponseEntity.badRequest().body(response);
-
         }
     }
 
@@ -222,21 +218,19 @@ public class DownloadController {
     }
 
     public DownloadedResponse getArtWorkDownloadedResponse(Long artworkId) {
-        SuperJsonObject artwork = downloadService.getDownloadedRecord(artworkId);
+        ArtworkRecord artwork = downloadService.getDownloadedRecord(artworkId);
         if (artwork == null) {
             return null;
         }
-        boolean moved = artwork.has("moved") && artwork.getAsBoolean("moved");
-
         return new DownloadedResponse.DownloadedResponseBuilder()
-                .setArtworkId(artworkId)
-                .setTitle(artwork.getAsString("title"))
-                .setFolder(artwork.getAsString("folder"))
-                .setCount(artwork.getAsInt("count"))
-                .setTime(artwork.getAsLong("time"))
-                .setMoved(moved)
-                .setMoveFolder(moved ? artwork.getAsString("moveFolder") : null)
-                .setMoveTime(moved ? artwork.getAsLong("moveTime") : null)
+                .setArtworkId(artwork.artworkId())
+                .setTitle(artwork.title())
+                .setFolder(artwork.folder())
+                .setCount(artwork.count())
+                .setTime(artwork.time())
+                .setMoved(artwork.moved())
+                .setMoveFolder(artwork.moveFolder())
+                .setMoveTime(artwork.moveTime())
                 .build();
     }
 }

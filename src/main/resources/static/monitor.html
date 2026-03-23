@@ -97,6 +97,35 @@
             border-bottom: 1px solid rgba(255, 255, 255, 0.1);
         }
 
+        .table th.sortable-th {
+            cursor: pointer;
+            user-select: none;
+            white-space: nowrap;
+        }
+
+        .table th.sortable-th:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: #ffffff;
+        }
+
+        .table th.sortable-th.sort-active {
+            color: #ffffff;
+        }
+
+        .sort-icon {
+            display: inline-block;
+            font-style: normal;
+            font-size: 0.7rem;
+            margin-left: 4px;
+            opacity: 0.5;
+            vertical-align: middle;
+        }
+
+        .sort-active .sort-icon {
+            opacity: 1;
+            color: var(--primary-color);
+        }
+
         .table td {
             border-color: rgba(255, 255, 255, 0.1);
             vertical-align: middle;
@@ -684,11 +713,11 @@
                         <table class="table table-hover table-striped mb-0">
                             <thead>
                             <tr>
-                                <th width="15%">作品ID</th>
-                                <th width="25%">标题</th>
-                                <th width="10%">图片数量</th>
-                                <th width="20%">下载时间</th>
-                                <th width="15%">状态</th>
+                                <th width="15%" id="th-artworkId" class="sortable-th" onclick="sortBy('artworkId')">作品ID <i id="sort-artworkId" class="sort-icon">↕</i></th>
+                                <th width="25%" id="th-title"     class="sortable-th" onclick="sortBy('title')">标题 <i id="sort-title" class="sort-icon">↕</i></th>
+                                <th width="10%" id="th-count"     class="sortable-th" onclick="sortBy('count')">图片数量 <i id="sort-count" class="sort-icon">↕</i></th>
+                                <th width="20%" id="th-time"      class="sortable-th sort-active" onclick="sortBy('time')">下载时间 <i id="sort-time" class="sort-icon">↓</i></th>
+                                <th width="15%" id="th-moved"     class="sortable-th" onclick="sortBy('moved')">状态 <i id="sort-moved" class="sort-icon">↕</i></th>
                                 <th width="15%">操作</th>
                             </tr>
                             </thead>
@@ -778,260 +807,314 @@
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
-    // 全局变量
-    let allArtworks = [];
-    let filteredArtworks = [];
-    let currentPage = 1;
-    const itemsPerPage = 10;
+    // ===================== 状态 =====================
+    let currentPage = 1;          // 1-indexed
+    let totalPages = 1;
+    let totalElements = 0;
+    const PAGE_SIZE = 10;
+
+    let searchQuery = '';
+    let allArtworksCache = null;  // 全量数据缓存，用于图表和搜索
+
+    let sortKey = 'time';
+    let sortDir = 'desc';
+
     let downloadStatsChart = null;
     let activeDownloads = [];
-    let totalArtworksCount = 0;
-
-    // 模态框实例
-    let artworkModal = null;
-    let imageModal = null;
+    let prevActiveCount = 0;
 
     let updateInterval;
     let activeUpdateInterval;
+    let artworkModal = null;
+    let imageModal = null;
 
-    // DOM 加载完成后初始化
-    document.addEventListener('DOMContentLoaded', function () {
-        // 初始化模态框
+    // ===================== 工具 =====================
+    function escapeHtml(str) {
+        return String(str ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
+
+    function formatDateTime(unixSeconds) {
+        const d = new Date(unixSeconds * 1000);
+        return {
+            date: d.toLocaleDateString('zh-CN'),
+            time: d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }),
+            full: d.toLocaleString('zh-CN')
+        };
+    }
+
+    // ===================== 初始化 =====================
+    document.addEventListener('DOMContentLoaded', () => {
         artworkModal = new bootstrap.Modal(document.getElementById('artworkModal'));
-        imageModal = new bootstrap.Modal(document.getElementById('imageModal'));
+        imageModal   = new bootstrap.Modal(document.getElementById('imageModal'));
 
-        // 监听模态框关闭事件
-        document.getElementById('artworkModal').addEventListener('hidden.bs.modal', function () {
-            document.body.classList.remove('modal-open');
-            const backdrops = document.getElementsByClassName('modal-backdrop');
-            for (let i = 0; i < backdrops.length; i++) {
-                backdrops[i].remove();
-            }
+        ['artworkModal', 'imageModal'].forEach(id => {
+            document.getElementById(id).addEventListener('hidden.bs.modal', () => {
+                document.querySelectorAll('.modal-backdrop').forEach(el => el.remove());
+                document.body.classList.remove('modal-open');
+            });
         });
 
-        document.getElementById('imageModal').addEventListener('hidden.bs.modal', function () {
-            document.body.classList.remove('modal-open');
-            const backdrops = document.getElementsByClassName('modal-backdrop');
-            for (let i = 0; i < backdrops.length; i++) {
-                backdrops[i].remove();
-            }
-        });
-
-        initializeDashboard();
-
-        // 设置不同组件的更新频率
-        updateInterval = setInterval(updateDashboard, 5000); // 常规更新5秒一次
-        activeUpdateInterval = setInterval(updateActiveDownloads, 2000); // 活跃下载2秒一次
+        initDashboard();
+        updateInterval       = setInterval(updateDashboard, 5000);
+        activeUpdateInterval = setInterval(updateActiveDownloads, 2000);
     });
 
-    // 添加页面可见性检测，当页面不可见时降低更新频率
-    document.addEventListener('visibilitychange', function () {
-        if (document.hidden) {
-            // 页面不可见，降低更新频率
-            clearInterval(activeUpdateInterval);
-            activeUpdateInterval = setInterval(updateActiveDownloads, 10000); // 10秒一次
-        } else {
-            // 页面可见，恢复正常更新频率
-            clearInterval(activeUpdateInterval);
-            activeUpdateInterval = setInterval(updateActiveDownloads, 2000); // 2秒一次
-            // 立即更新一次
-            updateActiveDownloads();
-        }
+    document.addEventListener('visibilitychange', () => {
+        clearInterval(activeUpdateInterval);
+        activeUpdateInterval = setInterval(updateActiveDownloads, document.hidden ? 10000 : 2000);
+        if (!document.hidden) updateActiveDownloads();
     });
 
-    // 清理定时器（在页面卸载时）
-    window.addEventListener('beforeunload', function () {
-        if (updateInterval) clearInterval(updateInterval);
-        if (activeUpdateInterval) clearInterval(activeUpdateInterval);
+    window.addEventListener('beforeunload', () => {
+        clearInterval(updateInterval);
+        clearInterval(activeUpdateInterval);
     });
 
-    // 更新活跃下载（高频更新）
-    async function updateActiveDownloads() {
-        try {
-            const response = await fetch('/api/download/status/active');
-            if (!response.ok) throw new Error('获取活跃下载失败');
-
-            const activeIds = await response.json();
-
-            // 获取每个活跃下载的详细信息
-            const downloadPromises = activeIds.map(id =>
-                fetch(`/api/download/status/${id}`).then(res => res.ok ? res.json() : null)
-            );
-
-            const downloads = await Promise.all(downloadPromises);
-
-            // 过滤掉已完成、失败或取消的下载
-            const newActiveDownloads = downloads.filter(download =>
-                download !== null &&
-                !download.completed &&
-                !download.failed &&
-                !download.cancelled
-            );
-
-            // 检查是否有变化
-            const hasChanges = JSON.stringify(activeDownloads) !== JSON.stringify(newActiveDownloads);
-
-            if (hasChanges) {
-                activeDownloads = newActiveDownloads;
-
-                // 更新活跃下载数量显示
-                document.getElementById('activeCount').textContent = activeDownloads.length;
-                document.getElementById('activeDownloads').textContent = activeDownloads.length;
-
-                // 渲染活跃下载列表
-                renderActiveDownloads();
-
-                // 如果有活跃下载变化，触发其他UI更新
-                if (activeDownloads.length > 0) {
-                    triggerOtherUpdates();
-                }
-            }
-        } catch (error) {
-            console.error('更新活跃下载时出错:', error);
-        }
-    }
-
-    function triggerOtherUpdates() {
-        // 更新统计信息（如果活跃下载数量发生变化）
-        updateStatisticsIfNeeded();
-
-        // 更新最后更新时间
-        updateLastUpdatedTime();
-
-        // 如果有下载完成，刷新历史记录
-        checkCompletedDownloads();
-    }
-
-    async function updateStatisticsIfNeeded() {
-        if (activeDownloads.length === 0) {
-            loadStatistics();
-        }
-    }
-
-    // 检查是否有下载完成并刷新历史记录
-    async function checkCompletedDownloads() {
-        const previousCount = localStorage.getItem('previousActiveCount') || 0;
-        if (activeDownloads.length < previousCount) {
-            // 有下载完成，刷新历史记录
-            loadPagedHistory(0, itemsPerPage);
-            currentPage = 1;
-        }
-        localStorage.setItem('previousActiveCount', activeDownloads.length);
-    }
-
-    // 初始化仪表板
-    function initializeDashboard() {
-        // 加载统计信息
+    function initDashboard() {
         loadStatistics();
+        loadAllDataForChart();
+        updateActiveDownloads();
 
-        // 加载下载历史（第一页）
-        loadPagedHistory(0, itemsPerPage);
-
-        // 加载活跃下载
-        loadActiveDownloads();
-
-        // 初始化搜索功能
-        document.getElementById('searchInput').addEventListener('input', filterArtworks);
-
-        // 初始化刷新按钮
-        document.getElementById('refreshHistory').addEventListener('click', function () {
-            loadStatistics();
-            loadPagedHistory(0, itemsPerPage);
+        document.getElementById('searchInput').addEventListener('input', onSearch);
+        document.getElementById('refreshHistory').addEventListener('click', () => {
+            searchQuery = '';
+            document.getElementById('searchInput').value = '';
+            sortKey = 'time';
+            sortDir = 'desc';
             currentPage = 1;
+            document.getElementById('pagination').style.display = '';
+            loadStatistics();
+            loadAllDataForChart();
         });
     }
 
-    // 更新仪表板
+    // ===================== 定期更新 =====================
     function updateDashboard() {
         updateLastUpdatedTime();
         loadStatistics();
     }
 
-    // 更新最后更新时间
     function updateLastUpdatedTime() {
-        const now = new Date();
         document.getElementById('lastUpdatedTime').textContent =
-            `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
+            new Date().toLocaleTimeString('zh-CN');
     }
 
-    // 加载统计信息
+    // ===================== 统计 =====================
     async function loadStatistics() {
         try {
-            const response = await fetch('/api/downloaded/statistics');
-            if (!response.ok) throw new Error('获取统计信息失败');
-
-            const stats = await response.json();
-
-            // 更新统计信息
-            document.getElementById('totalArtworks').textContent = stats.totalArtworks || 0;
-            document.getElementById('totalImages').textContent = stats.totalImages || 0;
-            document.getElementById('totalMoved').textContent = stats.totalMoved || 0;
-        } catch (error) {
-            console.error('加载统计信息时出错:', error);
-        }
+            const res = await fetch('/api/downloaded/statistics');
+            if (!res.ok) return;
+            const s = await res.json();
+            document.getElementById('totalArtworks').textContent = s.totalArtworks ?? 0;
+            document.getElementById('totalImages').textContent   = s.totalImages   ?? 0;
+            document.getElementById('totalMoved').textContent    = s.totalMoved    ?? 0;
+        } catch (e) { console.error('统计加载失败', e); }
     }
 
-    // 加载分页历史记录
-    async function loadPagedHistory(page, size) {
+    // ===================== 全量数据（图表 + 表格 + 搜索） =====================
+    async function loadAllDataForChart() {
         try {
-            const response = await fetch(`/api/downloaded/history/paged?page=${page}&size=${size}`);
-            if (!response.ok) throw new Error('获取分页历史记录失败');
-
-            const data = await response.json();
-
-            const artworks = data.content || data; // 兼容不同后端响应格式
-
-            allArtworks = artworks;
-            filteredArtworks = [...allArtworks];
-
-            // 使用分页接口返回的总记录数，而不是统计接口的不重复作品数
-            totalArtworksCount = data.totalElements || artworks.length;
-
-            // 渲染表格
-            renderArtworkTable();
-
-            // 更新图表
-            updateChart(artworks);
-
-        } catch (error) {
-            console.error('加载分页历史记录时出错:', error);
+            const res = await fetch('/api/downloaded/history/paged?page=0&size=9999');
+            if (!res.ok) return;
+            const data = await res.json();
+            allArtworksCache = data.content ?? [];
+            updateChart(allArtworksCache);
+            renderFromCache();
+        } catch (e) {
+            console.error('数据加载失败', e);
             document.getElementById('historyTableBody').innerHTML =
-                '<tr><td colspan="6" class="text-center text-danger">加载失败，请刷新页面重试</td></tr>';
+                '<tr><td colspan="6" class="text-center text-danger">加载失败，请点击刷新重试</td></tr>';
         }
     }
 
-    // 更新图表
+    // ===================== 排序 =====================
+    function getSortedCache() {
+        if (!allArtworksCache) return [];
+        return [...allArtworksCache].sort((a, b) => {
+            let va = a[sortKey];
+            let vb = b[sortKey];
+            if (sortKey === 'title') {
+                va = (va || '').toLowerCase();
+                vb = (vb || '').toLowerCase();
+                return sortDir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
+            }
+            if (sortKey === 'moved') {
+                va = a.moved ? 1 : 0;
+                vb = b.moved ? 1 : 0;
+            }
+            return sortDir === 'asc' ? va - vb : vb - va;
+        });
+    }
+
+    function sortBy(key) {
+        if (sortKey === key) {
+            sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+        } else {
+            sortKey = key;
+            sortDir = (key === 'time' || key === 'artworkId') ? 'desc' : 'asc';
+        }
+        currentPage = 1;
+        renderSortHeaders();
+        renderFromCache();
+    }
+
+    function renderSortHeaders() {
+        const cols = ['artworkId', 'title', 'count', 'time', 'moved'];
+        cols.forEach(col => {
+            const th   = document.getElementById(`th-${col}`);
+            const icon = document.getElementById(`sort-${col}`);
+            if (!th || !icon) return;
+            if (col === sortKey) {
+                th.classList.add('sort-active');
+                icon.textContent = sortDir === 'asc' ? '↑' : '↓';
+            } else {
+                th.classList.remove('sort-active');
+                icon.textContent = '↕';
+            }
+        });
+    }
+
+    // ===================== 从缓存渲染表格（含分页） =====================
+    function renderFromCache() {
+        if (!allArtworksCache) return;
+        const sorted = getSortedCache();
+        if (searchQuery) {
+            const q = searchQuery;
+            const filtered = sorted.filter(a =>
+                String(a.artworkId).includes(q) ||
+                (a.title && a.title.toLowerCase().includes(q))
+            );
+            document.getElementById('pagination').style.display = 'none';
+            renderArtworkTable(filtered);
+        } else {
+            totalElements = sorted.length;
+            totalPages    = Math.ceil(totalElements / PAGE_SIZE) || 1;
+            if (currentPage > totalPages) currentPage = totalPages;
+            const start = (currentPage - 1) * PAGE_SIZE;
+            document.getElementById('pagination').style.display = '';
+            renderArtworkTable(sorted.slice(start, start + PAGE_SIZE));
+            renderPagination();
+        }
+    }
+
+    // ===================== 搜索 =====================
+    function onSearch() {
+        searchQuery = document.getElementById('searchInput').value.trim().toLowerCase();
+        if (!searchQuery) currentPage = 1;
+        renderFromCache();
+    }
+
+    // ===================== 渲染表格 =====================
+    function renderArtworkTable(artworks) {
+        const tbody      = document.getElementById('historyTableBody');
+        const emptyState = document.getElementById('emptyHistoryState');
+
+        if (!artworks.length) {
+            tbody.innerHTML = '';
+            emptyState.classList.remove('d-none');
+            if (!searchQuery) document.getElementById('pagination').innerHTML = '';
+            return;
+        }
+
+        emptyState.classList.add('d-none');
+        tbody.innerHTML = artworks.map(artwork => {
+            const dt          = formatDateTime(artwork.time);
+            const status      = artwork.moved ? '已移动' : '已下载';
+            const statusClass = artwork.moved ? 'status-moved' : 'status-completed';
+            const title       = escapeHtml(artwork.title || '未知标题');
+            return `
+            <tr>
+                <td><strong>${artwork.artworkId}</strong></td>
+                <td class="artwork-title" title="${title}">${title}</td>
+                <td><span class="badge bg-secondary">${artwork.count}</span></td>
+                <td>
+                    <div>${dt.date}</div>
+                    <div class="time-badge">${dt.time}</div>
+                </td>
+                <td><span class="status-badge ${statusClass}">${status}</span></td>
+                <td>
+                    <div class="action-buttons">
+                        <button class="btn btn-sm btn-outline-primary"
+                            onclick="viewArtworkDetails(${artwork.artworkId})" title="查看详情">
+                            <i class="fas fa-eye"></i>
+                        </button>
+                        <button class="btn btn-sm btn-outline-info"
+                            onclick="viewThumbnails(${artwork.artworkId})" title="查看图片">
+                            <i class="fas fa-images"></i>
+                        </button>
+                    </div>
+                </td>
+            </tr>`;
+        }).join('');
+    }
+
+    // ===================== 分页渲染 =====================
+    function renderPagination() {
+        const pagination = document.getElementById('pagination');
+        if (totalPages <= 1) { pagination.innerHTML = ''; return; }
+
+        const maxVisible = 5;
+        let start = Math.max(1, currentPage - Math.floor(maxVisible / 2));
+        let end   = Math.min(totalPages, start + maxVisible - 1);
+        if (end - start + 1 < maxVisible) start = Math.max(1, end - maxVisible + 1);
+
+        let html = `
+        <li class="page-item ${currentPage === 1 ? 'disabled' : ''}">
+            <a class="page-link" href="#" onclick="changePage(${currentPage - 1}); return false;">
+                <i class="fas fa-chevron-left"></i></a>
+        </li>`;
+
+        for (let i = start; i <= end; i++) {
+            html += `
+            <li class="page-item ${i === currentPage ? 'active' : ''}">
+                <a class="page-link" href="#" onclick="changePage(${i}); return false;">${i}</a>
+            </li>`;
+        }
+
+        html += `
+        <li class="page-item ${currentPage === totalPages ? 'disabled' : ''}">
+            <a class="page-link" href="#" onclick="changePage(${currentPage + 1}); return false;">
+                <i class="fas fa-chevron-right"></i></a>
+        </li>`;
+
+        pagination.innerHTML = html;
+    }
+
+    function changePage(page) {
+        if (page < 1 || page > totalPages || searchQuery) return;
+        currentPage = page;
+        renderFromCache();
+    }
+
+    // ===================== 图表（全量数据） =====================
     function updateChart(artworks) {
         const ctx = document.getElementById('downloadStatsChart').getContext('2d');
 
-        // 按月份统计下载量
-        const monthlyStats = {};
-        artworks.forEach(artwork => {
-            const date = new Date(artwork.time * 1000);
-            const monthKey = `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}`;
-
-            if (!monthlyStats[monthKey]) {
-                monthlyStats[monthKey] = 0;
-            }
-            monthlyStats[monthKey] += artwork.count;
+        const monthly = {};
+        artworks.forEach(a => {
+            const d   = new Date(a.time * 1000);
+            const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+            monthly[key] = (monthly[key] || 0) + a.count;
         });
 
-        const labels = Object.keys(monthlyStats).sort();
-        const data = labels.map(label => monthlyStats[label]);
+        const labels = Object.keys(monthly).sort();
+        const data   = labels.map(l => monthly[l]);
 
-        if (downloadStatsChart) {
-            downloadStatsChart.destroy();
-        }
+        if (downloadStatsChart) downloadStatsChart.destroy();
 
         downloadStatsChart = new Chart(ctx, {
             type: 'bar',
             data: {
-                labels: labels,
+                labels,
                 datasets: [{
                     label: '每月下载图片数',
-                    data: data,
+                    data,
                     backgroundColor: 'rgba(111, 66, 193, 0.7)',
-                    borderColor: 'rgba(111, 66, 193, 1)',
+                    borderColor:     'rgba(111, 66, 193, 1)',
                     borderWidth: 1
                 }]
             },
@@ -1039,415 +1122,207 @@
                 responsive: true,
                 maintainAspectRatio: false,
                 scales: {
-                    y: {
-                        beginAtZero: true,
-                        grid: {
-                            color: 'rgba(255, 255, 255, 0.1)'
-                        },
-                        ticks: {
-                            color: '#adb5bd'
-                        }
-                    },
-                    x: {
-                        grid: {
-                            color: 'rgba(255, 255, 255, 0.1)'
-                        },
-                        ticks: {
-                            color: '#adb5bd'
-                        }
-                    }
+                    y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.1)' }, ticks: { color: '#adb5bd' } },
+                    x: {                    grid: { color: 'rgba(255,255,255,0.1)' }, ticks: { color: '#adb5bd' } }
                 },
-                plugins: {
-                    legend: {
-                        labels: {
-                            color: '#adb5bd'
-                        }
-                    }
-                }
+                plugins: { legend: { labels: { color: '#adb5bd' } } }
             }
         });
     }
 
-    // 加载活跃下载 - 修复：只显示真正活跃的下载
-    async function loadActiveDownloads() {
+    // ===================== 活跃下载 =====================
+    async function updateActiveDownloads() {
         try {
-            const response = await fetch('/api/download/status/active');
-            if (!response.ok) throw new Error('获取活跃下载失败');
+            const res = await fetch('/api/download/status/active');
+            if (!res.ok) return;
+            const ids = await res.json();
 
-            const activeIds = await response.json();
-
-            // 获取每个活跃下载的详细信息
-            const downloadPromises = activeIds.map(id =>
-                fetch(`/api/download/status/${id}`).then(res => res.ok ? res.json() : null)
+            const details = await Promise.all(
+                ids.map(id => fetch(`/api/download/status/${id}`).then(r => r.ok ? r.json() : null))
             );
 
-            const downloads = await Promise.all(downloadPromises);
+            prevActiveCount = activeDownloads.length;
+            activeDownloads = details.filter(d => d && !d.completed && !d.failed && !d.cancelled);
 
-            // 过滤掉已完成、失败或取消的下载
-            activeDownloads = downloads.filter(download =>
-                download !== null &&
-                !download.completed &&
-                !download.failed &&
-                !download.cancelled
-            );
-
-            document.getElementById('activeCount').textContent = activeDownloads.length;
+            document.getElementById('activeCount').textContent    = activeDownloads.length;
             document.getElementById('activeDownloads').textContent = activeDownloads.length;
-
-            // 渲染活跃下载列表
             renderActiveDownloads();
-        } catch (error) {
-            console.error('加载活跃下载时出错:', error);
-            document.getElementById('activeDownloadsList').innerHTML =
-                '<div class="p-3 text-center text-danger">加载失败</div>';
-        }
+            updateLastUpdatedTime();
+
+            // 有下载刚完成，刷新历史和统计
+            if (prevActiveCount > 0 && activeDownloads.length < prevActiveCount) {
+                loadStatistics();
+                currentPage = 1;
+                loadAllDataForChart();
+            }
+        } catch (e) { console.error('活跃下载更新失败', e); }
     }
 
-    // 修改渲染活跃下载列表函数，添加实时进度更新
     function renderActiveDownloads() {
-        const container = document.getElementById('activeDownloadsList');
+        const container  = document.getElementById('activeDownloadsList');
         const emptyState = document.getElementById('emptyActiveState');
 
-        if (activeDownloads.length === 0) {
+        if (!activeDownloads.length) {
             container.innerHTML = '';
             emptyState.classList.remove('d-none');
             return;
         }
 
         emptyState.classList.add('d-none');
-
-        let html = '';
-        activeDownloads.forEach(download => {
-            const progress = download.progressPercentage || 0;
-            const downloadedCount = download.downloadedCount || 0;
-            const totalImages = download.totalImages || 0;
-
-            html += `
-            <div class="active-download-item" data-artwork-id="${download.artworkId}">
+        container.innerHTML = activeDownloads.map(d => {
+            const progress = d.progressPercentage || 0;
+            return `
+            <div class="active-download-item">
                 <div class="active-download-header">
                     <div class="artwork-info">
-                        <div class="artwork-title" title="${download.title || '未知标题'}">
-                            ${download.title || '未知标题'}
-                        </div>
-                        <div class="artwork-id">${download.artworkId}</div>
+                        <div class="artwork-title" title="${escapeHtml(d.title)}">${escapeHtml(d.title || '未知标题')}</div>
+                        <div class="artwork-id">${d.artworkId}</div>
                         <div class="active-download-source">pixiv</div>
                     </div>
                 </div>
                 <div class="download-progress-container">
                     <div class="progress-info">
-                        <span class="progress-count">${downloadedCount}/${totalImages}</span>
+                        <span class="progress-count">${d.downloadedCount || 0}/${d.totalImages || 0}</span>
                         <span class="progress-percentage">${progress.toFixed(1)}%</span>
                     </div>
                     <div class="active-download-progress">
-                        <div class="active-download-progress-bar" style="width: ${progress}%"></div>
+                        <div class="active-download-progress-bar" style="width:${progress}%"></div>
                     </div>
                 </div>
                 <div class="download-status">
                     <div class="status-indicator"></div>
                     <span class="status-text">下载中...</span>
                 </div>
-            </div>
-        `;
-        });
-
-        container.innerHTML = html;
+            </div>`;
+        }).join('');
     }
 
-    // 获取状态类名
-    function getStatusClass(download) {
-        if (download.completed) return 'status-completed';
-        if (download.failed) return 'status-failed';
-        if (download.cancelled) return 'status-cancelled';
-        return 'status-active';
-    }
-
-    // 过滤作品
-    function filterArtworks() {
-        const searchTerm = document.getElementById('searchInput').value.toLowerCase();
-
-        if (searchTerm.trim() === '') {
-            filteredArtworks = [...allArtworks];
-        } else {
-            filteredArtworks = allArtworks.filter(artwork =>
-                artwork.artworkId.toString().includes(searchTerm) ||
-                (artwork.title && artwork.title.toLowerCase().includes(searchTerm))
-            );
-        }
-
-        currentPage = 1;
-        renderArtworkTable();
-    }
-
-    // 渲染作品表格
-    function renderArtworkTable() {
-        const tbody = document.getElementById('historyTableBody');
-        const emptyState = document.getElementById('emptyHistoryState');
-
-        if (filteredArtworks.length === 0) {
-            tbody.innerHTML = '';
-            emptyState.classList.remove('d-none');
-            document.getElementById('pagination').innerHTML = '';
-            return;
-        }
-
-        emptyState.classList.add('d-none');
-
-        // 渲染表格行
-        let html = '';
-        filteredArtworks.forEach(artwork => {
-            const downloadDate = new Date(artwork.time * 1000);
-            const formattedDate = `${downloadDate.getFullYear()}-${(downloadDate.getMonth() + 1).toString().padStart(2, '0')}-${downloadDate.getDate().toString().padStart(2, '0')}`;
-            const formattedTime = `${downloadDate.getHours().toString().padStart(2, '0')}:${downloadDate.getMinutes().toString().padStart(2, '0')}`;
-
-            const status = artwork.moved ? '已移动' : '已下载';
-            const statusClass = artwork.moved ? 'status-moved' : 'status-completed';
-
-            html += `
-                <tr>
-                    <td><strong>${artwork.artworkId}</strong></td>
-                    <td class="artwork-title" title="${artwork.title || '未知标题'}">${artwork.title || '未知标题'}</td>
-                    <td><span class="badge bg-secondary">${artwork.count}</span></td>
-                    <td>
-                        <div>${formattedDate}</div>
-                        <div class="time-badge">${formattedTime}</div>
-                    </td>
-                    <td><span class="status-badge ${statusClass}">${status}</span></td>
-                    <td>
-                        <div class="action-buttons">
-                            <button class="btn btn-sm btn-outline-primary" onclick="viewArtworkDetails(${artwork.artworkId})" title="查看详情">
-                                <i class="fas fa-eye"></i>
-                            </button>
-                            <button class="btn btn-sm btn-outline-info" onclick="viewThumbnails(${artwork.artworkId})" title="查看图片">
-                                <i class="fas fa-images"></i>
-                            </button>
-                        </div>
-                    </td>
-                </tr>
-                `;
-        });
-
-        tbody.innerHTML = html;
-
-        // 渲染分页
-        renderPagination();
-    }
-
-    // 渲染分页
-    function renderPagination() {
-        const pagination = document.getElementById('pagination');
-        const totalPages = Math.ceil(totalArtworksCount / itemsPerPage);
-
-        if (totalPages <= 1) {
-            pagination.innerHTML = '';
-            return;
-        }
-
-        let html = '';
-
-        // 上一页按钮
-        html += `
-            <li class="page-item ${currentPage === 1 ? 'disabled' : ''}">
-                <a class="page-link" href="#" onclick="changePage(${currentPage - 1})">
-                    <i class="fas fa-chevron-left"></i>
-                </a>
-            </li>
-            `;
-
-        // 页码按钮
-        const maxVisiblePages = 5;
-        let startPage = Math.max(1, currentPage - Math.floor(maxVisiblePages / 2));
-        let endPage = Math.min(totalPages, startPage + maxVisiblePages - 1);
-
-        if (endPage - startPage + 1 < maxVisiblePages) {
-            startPage = Math.max(1, endPage - maxVisiblePages + 1);
-        }
-
-        for (let i = startPage; i <= endPage; i++) {
-            html += `
-                <li class="page-item ${i === currentPage ? 'active' : ''}">
-                    <a class="page-link" href="#" onclick="changePage(${i})">${i}</a>
-                </li>
-                `;
-        }
-
-        // 下一页按钮
-        html += `
-            <li class="page-item ${currentPage === totalPages ? 'disabled' : ''}">
-                <a class="page-link" href="#" onclick="changePage(${currentPage + 1})">
-                    <i class="fas fa-chevron-right"></i>
-                </a>
-            </li>
-            `;
-
-        pagination.innerHTML = html;
-    }
-
-    // 切换页面
-    function changePage(page) {
-        if (page < 1 || page > Math.ceil(totalArtworksCount / itemsPerPage)) return;
-
-        currentPage = page;
-        loadPagedHistory(page - 1, itemsPerPage);
-    }
-
-    // 查看作品详情
+    // ===================== 作品详情 =====================
     async function viewArtworkDetails(artworkId) {
         try {
-            const response = await fetch(`/api/downloaded/${artworkId}`);
-            if (!response.ok) throw new Error('获取作品详情失败');
+            const res = await fetch(`/api/downloaded/${artworkId}`);
+            if (!res.ok) throw new Error();
+            const artwork = await res.json();
 
-            const artwork = await response.json();
+            const dt      = formatDateTime(artwork.time);
+            const moveDt  = artwork.moveTime ? formatDateTime(artwork.moveTime).full : null;
 
-            const downloadDate = new Date(artwork.time * 1000).toLocaleString();
-            const moveDate = artwork.moveTime ? new Date(artwork.moveTime * 1000).toLocaleString() : '未移动';
-
-            const modalBody = document.getElementById('artworkModalBody');
-            modalBody.innerHTML = `
-                <div class="row">
-                    <div class="col-md-6">
-                        <h6><i class="fas fa-info-circle me-2"></i>作品信息</h6>
-                        <ul class="list-unstyled">
-                            <li class="mb-2"><strong>作品ID:</strong> ${artwork.artworkId}</li>
-                            <li class="mb-2"><strong>标题:</strong> ${artwork.title || '未知标题'}</li>
-                            <li class="mb-2"><strong>图片数量:</strong> <span class="badge bg-secondary">${artwork.count}</span></li>
-                            <li class="mb-2"><strong>下载时间:</strong> ${downloadDate}</li>
-                            <li class="mb-2"><strong>状态:</strong> <span class="status-badge ${artwork.moved ? 'status-moved' : 'status-completed'}">${artwork.moved ? '已移动' : '已下载'}</span></li>
-                        </ul>
-                    </div>
-                    <div class="col-md-6">
-                        <h6><i class="fas fa-folder me-2"></i>存储信息</h6>
-                        <ul class="list-unstyled">
-                            <li class="mb-2"><strong>原始文件夹:</strong> <code class="text-truncate d-block">${artwork.folder}</code></li>
-                            ${artwork.moved ? `
-                            <li class="mb-2"><strong>移动后文件夹:</strong> <code class="text-truncate d-block">${artwork.moveFolder}</code></li>
-                            <li class="mb-2"><strong>移动时间:</strong> ${moveDate}</li>
-                            ` : ''}
-                        </ul>
-                    </div>
+            document.getElementById('artworkModalBody').innerHTML = `
+            <div class="row">
+                <div class="col-md-6">
+                    <h6><i class="fas fa-info-circle me-2"></i>作品信息</h6>
+                    <ul class="list-unstyled">
+                        <li class="mb-2"><strong>作品ID:</strong> ${artwork.artworkId}</li>
+                        <li class="mb-2"><strong>标题:</strong> ${escapeHtml(artwork.title || '未知标题')}</li>
+                        <li class="mb-2"><strong>图片数量:</strong> <span class="badge bg-secondary">${artwork.count}</span></li>
+                        <li class="mb-2"><strong>下载时间:</strong> ${dt.full}</li>
+                        <li class="mb-2"><strong>状态:</strong>
+                            <span class="status-badge ${artwork.moved ? 'status-moved' : 'status-completed'}">
+                                ${artwork.moved ? '已移动' : '已下载'}
+                            </span>
+                        </li>
+                    </ul>
                 </div>
-                <div class="mt-3 text-center">
-                    <button class="btn btn-primary" onclick="viewThumbnails(${artwork.artworkId})">
-                        <i class="fas fa-images me-1"></i>查看图片
-                    </button>
+                <div class="col-md-6">
+                    <h6><i class="fas fa-folder me-2"></i>存储信息</h6>
+                    <ul class="list-unstyled">
+                        <li class="mb-2"><strong>原始文件夹:</strong><br>
+                            <code class="text-break">${escapeHtml(artwork.folder)}</code>
+                        </li>
+                        ${artwork.moved ? `
+                        <li class="mb-2"><strong>移动后文件夹:</strong><br>
+                            <code class="text-break">${escapeHtml(artwork.moveFolder)}</code>
+                        </li>
+                        <li class="mb-2"><strong>移动时间:</strong> ${moveDt}</li>
+                        ` : ''}
+                    </ul>
                 </div>
-                `;
+            </div>
+            <div class="mt-3 text-center">
+                <button class="btn btn-primary" onclick="viewThumbnails(${artwork.artworkId})">
+                    <i class="fas fa-images me-1"></i>查看图片
+                </button>
+            </div>`;
 
             artworkModal.show();
-        } catch (error) {
-            console.error('查看作品详情时出错:', error);
+        } catch (e) {
+            console.error('加载作品详情失败', e);
             alert('加载作品详情失败');
         }
     }
 
-    // 查看缩略图 - 使用新的紧凑样式
+    // ===================== 缩略图 =====================
     async function viewThumbnails(artworkId) {
         try {
-            // 获取作品信息以确定图片数量
-            const artworkResponse = await fetch(`/api/downloaded/${artworkId}`);
-            if (!artworkResponse.ok) throw new Error('获取作品信息失败');
+            const res = await fetch(`/api/downloaded/${artworkId}`);
+            if (!res.ok) throw new Error();
+            const artwork = await res.json();
 
-            const artwork = await artworkResponse.json();
-
-            // 创建缩略图网格
-            const modalBody = document.getElementById('artworkModalBody');
-            let thumbnailsHtml = `
-                <div class="thumbnail-header">
-                    <div>
-                        <h6 class="mb-0">图片预览</h6>
-                        <div class="thumbnail-count">共 ${artwork.count} 张图片</div>
-                    </div>
-                    <div class="thumbnail-actions">
-                        <button class="btn btn-sm btn-outline-secondary" onclick="viewArtworkDetails(${artwork.artworkId})">
-                            <i class="fas fa-arrow-left me-1"></i>返回详情
-                        </button>
-                    </div>
+            // 每张图片用唯一 id，避免异步并发时错位
+            document.getElementById('artworkModalBody').innerHTML = `
+            <div class="thumbnail-header">
+                <div>
+                    <h6 class="mb-0">图片预览</h6>
+                    <div class="thumbnail-count">共 ${artwork.count} 张图片</div>
                 </div>
-                <div class="thumbnail-grid">
-            `;
-
-            // 加载所有缩略图
-            for (let i = 0; i < artwork.count; i++) {
-                thumbnailsHtml += `
-                    <div class="thumbnail-item" onclick="viewFullImage(${artwork.artworkId}, ${i})">
-                        <div class="thumbnail-loading">
-                            <div class="spinner"></div>
-                            <span>加载中</span>
-                        </div>
-                        <div class="thumbnail-index">${i + 1}</div>
-                    </div>
-                `;
-            }
-
-            thumbnailsHtml += '</div>';
-            modalBody.innerHTML = thumbnailsHtml;
-
-            // 异步加载缩略图
-            for (let i = 0; i < artwork.count; i++) {
-                loadThumbnail(artwork.artworkId, i);
-            }
+                <div class="thumbnail-actions">
+                    <button class="btn btn-sm btn-outline-secondary" onclick="viewArtworkDetails(${artworkId})">
+                        <i class="fas fa-arrow-left me-1"></i>返回详情
+                    </button>
+                </div>
+            </div>
+            <div class="thumbnail-grid">
+                ${Array.from({ length: artwork.count }, (_, i) => `
+                <div class="thumbnail-item" id="thumb-${artworkId}-${i}"
+                     onclick="viewFullImage(${artworkId}, ${i})">
+                    <div class="thumbnail-loading"><div class="spinner"></div><span>加载中</span></div>
+                    <div class="thumbnail-index">${i + 1}</div>
+                </div>`).join('')}
+            </div>`;
 
             artworkModal.show();
-        } catch (error) {
-            console.error('查看缩略图时出错:', error);
+
+            for (let i = 0; i < artwork.count; i++) {
+                loadThumbnail(artworkId, i);
+            }
+        } catch (e) {
+            console.error('加载缩略图失败', e);
             alert('加载缩略图失败');
         }
     }
 
-    // 加载缩略图 - 适配新的样式
     async function loadThumbnail(artworkId, page) {
+        const item = document.getElementById(`thumb-${artworkId}-${page}`);
+        if (!item) return;
         try {
-            const response = await fetch(`/api/downloaded/thumbnail/${artworkId}/${page}`);
-            if (!response.ok) throw new Error('获取缩略图失败');
-
-            const imageData = await response.json();
-            const thumbnailItems = document.querySelectorAll('.thumbnail-item');
-            const thumbnailItem = thumbnailItems[page];
-
-            if (imageData.success && imageData.image) {
-                thumbnailItem.innerHTML = `
-                    <img src="data:image/${imageData.extension};base64,${imageData.image}" class="thumbnail-img" alt="缩略图">
-                    <div class="thumbnail-index">${page + 1}</div>
-                `;
-            } else {
-                thumbnailItem.innerHTML = `
-                    <div class="thumbnail-error">
-                        <i class="fas fa-exclamation-circle"></i>
-                        <span>加载失败</span>
-                    </div>
-                `;
-                thumbnailItem.style.cursor = 'default';
-                thumbnailItem.onclick = null;
-            }
-        } catch (error) {
-            console.error(`加载缩略图 ${artworkId}-${page} 时出错:`, error);
-            const thumbnailItems = document.querySelectorAll('.thumbnail-item');
-            const thumbnailItem = thumbnailItems[page];
-            thumbnailItem.innerHTML = `
-                <div class="thumbnail-error">
-                    <i class="fas fa-exclamation-circle"></i>
-                    <span>加载失败</span>
-                </div>
-            `;
-            thumbnailItem.style.cursor = 'default';
-            thumbnailItem.onclick = null;
+            const res = await fetch(`/api/downloaded/thumbnail/${artworkId}/${page}`);
+            if (!res.ok) throw new Error();
+            const data = await res.json();
+            if (data.success && data.image) {
+                item.innerHTML = `
+                <img src="data:image/${data.extension};base64,${data.image}" class="thumbnail-img" alt="缩略图">
+                <div class="thumbnail-index">${page + 1}</div>`;
+            } else throw new Error(data.message);
+        } catch (e) {
+            item.innerHTML = `<div class="thumbnail-error"><i class="fas fa-exclamation-circle"></i><span>加载失败</span></div>`;
+            item.style.cursor = 'default';
+            item.onclick = null;
         }
     }
 
-    // 查看完整图片
+    // ===================== 原图预览 =====================
     async function viewFullImage(artworkId, page) {
         try {
-            const response = await fetch(`/api/downloaded/image/${artworkId}/${page}`);
-            if (!response.ok) throw new Error('获取完整图片失败');
-
-            const imageData = await response.json();
-            if (imageData.success && imageData.image) {
-                document.getElementById('modalImage').src = `data:image/${imageData.extension};base64,${imageData.image}`;
+            const res = await fetch(`/api/downloaded/image/${artworkId}/${page}`);
+            if (!res.ok) throw new Error();
+            const data = await res.json();
+            if (data.success && data.image) {
+                document.getElementById('modalImage').src =
+                    `data:image/${data.extension};base64,${data.image}`;
                 imageModal.show();
-            } else {
-                alert('加载图片失败');
-            }
-        } catch (error) {
-            console.error('查看完整图片时出错:', error);
+            } else throw new Error(data.message);
+        } catch (e) {
+            console.error('加载完整图片失败', e);
             alert('加载图片失败');
         }
     }
