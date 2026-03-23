@@ -224,7 +224,7 @@
             let other = {};
 
             if (meta && meta.illustType === 2) {
-                // 动图作品：获取ugoira元数据，下载ZIP并在后端合成APNG
+                // 动图作品：获取ugoira元数据，下载ZIP并在后端合成WebP
                 const ugoiraMeta = await getUgoiraMeta(artworkId);
                 const zipSrc = ugoiraMeta.originalSrc || ugoiraMeta.src;
                 imageUrls = [zipSrc];
@@ -248,7 +248,7 @@
             markAsDownloaded(artworkId, '后端处理中', imageUrls.length);
             updateDownloadUI();
 
-            const typeHint = other.isUgoira ? '动图（将合成为APNG）' : `图片数量: ${imageUrls.length}张`;
+            const typeHint = other.isUgoira ? '动图（将合成为WebP）' : `图片数量: ${imageUrls.length}张`;
             alert(`下载任务已提交到后端处理！\n${typeHint}\n${response.message}`);
 
         } catch (error) {

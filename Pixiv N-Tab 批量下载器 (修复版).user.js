@@ -519,11 +519,12 @@
         _waitForFinalStatusBySSE(artworkId, timeoutMs) {
             return new Promise((resolve) => {
                 let resolved = false;
-                const timer = setTimeout(() => {
+                let timer = setTimeout(onTimeout, timeoutMs);
+                function onTimeout() {
                     if (resolved) return;
                     resolved = true;
                     resolve(null);
-                }, timeoutMs);
+                }
                 const handler = (data) => {
                     if (data && (data.completed || data.failed || data.cancelled)) {
                         if (resolved) return;
@@ -537,6 +538,8 @@
                             this.saveToStorage();
                             this.ui.renderQueue(this.queue);
                         }
+                        clearTimeout(timer);
+                        timer = setTimeout(onTimeout, timeoutMs);
                     }
                 };
                 this.sse.addListener(String(artworkId), handler);

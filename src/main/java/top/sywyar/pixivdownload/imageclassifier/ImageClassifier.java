@@ -54,7 +54,7 @@ public class ImageClassifier extends JFrame {
     private JButton settingsButton; // 新增设置按钮
 
     // 支持的图片格式
-    private static final String[] IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".apng", ".webp"};
+    private static final String[] IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp"};
 
     public ImageClassifier() {
         loadConfig(); // 加载配置
@@ -869,7 +869,7 @@ public class ImageClassifier extends JFrame {
 
                 // 使用异步缩略图管理器加载，动图文件显示标记
                 String fname = imageFile.getName().toLowerCase();
-                String badge = (fname.endsWith(".apng") || fname.endsWith(".webp")) ? "动图" : null;
+                String badge = fname.endsWith(".webp") ? "动图" : null;
                 thumbnailManager.loadThumbnail(imageFile, label, thumbW, thumbH, badge);
             } else {
                 label.setIcon(null);

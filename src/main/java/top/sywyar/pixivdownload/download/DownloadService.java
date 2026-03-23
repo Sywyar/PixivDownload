@@ -422,16 +422,14 @@ public class DownloadService {
                 }
             }
 
-            boolean isApng = "apng".equals(extension);
             boolean isWebp = "webp".equals(extension);
 
-            // 动图（WebP / APNG）完整图请求：直接返回原始字节，由 rawfile 端点处理更高效
+            // WebP 完整图请求：直接返回原始字节，由 rawfile 端点处理更高效
             // 此处 thumbnail=false 路径保留为备用
-            if ((isWebp || isApng) && !thumbnail) {
+            if (isWebp && !thumbnail) {
                 byte[] fileBytes = Files.readAllBytes(imageFile.toPath());
                 String base64Image = Base64.getEncoder().encodeToString(fileBytes);
-                String fmt = isApng ? "png" : "webp";
-                return new ImageResponse(true, base64Image, fmt, base64Image.length(), 0, 0, "成功获取动图");
+                return new ImageResponse(true, base64Image, "webp", base64Image.length(), 0, 0, "成功获取动图");
             }
 
             // WebP 缩略图：使用伴随的 _p0_thumb.jpg 文件
@@ -451,8 +449,7 @@ public class DownloadService {
                 image = ImageIO.read(imageFile);
             }
 
-            // APNG缩略图：从第一帧生成，写为PNG；普通图直接用原扩展名
-            String writeFormat = isApng ? "png" : extension;
+            String writeFormat = extension;
             ByteArrayOutputStream bass = new ByteArrayOutputStream();
             ImageIO.write(image, writeFormat, bass);
             String base64Image = Base64.getEncoder().encodeToString(bass.toByteArray());

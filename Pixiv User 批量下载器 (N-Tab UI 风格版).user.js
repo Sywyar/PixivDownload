@@ -601,7 +601,7 @@
                 let ugoiraData = null;
 
                 if (meta.illustType === 2) {
-                    // 动图作品：获取ugoira元数据，由后端下载ZIP并合成APNG
+                    // 动图作品：获取ugoira元数据，由后端下载ZIP并合成WebP
                     const ugoiraMeta = await Api.getUgoiraMeta(item.id);
                     const zipSrc = ugoiraMeta.originalSrc || ugoiraMeta.src;
                     ugoiraData = {
@@ -680,12 +680,13 @@
         _waitForFinalStatusBySSE(artworkId, timeoutMs) {
             return new Promise((resolve) => {
                 let resolved = false;
-                const timer = setTimeout(() => {
+                let timer = setTimeout(onTimeout, timeoutMs);
+                function onTimeout() {
                     if (!resolved) {
                         resolved = true;
                         resolve(null);
                     }
-                }, timeoutMs);
+                }
                 const handler = (data) => {
                     if (data && (data.completed || data.failed || data.cancelled)) {
                         if (!resolved) {
@@ -700,6 +701,8 @@
                             this.ui.renderQueue(this.queue);
                             this.ui.setCurrent(q);
                         }
+                        clearTimeout(timer);
+                        timer = setTimeout(onTimeout, timeoutMs);
                     }
                 };
                 this.sse.addListener(String(artworkId), handler);

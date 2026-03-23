@@ -116,6 +116,7 @@ public class DownloadController {
                     .setTitle(artwork.title())
                     .setFolder(artwork.folder())
                     .setCount(artwork.count())
+                    .setExtensions(artwork.extensions())
                     .setTime(artwork.time())
                     .setMoved(artwork.moved())
                     .setMoveFolder(artwork.moveFolder())
@@ -226,7 +227,7 @@ public class DownloadController {
             } else if (name.endsWith(".webp")) {
                 mediaType = MediaType.parseMediaType("image/webp");
             } else {
-                mediaType = MediaType.IMAGE_PNG; // png / apng
+                mediaType = MediaType.IMAGE_PNG;
             }
 
             return ResponseEntity.ok().contentType(mediaType).body(bytes);
@@ -258,6 +259,7 @@ public class DownloadController {
                 .setTitle(artwork.title())
                 .setFolder(artwork.folder())
                 .setCount(artwork.count())
+                .setExtensions(artwork.extensions())
                 .setTime(artwork.time())
                 .setMoved(artwork.moved())
                 .setMoveFolder(artwork.moveFolder())

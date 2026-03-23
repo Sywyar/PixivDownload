@@ -161,7 +161,7 @@
             // 检测动图
             const illustType = await getArtworkType(artworkId);
             if (illustType === 2) {
-                alert(`作品 ${artworkId} 是动图（ugoira）。\n此版本不支持动图合成，请使用「Pixiv作品图片下载器（Java后端版）」下载动图，后端会自动合成为无损APNG格式。`);
+                alert(`作品 ${artworkId} 是动图（ugoira）。\n此版本不支持动图合成，请使用「Pixiv作品图片下载器（Java后端版）」下载动图，后端会自动合成为WebP格式。`);
                 return;
             }
 

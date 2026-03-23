@@ -358,6 +358,36 @@
         .time-cell .date { color: var(--text); font-size: 0.75rem; }
         .time-cell .time { color: var(--text-dim); font-size: 0.7rem; margin-top: 1px; }
 
+        .fmt-badge {
+            display: inline-block;
+            font-size: 0.58rem;
+            font-weight: 700;
+            letter-spacing: 0.1em;
+            padding: 1px 6px;
+            border-width: 1px;
+            border-style: solid;
+        }
+        .fmt-jpg, .fmt-jpeg {
+            background: rgba(245,158,11,0.12);
+            color: var(--amber);
+            border-color: rgba(245,158,11,0.35);
+        }
+        .fmt-png {
+            background: rgba(0,229,255,0.1);
+            color: var(--cyan);
+            border-color: rgba(0,229,255,0.3);
+        }
+        .fmt-webp {
+            background: rgba(0,255,136,0.1);
+            color: var(--green);
+            border-color: rgba(0,255,136,0.3);
+        }
+        .fmt-gif {
+            background: rgba(124,58,237,0.12);
+            color: #a78bfa;
+            border-color: rgba(124,58,237,0.35);
+        }
+
         /* ── Status Badges ─────────────────────────────────────── */
         .status-badge {
             display: inline-block;
@@ -940,12 +970,13 @@
                     <table class="table table-hover mb-0">
                         <thead>
                         <tr>
-                            <th width="14%" id="th-artworkId" class="sortable-th" onclick="sortBy('artworkId')">ARTWORK ID <i id="sort-artworkId" class="sort-icon">↕</i></th>
-                            <th width="26%" id="th-title"     class="sortable-th" onclick="sortBy('title')">TITLE <i id="sort-title" class="sort-icon">↕</i></th>
-                            <th width="10%" id="th-count"     class="sortable-th" onclick="sortBy('count')">IMGS <i id="sort-count" class="sort-icon">↕</i></th>
-                            <th width="18%" id="th-time"      class="sortable-th sort-active" onclick="sortBy('time')">DATE <i id="sort-time" class="sort-icon">↓</i></th>
-                            <th width="14%" id="th-moved"     class="sortable-th" onclick="sortBy('moved')">STATUS <i id="sort-moved" class="sort-icon">↕</i></th>
-                            <th width="18%">OPS</th>
+                            <th width="13%" id="th-artworkId"   class="sortable-th" onclick="sortBy('artworkId')">ARTWORK ID <i id="sort-artworkId" class="sort-icon">↕</i></th>
+                            <th width="24%" id="th-title"       class="sortable-th" onclick="sortBy('title')">TITLE <i id="sort-title" class="sort-icon">↕</i></th>
+                            <th width="8%"  id="th-count"       class="sortable-th" onclick="sortBy('count')">IMGS <i id="sort-count" class="sort-icon">↕</i></th>
+                            <th width="11%" id="th-extensions"  class="sortable-th" onclick="sortBy('extensions')">FORMAT <i id="sort-extensions" class="sort-icon">↕</i></th>
+                            <th width="16%" id="th-time"        class="sortable-th sort-active" onclick="sortBy('time')">DATE <i id="sort-time" class="sort-icon">↓</i></th>
+                            <th width="12%" id="th-moved"       class="sortable-th" onclick="sortBy('moved')">STATUS <i id="sort-moved" class="sort-icon">↕</i></th>
+                            <th width="16%">OPS</th>
                         </tr>
                         </thead>
                         <tbody id="historyTableBody"></tbody>
@@ -1184,7 +1215,7 @@
         return [...allArtworksCache].sort((a, b) => {
             let va = a[sortKey];
             let vb = b[sortKey];
-            if (sortKey === 'title') {
+            if (sortKey === 'title' || sortKey === 'extensions') {
                 va = (va || '').toLowerCase();
                 vb = (vb || '').toLowerCase();
                 return sortDir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
@@ -1210,7 +1241,7 @@
     }
 
     function renderSortHeaders() {
-        const cols = ['artworkId', 'title', 'count', 'time', 'moved'];
+        const cols = ['artworkId', 'title', 'count', 'extensions', 'time', 'moved'];
         cols.forEach(col => {
             const th   = document.getElementById(`th-${col}`);
             const icon = document.getElementById(`sort-${col}`);
@@ -1273,11 +1304,14 @@
             const status      = artwork.moved ? 'MOVED' : 'DONE';
             const statusClass = artwork.moved ? 'status-moved' : 'status-completed';
             const title       = escapeHtml(artwork.title || '—');
+            const fmtBadges = (artwork.extensions || '—').split(',')
+                .map(f => `<span class="fmt-badge fmt-${f.trim()}">${f.trim().toUpperCase()}</span>`).join(' ');
             return `
             <tr>
                 <td class="artwork-id-cell">${artwork.artworkId}</td>
                 <td class="artwork-title" title="${title}">${title}</td>
                 <td><span class="count-badge">${artwork.count}</span></td>
+                <td>${fmtBadges}</td>
                 <td class="time-cell">
                     <div class="date">${dt.date}</div>
                     <div class="time">${dt.time}</div>

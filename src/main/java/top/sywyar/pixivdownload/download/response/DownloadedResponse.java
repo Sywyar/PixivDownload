@@ -10,6 +10,7 @@ public class DownloadedResponse {
     private final String title;
     private final String folder;
     private final int count;
+    private final String extensions;
     private final Long time;
     private final boolean moved;
     private final String moveFolder;
@@ -20,6 +21,7 @@ public class DownloadedResponse {
         private String title;
         private String folder;
         private int count = 0;
+        private String extensions;
         private Long time;
         private boolean moved = false;
         private String moveFolder;
@@ -42,6 +44,11 @@ public class DownloadedResponse {
 
         public DownloadedResponseBuilder setCount(int count) {
             this.count = count;
+            return this;
+        }
+
+        public DownloadedResponseBuilder setExtensions(String extensions) {
+            this.extensions = extensions;
             return this;
         }
 
@@ -70,7 +77,7 @@ public class DownloadedResponse {
             boolean flag2 = !moved || (moveFolder != null && moveTime != null);
 
             if (flag && flag2) {
-                return new DownloadedResponse(artworkId, title, folder, count, time, moved, moveFolder, moveTime);
+                return new DownloadedResponse(artworkId, title, folder, count, extensions, time, moved, moveFolder, moveTime);
             } else {
                 throw new RuntimeException("缺少必要值，artworkId = " + artworkId + ",title=" + title);
             }
