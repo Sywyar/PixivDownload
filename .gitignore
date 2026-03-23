@@ -32,3 +32,5 @@ build/
 ### VS Code ###
 .vscode/
 /pixiv-download-Enn/
+/pixiv-download/
+/image_classifier.properties
