@@ -525,6 +525,26 @@
         .fmt-filter-actions { border-top: 1px solid var(--border); padding-top: .45rem; }
         .th-filter-active { color: var(--cyan) !important; background: rgba(0,229,255,0.07) !important; }
 
+        .R18-badge {
+            display: inline-block;
+            font-size: 0.58rem;
+            font-weight: 700;
+            letter-spacing: 0.1em;
+            padding: 1px 6px;
+            border-width: 1px;
+            border-style: solid;
+        }
+        .R18-yes {
+            background: rgba(239,68,68,0.12);
+            color: var(--red);
+            border-color: rgba(239,68,68,0.35);
+        }
+        .R18-no {
+            background: rgba(0,255,136,0.08);
+            color: var(--green);
+            border-color: rgba(0,255,136,0.25);
+        }
+
         /* ── Page Grid Popup ───────────────────────────────────── */
         .page-grid-popup {
             display: none;
@@ -1074,8 +1094,9 @@
                             <th width="8%"  id="th-count"       class="sortable-th" onclick="sortBy('count')">IMGS <i id="sort-count" class="sort-icon">↕</i></th>
                             <th width="11%" id="th-extensions"  class="sortable-th" onclick="toggleFormatFilter(event)">FORMAT <i id="sort-extensions" class="sort-icon"><i class="fas fa-filter" style="font-size:.55rem;opacity:.45;"></i></i></th>
                             <th width="16%" id="th-time"        class="sortable-th sort-active" onclick="sortBy('time')">DATE <i id="sort-time" class="sort-icon">↓</i></th>
-                            <th width="12%" id="th-moved"       class="sortable-th" onclick="sortBy('moved')">STATUS <i id="sort-moved" class="sort-icon">↕</i></th>
-                            <th width="16%">OPS</th>
+                            <th width="8%"  id="th-moved"       class="sortable-th" onclick="sortBy('moved')">STATUS <i id="sort-moved" class="sort-icon">↕</i></th>
+                            <th width="8%"  id="th-R18"         class="sortable-th" onclick="toggleR18Filter(event)">R18 <i id="sort-R18" class="sort-icon"><i class="fas fa-filter" style="font-size:.55rem;opacity:.45;"></i></i></th>
+                            <th width="12%">OPS</th>
                         </tr>
                         </thead>
                         <tbody id="historyTableBody"></tbody>
@@ -1187,6 +1208,7 @@
     let sortKey = 'time';
     let sortDir = 'desc';
     let formatFilter = new Set(); // 格式筛选，空=显示全部
+    let R18Filter = null; // null=全部, true=仅R18, false=仅SFW
 
     let downloadStatsChart = null;
     let activeDownloads = [];
@@ -1278,6 +1300,7 @@
             sortKey = 'time';
             sortDir = 'desc';
             formatFilter = new Set();
+            R18Filter = null;
             currentPage = 1;
             document.getElementById('pagination').style.display = '';
             updateFormatFilterIcon();
@@ -1340,6 +1363,10 @@
                 va = a.moved ? 1 : 0;
                 vb = b.moved ? 1 : 0;
             }
+            if (sortKey === 'isR18') {
+                va = a.R18 === true ? 1 : a.R18 === false ? 0 : -1;
+                vb = b.R18 === true ? 1 : b.R18 === false ? 0 : -1;
+            }
             return sortDir === 'asc' ? va - vb : vb - va;
         });
     }
@@ -1357,7 +1384,7 @@
     }
 
     function renderSortHeaders() {
-        const cols = ['artworkId', 'title', 'count', 'time', 'moved'];
+        const cols = ['artworkId', 'title', 'count', 'time', 'moved', 'isR18'];
         cols.forEach(col => {
             const th   = document.getElementById(`th-${col}`);
             const icon = document.getElementById(`sort-${col}`);
@@ -1383,6 +1410,11 @@
                 if (!a.extensions) return false;
                 return a.extensions.split(',').some(f => formatFilter.has(f.trim().toLowerCase()));
             });
+        }
+
+        // 应用 R18 筛选
+        if (R18Filter !== null) {
+            sorted = sorted.filter(a => a.R18 !== null && a.R18 !== undefined && !!a.R18 === R18Filter);
         }
 
         const gridBtn = document.getElementById('pageGridBtn');
@@ -1444,6 +1476,9 @@
                     <div class="time">${dt.time}</div>
                 </td>
                 <td><span class="status-badge ${statusClass}">${status}</span></td>
+                <td>${artwork.R18 === null || artwork.R18 === undefined
+                    ? '<span class="R18-badge" style="background:rgba(100,116,139,.12);color:#64748b;border-color:rgba(100,116,139,.3)">未知</span>'
+                    : `<span class="R18-badge ${artwork.R18 ? 'R18-yes' : 'R18-no'}">${artwork.R18 ? 'R18' : 'SFW'}</span>`}</td>
                 <td>
                     <div class="action-buttons">
                         <button class="btn-term" onclick="viewArtworkDetails(${artwork.artworkId})" title="详情">
@@ -1903,6 +1938,58 @@
         if (!icon) return;
         const active = formatFilter.size > 0;
         icon.innerHTML = `<i class="fas fa-filter" style="font-size:.55rem;opacity:${active ? 1 : .45};color:${active ? 'var(--cyan)' : 'inherit'}"></i>`;
+        if (th) th.classList.toggle('th-filter-active', active);
+    }
+
+    // ===================== R18 筛选弹框 =====================
+    function toggleR18Filter(event) {
+        event.stopPropagation();
+        const popup = document.getElementById('formatFilterPopup');
+        if (popup.classList.contains('show') && popup.dataset.type === 'R18') {
+            popup.classList.remove('show');
+            return;
+        }
+        popup.dataset.type = 'R18';
+
+        const options = [
+            { label: '全部', value: 'all' },
+            { label: '<span class="R18-badge R18-yes">R18</span>', value: 'R18' },
+            { label: '<span class="R18-badge R18-no">SFW</span>', value: 'sfw' },
+        ];
+
+        popup.innerHTML = `
+            <div class="fmt-filter-header">R18 FILTER</div>
+            <div class="fmt-filter-options">
+                ${options.map(o => `
+                    <label class="fmt-filter-option">
+                        <input type="radio" name="R18opt" value="${o.value}"
+                               ${(o.value === 'all' && R18Filter === null) || (o.value === 'R18' && R18Filter === true) || (o.value === 'sfw' && R18Filter === false) ? 'checked' : ''}
+                               onchange="onR18FilterChange(this.value)">
+                        <span style="font-size:.75rem;">${o.label}</span>
+                    </label>
+                `).join('')}
+            </div>`;
+
+        const th = document.getElementById('th-R18');
+        const rect = th.getBoundingClientRect();
+        popup.style.top  = (rect.bottom + 4) + 'px';
+        popup.style.left = rect.left + 'px';
+        popup.classList.add('show');
+    }
+
+    function onR18FilterChange(value) {
+        R18Filter = value === 'all' ? null : value === 'R18';
+        currentPage = 1;
+        updateR18FilterIcon();
+        renderFromCache();
+    }
+
+    function updateR18FilterIcon() {
+        const icon = document.getElementById('sort-R18');
+        const th   = document.getElementById('th-R18');
+        if (!icon) return;
+        const active = R18Filter !== null;
+        icon.innerHTML = `<i class="fas fa-filter" style="font-size:.55rem;opacity:${active ? 1 : .45};color:${active ? 'var(--red)' : 'inherit'}"></i>`;
         if (th) th.classList.toggle('th-filter-active', active);
     }
 

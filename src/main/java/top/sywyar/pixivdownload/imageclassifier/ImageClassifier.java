@@ -955,11 +955,39 @@ public class ImageClassifier extends JFrame {
                     currentImages.size(),
                     currentGroup,
                     totalGroups));
+            statusLabel.setForeground(Color.BLACK);
 
             // 更新窗口标题显示当前进度
             setTitle(String.format("图片分类工具 - 共%s个文件夹 - %d 张图片",
                     subFolders.size() - currentFolderIndex,
                     currentImages.size()));
+
+            // 异步查询作品 R18 状态
+            if (serverRunning) {
+                try {
+                    long artworkId = Long.parseLong(currentFolder.getName());
+                    new Thread(() -> {
+                        try {
+                            String serverUrl = config.getProperty("server.url", "http://localhost:6999");
+                            String url = serverUrl + "/api/downloaded/" + artworkId;
+                            ResponseEntity<Map> resp = restTemplate.getForEntity(url, Map.class);
+                            if (resp.getStatusCode() == HttpStatus.OK && resp.getBody() != null) {
+                                Object R18Val = resp.getBody().get("R18");
+                                Boolean isR18 = R18Val instanceof Boolean ? (Boolean) R18Val : null;
+                                SwingUtilities.invokeLater(() -> {
+                                    if (Boolean.TRUE.equals(isR18)) {
+                                        statusLabel.setText(statusLabel.getText() + "  [R18]");
+                                        statusLabel.setForeground(new Color(200, 0, 0));
+                                    } else if (isR18 == null) {
+                                        statusLabel.setText(statusLabel.getText() + "  [未知]");
+                                        statusLabel.setForeground(new Color(120, 120, 120));
+                                    }
+                                });
+                            }
+                        } catch (Exception ignored) {}
+                    }).start();
+                } catch (NumberFormatException ignored) {}
+            }
         }
     }
 

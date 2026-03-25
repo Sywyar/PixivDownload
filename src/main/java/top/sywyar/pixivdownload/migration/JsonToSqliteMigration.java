@@ -81,7 +81,7 @@ public class JsonToSqliteMigration {
                             ? artwork.getAsLong("time")
                             : pixivDatabase.getUniqueTime();
 
-                    pixivDatabase.insertArtwork(artworkId, title, folder, count, extensions, time);
+                    pixivDatabase.insertArtwork(artworkId, title, folder, count, extensions, time, null);
 
                     if (artwork.has("moved") && artwork.getAsBoolean("moved")) {
                         String moveFolder = artwork.getAsString("moveFolder");

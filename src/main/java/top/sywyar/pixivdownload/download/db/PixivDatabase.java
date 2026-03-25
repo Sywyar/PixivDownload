@@ -27,6 +27,7 @@ public class PixivDatabase {
                     count INTEGER NOT NULL,
                     extensions TEXT NOT NULL,
                     time INTEGER NOT NULL UNIQUE,
+                    "R18" INTEGER DEFAULT NULL,
                     moved INTEGER DEFAULT 0,
                     move_folder TEXT,
                     move_time INTEGER
@@ -46,6 +47,9 @@ public class PixivDatabase {
                 "INSERT OR IGNORE INTO statistics (id, total_artworks, total_images, total_moved) VALUES (1, 0, 0, 0)"
         );
 
+        // 迁移：为无 R18 列的旧库补列，已有数据行该列为 NULL
+        try { jdbcTemplate.execute("ALTER TABLE artworks ADD COLUMN \"R18\" INTEGER DEFAULT NULL"); } catch (Exception ignored) {}
+
         log.info("数据库初始化完成");
     }
 
@@ -64,10 +68,11 @@ public class PixivDatabase {
         return time;
     }
 
-    public void insertArtwork(long artworkId, String title, String folder, int count, String extensions, long time) {
+    public void insertArtwork(long artworkId, String title, String folder, int count, String extensions, long time, Boolean isR18) {
         jdbcTemplate.update(
-                "INSERT OR IGNORE INTO artworks (artwork_id, title, folder, count, extensions, time) VALUES (?, ?, ?, ?, ?, ?)",
-                artworkId, title, folder, count, extensions, time
+                "INSERT OR IGNORE INTO artworks (artwork_id, title, folder, count, extensions, time, \"R18\") VALUES (?, ?, ?, ?, ?, ?, ?)",
+                artworkId, title, folder, count, extensions, time,
+                isR18 == null ? null : (isR18 ? 1 : 0)
         );
     }
 
@@ -91,7 +96,7 @@ public class PixivDatabase {
 
     public ArtworkRecord getArtwork(long artworkId) {
         List<ArtworkRecord> results = jdbcTemplate.query(
-                "SELECT artwork_id, title, folder, count, extensions, time, moved, move_folder, move_time FROM artworks WHERE artwork_id = ?",
+                "SELECT artwork_id, title, folder, count, extensions, time, moved, move_folder, move_time, R18 FROM artworks WHERE artwork_id = ?",
                 this::mapArtworkRecord,
                 artworkId
         );
@@ -110,7 +115,7 @@ public class PixivDatabase {
 
     public List<ArtworkRecord> getArtworksOlderThan(long beforeTimeSec) {
         return jdbcTemplate.query(
-                "SELECT artwork_id, title, folder, count, extensions, time, moved, move_folder, move_time FROM artworks WHERE time < ?",
+                "SELECT artwork_id, title, folder, count, extensions, time, moved, move_folder, move_time, R18 FROM artworks WHERE time < ?",
                 this::mapArtworkRecord,
                 beforeTimeSec
         );
@@ -132,6 +137,8 @@ public class PixivDatabase {
         boolean moved = rs.getInt("moved") == 1;
         long moveTimeVal = rs.getLong("move_time");
         Long moveTime = rs.wasNull() ? null : moveTimeVal;
+        int r18Raw = rs.getInt("R18");
+        Boolean isR18 = rs.wasNull() ? null : (r18Raw == 1);
         return new ArtworkRecord(
                 rs.getLong("artwork_id"),
                 rs.getString("title"),
@@ -141,7 +148,8 @@ public class PixivDatabase {
                 rs.getLong("time"),
                 moved,
                 rs.getString("move_folder"),
-                moveTime
+                moveTime,
+                isR18
         );
     }
 

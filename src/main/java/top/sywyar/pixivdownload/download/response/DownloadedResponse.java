@@ -1,5 +1,6 @@
 package top.sywyar.pixivdownload.download.response;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 
@@ -15,6 +16,8 @@ public class DownloadedResponse {
     private final boolean moved;
     private final String moveFolder;
     private final Long moveTime;
+    @JsonProperty("R18")
+    private final Boolean isR18;
 
     public static class DownloadedResponseBuilder {
         private Long artworkId;
@@ -26,6 +29,7 @@ public class DownloadedResponse {
         private boolean moved = false;
         private String moveFolder;
         private Long moveTime;
+        private Boolean isR18 = null;
 
         public DownloadedResponseBuilder setArtworkId(Long artworkId) {
             this.artworkId = artworkId;
@@ -72,12 +76,17 @@ public class DownloadedResponse {
             return this;
         }
 
+        public DownloadedResponseBuilder setR18(Boolean isR18) {
+            this.isR18 = isR18;
+            return this;
+        }
+
         public DownloadedResponse build() {
             boolean flag = artworkId != null && title != null && folder != null && count != 0 && time != null;
             boolean flag2 = !moved || (moveFolder != null && moveTime != null);
 
             if (flag && flag2) {
-                return new DownloadedResponse(artworkId, title, folder, count, extensions, time, moved, moveFolder, moveTime);
+                return new DownloadedResponse(artworkId, title, folder, count, extensions, time, moved, moveFolder, moveTime, isR18);
             } else {
                 throw new RuntimeException("缺少必要值，artworkId = " + artworkId + ",title=" + title);
             }

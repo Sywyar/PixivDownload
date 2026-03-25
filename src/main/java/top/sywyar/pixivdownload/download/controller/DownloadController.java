@@ -197,6 +197,7 @@ public class DownloadController {
                     .setMoved(artwork.moved())
                     .setMoveFolder(artwork.moveFolder())
                     .setMoveTime(artwork.moveTime())
+                    .setR18(artwork.isR18())
                     .build());
         }
         return ResponseEntity.ok(downloadedResponses);
@@ -336,6 +337,7 @@ public class DownloadController {
                 .setMoved(artwork.moved())
                 .setMoveFolder(artwork.moveFolder())
                 .setMoveTime(artwork.moveTime())
+                .setR18(artwork.isR18())
                 .build();
     }
 }

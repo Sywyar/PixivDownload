@@ -82,7 +82,7 @@ public class DownloadService {
                 downloadPath = Paths.get(downloadPath.toString(), other.getUsername());
 
                 if (other.isR18()) {
-                    downloadPath = Paths.get(downloadPath.toString(), "r18");
+                    downloadPath = Paths.get(downloadPath.toString(), "R18");
                 }
             }
             downloadPath = Paths.get(downloadPath.toString(), folderName);
@@ -268,7 +268,7 @@ public class DownloadService {
             }
 
             // 记录下载信息
-            recordDownload(artworkId, title, status.getDownloadPath(), fileExtensions, successCount.get());
+            recordDownload(artworkId, title, status.getDownloadPath(), fileExtensions, successCount.get(), other.isR18());
             recordStatistics(imageUrls.size());
 
             // 更新下载状态为完成
@@ -379,13 +379,13 @@ public class DownloadService {
         return parts.length > 1 ? parts[parts.length - 1] : "jpg";
     }
 
-    private void recordDownload(Long artworkId, String title, String folderPath, HashSet<String> fileExtensions, int count) {
+    private void recordDownload(Long artworkId, String title, String folderPath, HashSet<String> fileExtensions, int count, boolean isR18) {
         try {
             long time = pixivDatabase.getUniqueTime();
             pixivDatabase.insertArtwork(
                     artworkId, title,
                     Path.of(folderPath).toAbsolutePath().toString(),
-                    count, String.join(",", fileExtensions), time
+                    count, String.join(",", fileExtensions), time, isR18
             );
         } catch (Exception e) {
             log.error("记录下载历史失败: {}", e.getMessage(), e);
