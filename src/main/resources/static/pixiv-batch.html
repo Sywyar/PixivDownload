@@ -974,7 +974,10 @@ async function workerLoop(intervalMs) { // intervalMs already in ms
 }
 
 function getNextPending() {
-  const idx = state.queue.findIndex(q => q.status === 'pending');
+  const downloadingIds = new Set(
+    state.queue.filter(q => q.status === 'downloading').map(q => q.id)
+  );
+  const idx = state.queue.findIndex(q => q.status === 'pending' && !downloadingIds.has(q.id));
   if (idx === -1) return null;
   state.queue[idx].status = 'downloading';
   state.queue[idx].startTime = new Date().toISOString();
@@ -1247,6 +1250,7 @@ function handleClear() {
 }
 
 function parseNTabFresh() {
+  if (!confirm('确认清除当前队列并重新解析？')) return;
   stopAndClear();
   parseNTab();
 }
@@ -1528,7 +1532,7 @@ async function init() {
   });
 
   // Settings change → auto-save
-  ['s-interval','s-concurrent','s-skip','s-r18'].forEach(id => {
+  ['s-interval','s-image-delay','s-concurrent','s-skip','s-r18'].forEach(id => {
     const el = document.getElementById(id);
     el.addEventListener('change', syncSettings);
     if (el.type === 'number') el.addEventListener('input', syncSettings);

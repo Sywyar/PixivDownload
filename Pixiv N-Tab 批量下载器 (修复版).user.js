@@ -63,11 +63,6 @@
             else if (c) e.appendChild(c);
         });
         return e;
-
-        function getCurrentUserId() {
-            const match = location.href.match(/users\/(\d+)/);
-            return match ? match[1] : null;
-        }
     }
 
     /* ========== API 封装 ========== */
@@ -307,7 +302,10 @@
                 if (!raw) return;
                 const parsed = JSON.parse(raw);
                 if (Array.isArray(parsed.queue)) {
-                    this.queue = parsed.queue;
+                    // 刷新后 downloading 状态的任务实际已中断，重置为 idle 以便重新下载
+                    this.queue = parsed.queue.map(q =>
+                        q.status === 'downloading' ? { ...q, status: 'idle', lastMessage: '刷新后重置' } : q
+                    );
                     this.isRunning = false; // 启动时默认暂停，避免自动跑
                     this.isPaused = !!parsed.isPaused;
                     this.stats = parsed.stats || { completed: 0, success: 0, failed: 0, active: 0, skipped: 0 };
@@ -433,7 +431,7 @@
 
             // 多人模式：队列完成后自动打包（配额超限时已在 _processSingle 中触发，不重复）
             const completed = this.queue.filter(q => q.status === 'completed').length;
-            if (quotaInfo.enabled && completed > 0) {
+            if (quotaInfo.enabled && completed > 0 && !this._quotaExceededHandled) {
                 this._autoPackAfterQueue();
             }
         }
@@ -481,7 +479,10 @@
         }
 
         _getNextPending() {
-            const idx = this.queue.findIndex(q => q.status === 'pending');
+            const downloadingIds = new Set(
+                this.queue.filter(q => q.status === 'downloading').map(q => q.id)
+            );
+            const idx = this.queue.findIndex(q => q.status === 'pending' && !downloadingIds.has(q.id));
             if (idx === -1) return null;
             this.queue[idx].status = 'downloading';
             this.queue[idx].startTime = new Date().toISOString();
@@ -970,10 +971,14 @@
             if (!this.manager) return;
             const failedItems = this.manager.queue.filter(q => q.status === 'failed');
             if (failedItems.length === 0) { alert('当前没有失败的作品！'); return; }
-            this.manager.queue = failedItems.map(f => ({ ...f, status: 'idle', startTime: null, endTime: null, downloadedCount: 0, totalImages: 0, lastMessage: '' }));
+            failedItems.forEach(q => {
+                q.status = 'pending';
+                q.lastMessage = '';
+                q.startTime = null;
+                q.endTime = null;
+            });
             this.manager.saveToStorage();
             this.renderQueue(this.manager.queue);
-            alert(`已保留 ${failedItems.length} 个失败作品，开始重新下载。`);
             this.handleStart();
         }
 

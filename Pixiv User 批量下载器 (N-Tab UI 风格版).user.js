@@ -19,7 +19,7 @@
 (function () {
     'use strict';
 
-    console.log('[Pixiv Batch] Script Loaded (v1.7.2 - Username in title)');
+    console.log('[Pixiv Batch] Script Loaded (v1.8.0)');
 
     /* ========== 配置 ========== */
     const CONFIG = {
@@ -607,7 +607,7 @@
 
             // 多人模式：队列完成后自动打包（配额超限时已在 _processSingle 中触发，不重复）
             const completed = this.queue.filter(q => q.status === 'completed').length;
-            if (quotaInfo.enabled && completed > 0) {
+            if (quotaInfo.enabled && completed > 0 && !this._quotaExceededHandled) {
                 this._autoPackAfterQueue();
             }
         }
@@ -670,7 +670,10 @@
         }
 
         _getNextPending() {
-            const idx = this.queue.findIndex(q => q.status === 'pending');
+            const downloadingIds = new Set(
+                this.queue.filter(q => q.status === 'downloading').map(q => q.id)
+            );
+            const idx = this.queue.findIndex(q => q.status === 'pending' && !downloadingIds.has(q.id));
             if (idx === -1) return null;
             this.queue[idx].status = 'downloading';
             this.queue[idx].startTime = new Date().toISOString();

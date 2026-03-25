@@ -35,3 +35,4 @@ build/
 /pixiv-download/
 /image_classifier.properties
 /test/
+/config.yaml

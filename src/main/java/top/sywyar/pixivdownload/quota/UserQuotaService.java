@@ -269,8 +269,7 @@ public class UserQuotaService {
         private final String uuid;
         private final AtomicInteger artworksUsed = new AtomicInteger(0);
         private volatile long periodStart = System.currentTimeMillis();
-        private final List<Path> downloadedFolders =
-                Collections.synchronizedList(new ArrayList<>());
+        private final Set<Path> downloadedFolders = ConcurrentHashMap.newKeySet();
         private volatile String archiveToken = null;
 
         public UserQuota(String uuid) { this.uuid = uuid; }
