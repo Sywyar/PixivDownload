@@ -4,6 +4,8 @@
 
 **功能：** 单作品下载 / 用户主页批量下载 / N-Tab 书签批量下载 / 动图自动转 WebP / 下载历史管理 / 图片分类工具
 
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
+
 ---
 
 ## 目录
