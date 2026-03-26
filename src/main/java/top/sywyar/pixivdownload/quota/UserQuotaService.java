@@ -2,7 +2,6 @@ package top.sywyar.pixivdownload.quota;
 
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -25,19 +24,22 @@ import java.util.zip.ZipOutputStream;
 @Service
 public class UserQuotaService {
 
-    @Autowired
-    private MultiModeConfig config;
-
-    @Autowired
-    private DownloadConfig downloadConfig;
-
-    @Autowired
-    private PixivDatabase pixivDatabase;
+    private final MultiModeConfig config;
+    private final DownloadConfig downloadConfig;
+    private final PixivDatabase pixivDatabase;
 
     /** UUID → 用户配额信息 */
     private final ConcurrentHashMap<String, UserQuota> quotaMap = new ConcurrentHashMap<>();
     /** token → 压缩包信息 */
     private final ConcurrentHashMap<String, ArchiveEntry> archiveMap = new ConcurrentHashMap<>();
+
+    public UserQuotaService(MultiModeConfig config,
+                            DownloadConfig downloadConfig,
+                            PixivDatabase pixivDatabase) {
+        this.config = config;
+        this.downloadConfig = downloadConfig;
+        this.pixivDatabase = pixivDatabase;
+    }
 
     // ---- 配额管理 ----------------------------------------------------------------
 

@@ -3,7 +3,6 @@ package top.sywyar.pixivdownload.migration;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import top.sywyar.pixivdownload.download.db.PixivDatabase;
@@ -31,11 +30,14 @@ public class JsonToSqliteMigration {
 
     private static final ObjectMapper objectMapper = new ObjectMapper();
 
-    @Autowired
-    private PixivDatabase pixivDatabase;
+    private final PixivDatabase pixivDatabase;
+    private final String rootFolder;
 
-    @Value("${download.root-folder:pixiv-download}")
-    private String rootFolder;
+    public JsonToSqliteMigration(PixivDatabase pixivDatabase,
+                                 @Value("${download.root-folder:pixiv-download}") String rootFolder) {
+        this.pixivDatabase = pixivDatabase;
+        this.rootFolder = rootFolder;
+    }
 
     public MigrationResult migrate() {
         return migrate(null);

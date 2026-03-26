@@ -6,6 +6,7 @@ import org.springframework.web.client.RestTemplate;
 
 import javax.swing.*;
 import java.awt.*;
+import java.awt.event.*;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -270,6 +271,18 @@ public class ImageClassifier extends JFrame {
                     BorderFactory.createEmptyBorder(4, 4, 4, 4)));
             thumbnailLabels[i].setPreferredSize(new Dimension(160, 160));
             thumbnailsPanel.add(thumbnailLabels[i]);
+
+            final int slotIndex = i;
+            thumbnailLabels[i].addMouseListener(new MouseAdapter() {
+                @Override
+                public void mouseClicked(MouseEvent e) {
+                    int imgIndex = currentGroupIndex * GROUP_SIZE + slotIndex;
+                    if (currentImages != null && imgIndex < currentImages.size()
+                            && thumbnailLabels[slotIndex].getIcon() != null) {
+                        openImageViewer(imgIndex);
+                    }
+                }
+            });
         }
 
         // ── 翻页导航 ──
@@ -878,10 +891,12 @@ public class ImageClassifier extends JFrame {
                 String badge     = fname.endsWith(".webp") ? "动图" : null;
                 label.setText("加载中…");
                 label.setIcon(null);
+                label.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
                 thumbnailManager.loadThumbnail(imageFile, label, thumbW, thumbH, badge);
             } else {
                 label.setIcon(null);
                 label.setText("无图片");
+                label.setCursor(Cursor.getDefaultCursor());
             }
             label.setBorder(BorderFactory.createLineBorder(Color.GRAY, 1));
         }
@@ -1137,6 +1152,154 @@ public class ImageClassifier extends JFrame {
         } catch (Exception e) {
             log.error("发送请求失败: {}", e.getMessage());
         }
+    }
+
+    // =========================================================================
+    // 图片查看器
+    // =========================================================================
+
+    private void openImageViewer(int initialIndex) {
+        if (currentImages == null || currentImages.isEmpty()) return;
+
+        JDialog viewer = new JDialog(this, "图片查看", false);
+        viewer.setSize(1100, 860);
+        viewer.setLocationRelativeTo(this);
+        viewer.setLayout(new BorderLayout());
+
+        final int[] idx = {initialIndex};
+
+        // ── 图片显示区 ──
+        JLabel imageLabel = new JLabel("加载中...", JLabel.CENTER);
+        imageLabel.setFont(new Font("微软雅黑", Font.PLAIN, 14));
+        imageLabel.setForeground(new Color(180, 180, 180));
+        imageLabel.setBackground(new Color(18, 18, 18));
+        imageLabel.setOpaque(true);
+
+        JScrollPane scrollPane = new JScrollPane(imageLabel,
+                JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED,
+                JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED);
+        scrollPane.getViewport().setBackground(new Color(18, 18, 18));
+        scrollPane.setBorder(null);
+
+        // ── 底部导航栏 ──
+        JPanel navPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 14, 8));
+        navPanel.setBackground(C_PANEL);
+        navPanel.setBorder(BorderFactory.createMatteBorder(1, 0, 0, 0, C_BORDER));
+
+        JButton prevBtn = styledButton("◀ 上一张", C_NEUTRAL);
+        JButton nextBtn = styledButton("下一张 ▶", C_NEUTRAL);
+        prevBtn.setPreferredSize(new Dimension(110, 34));
+        nextBtn.setPreferredSize(new Dimension(110, 34));
+
+        JLabel pageLabel = new JLabel();
+        pageLabel.setFont(new Font("微软雅黑", Font.BOLD, 14));
+        pageLabel.setForeground(C_TEXT);
+        pageLabel.setPreferredSize(new Dimension(130, 34));
+        pageLabel.setHorizontalAlignment(SwingConstants.CENTER);
+
+        JLabel fileNameLabel = new JLabel();
+        fileNameLabel.setFont(new Font("微软雅黑", Font.PLAIN, 12));
+        fileNameLabel.setForeground(C_TEXT_MUTED);
+
+        navPanel.add(prevBtn);
+        navPanel.add(pageLabel);
+        navPanel.add(nextBtn);
+        navPanel.add(Box.createHorizontalStrut(16));
+        navPanel.add(fileNameLabel);
+
+        viewer.add(scrollPane, BorderLayout.CENTER);
+        viewer.add(navPanel,   BorderLayout.SOUTH);
+
+        // ── 加载图片（必须在 EDT 调用）──
+        Runnable loadImage = () -> {
+            if (currentImages == null || idx[0] >= currentImages.size()) return;
+            File imgFile = currentImages.get(idx[0]);
+
+            viewer.setTitle("图片查看  [" + (idx[0] + 1) + " / " + currentImages.size() + "]  " + imgFile.getName());
+            pageLabel.setText("第 " + (idx[0] + 1) + " / " + currentImages.size() + " 张");
+            fileNameLabel.setText(imgFile.getName());
+            prevBtn.setEnabled(idx[0] > 0);
+            nextBtn.setEnabled(idx[0] < currentImages.size() - 1);
+            imageLabel.setText("加载中...");
+            imageLabel.setIcon(null);
+
+            // 读取原始图文件（webp 动图使用原始 webp，其余直接读取）
+            final File loadFile = imgFile;
+            final Dimension vpSize = scrollPane.getViewport().getSize();
+            final int vpW = vpSize.width  > 100 ? vpSize.width  : 1060;
+            final int vpH = vpSize.height > 100 ? vpSize.height : 760;
+
+            new Thread(() -> {
+                try {
+                    java.awt.image.BufferedImage src = javax.imageio.ImageIO.read(loadFile);
+                    if (src == null) {
+                        // webp 等 ImageIO 不支持的格式，回退到 ImageIcon
+                        ImageIcon raw = new ImageIcon(loadFile.getAbsolutePath());
+                        src = toBufferedImage(raw.getImage());
+                    }
+                    if (src == null) throw new IOException("无法解码图片");
+
+                    int imgW = src.getWidth();
+                    int imgH = src.getHeight();
+                    double scale = Math.min((double) vpW / imgW, (double) vpH / imgH);
+
+                    java.awt.image.BufferedImage display;
+                    if (scale < 1.0) {
+                        int newW = (int) (imgW * scale);
+                        int newH = (int) (imgH * scale);
+                        display = ThumbnailManager.getThumbnail(loadFile, newW, newH);
+                    } else {
+                        display = src; // 原图不放大
+                    }
+
+                    final ImageIcon icon = new ImageIcon(display);
+                    SwingUtilities.invokeLater(() -> {
+                        imageLabel.setIcon(icon);
+                        imageLabel.setText("");
+                        // 滚动回顶部
+                        scrollPane.getViewport().setViewPosition(new Point(0, 0));
+                    });
+                } catch (Exception ex) {
+                    log.error("查看器加载图片失败: {}", ex.getMessage());
+                    SwingUtilities.invokeLater(() -> {
+                        imageLabel.setIcon(null);
+                        imageLabel.setText("图片加载失败: " + ex.getMessage());
+                    });
+                }
+            }, "ImageViewer-Loader").start();
+        };
+
+        prevBtn.addActionListener(e -> { if (idx[0] > 0) { idx[0]--; loadImage.run(); } });
+        nextBtn.addActionListener(e -> { if (idx[0] < currentImages.size() - 1) { idx[0]++; loadImage.run(); } });
+
+        // 键盘左右键翻页
+        KeyStroke left  = KeyStroke.getKeyStroke(KeyEvent.VK_LEFT,  0);
+        KeyStroke right = KeyStroke.getKeyStroke(KeyEvent.VK_RIGHT, 0);
+        viewer.getRootPane().getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).put(left,  "prev");
+        viewer.getRootPane().getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).put(right, "next");
+        viewer.getRootPane().getActionMap().put("prev", new AbstractAction() {
+            @Override public void actionPerformed(ActionEvent e) { if (prevBtn.isEnabled()) prevBtn.doClick(); }
+        });
+        viewer.getRootPane().getActionMap().put("next", new AbstractAction() {
+            @Override public void actionPerformed(ActionEvent e) { if (nextBtn.isEnabled()) nextBtn.doClick(); }
+        });
+
+        viewer.setVisible(true);
+        // invokeLater 确保对话框完成布局后再加载，viewport 尺寸才准确
+        SwingUtilities.invokeLater(loadImage::run);
+    }
+
+    /** 将任意 Image 转为 BufferedImage（用于 webp 等 ImageIO 不直接支持的格式回退路径）*/
+    private static java.awt.image.BufferedImage toBufferedImage(Image img) {
+        if (img instanceof java.awt.image.BufferedImage bi) return bi;
+        // 等待图片完全加载
+        new ImageIcon(img); // 触发同步加载
+        java.awt.image.BufferedImage bimage = new java.awt.image.BufferedImage(
+                img.getWidth(null), img.getHeight(null), java.awt.image.BufferedImage.TYPE_INT_RGB);
+        Graphics2D g2d = bimage.createGraphics();
+        g2d.drawImage(img, 0, 0, null);
+        g2d.dispose();
+        return bimage;
     }
 
     // =========================================================================

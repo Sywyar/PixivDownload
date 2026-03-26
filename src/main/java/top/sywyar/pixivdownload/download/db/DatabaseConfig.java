@@ -11,14 +11,16 @@ import javax.sql.DataSource;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
-import java.util.Properties;
 
 @Slf4j
 @Configuration
 public class DatabaseConfig {
 
-    @Value("${download.root-folder:pixiv-download}")
-    private String rootFolder;
+    private final String rootFolder;
+
+    public DatabaseConfig(@Value("${download.root-folder:pixiv-download}") String rootFolder) {
+        this.rootFolder = rootFolder;
+    }
 
     @Bean
     public DataSource dataSource() throws IOException {

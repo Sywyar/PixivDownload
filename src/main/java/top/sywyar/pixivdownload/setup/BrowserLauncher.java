@@ -1,7 +1,6 @@
 package top.sywyar.pixivdownload.setup;
 
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
@@ -14,11 +13,14 @@ import java.net.URI;
 @Slf4j
 public class BrowserLauncher implements ApplicationRunner {
 
-    @Autowired
-    private SetupService setupService;
+    private final SetupService setupService;
 
     @Value("${server.port:6999}")
     private int port;
+
+    public BrowserLauncher(SetupService setupService) {
+        this.setupService = setupService;
+    }
 
     @Override
     public void run(ApplicationArguments args) {

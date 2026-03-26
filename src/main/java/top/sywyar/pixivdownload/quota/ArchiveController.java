@@ -4,18 +4,19 @@ import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-
-import java.util.regex.Pattern;
+import top.sywyar.pixivdownload.download.response.ErrorResponse;
+import top.sywyar.pixivdownload.quota.response.ArchiveStatusResponse;
+import top.sywyar.pixivdownload.quota.response.PackRateLimitResponse;
+import top.sywyar.pixivdownload.quota.response.QuotaInitResponse;
+import top.sywyar.pixivdownload.quota.response.TriggerPackResponse;
 import top.sywyar.pixivdownload.setup.SetupService;
 
-import java.util.HashMap;
-import java.util.Map;
+import java.util.regex.Pattern;
 
 @RestController
 @Slf4j
@@ -24,46 +25,42 @@ public class ArchiveController {
     private static final Pattern UUID_PATTERN =
             Pattern.compile("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$");
 
-    @Autowired
-    private UserQuotaService userQuotaService;
+    private final UserQuotaService userQuotaService;
+    private final MultiModeConfig multiModeConfig;
+    private final SetupService setupService;
 
-    @Autowired
-    private MultiModeConfig multiModeConfig;
-
-    @Autowired
-    private SetupService setupService;
+    public ArchiveController(UserQuotaService userQuotaService,
+                             MultiModeConfig multiModeConfig,
+                             SetupService setupService) {
+        this.userQuotaService = userQuotaService;
+        this.multiModeConfig = multiModeConfig;
+        this.setupService = setupService;
+    }
 
     /**
      * 初始化配额会话：返回当前用户的 UUID 和配额状态。
      * 若用户没有 UUID cookie，则自动分配并写入 cookie。
      */
     @GetMapping("/api/quota/init")
-    public ResponseEntity<Map<String, Object>> initQuota(
+    public ResponseEntity<QuotaInitResponse> initQuota(
             HttpServletRequest request, HttpServletResponse response) {
 
         if (!"multi".equals(setupService.getMode())
                 || !multiModeConfig.getQuota().isEnabled()) {
-            return ResponseEntity.ok(Map.of("enabled", false));
+            return ResponseEntity.ok(new QuotaInitResponse(false, null, null, null, null, null));
         }
 
         String uuid = extractOrCreateUuid(request, response);
         UserQuotaService.QuotaStatusResult status = userQuotaService.getQuotaStatus(uuid);
 
-        Map<String, Object> result = new HashMap<>();
-        result.put("enabled", true);
-        result.put("uuid", uuid);
-        result.put("artworksUsed", status.artworksUsed());
-        result.put("maxArtworks", status.maxArtworks());
-        result.put("resetSeconds", status.resetSeconds());
-
-        if (status.archive() != null) {
-            result.put("archive", Map.of(
-                    "token", status.archive().token(),
-                    "status", status.archive().status(),
-                    "expireSeconds", status.archive().expireSeconds()
-            ));
-        }
-        return ResponseEntity.ok(result);
+        return ResponseEntity.ok(new QuotaInitResponse(
+                true,
+                uuid,
+                status.artworksUsed(),
+                status.maxArtworks(),
+                status.resetSeconds(),
+                status.archive()
+        ));
     }
 
     /**
@@ -73,29 +70,26 @@ public class ArchiveController {
      * 若用户无已记录的文件夹（如首次调用或已清空），返回 204。
      */
     @PostMapping("/api/quota/pack")
-    public ResponseEntity<Map<String, Object>> triggerPack(
+    public ResponseEntity<?> triggerPack(
             HttpServletRequest request, HttpServletResponse response) {
 
         if (!"multi".equals(setupService.getMode())
                 || !multiModeConfig.getQuota().isEnabled()) {
-            return ResponseEntity.status(403).body(Map.of("error", "multi-mode quota not enabled"));
+            return ResponseEntity.status(403).body(new ErrorResponse("multi-mode quota not enabled"));
         }
 
         // UUID 必须已存在，不自动生成
         String uuid = extractExistingUuid(request);
         if (uuid == null) {
-            return ResponseEntity.status(401).body(Map.of("error", "missing user UUID"));
+            return ResponseEntity.status(401).body(new ErrorResponse("missing user UUID"));
         }
 
         // 频率限制：archiveExpireMinutes 窗口内最多 maxArtworks 次
         if (!userQuotaService.checkAndReservePack(uuid)) {
             int max = multiModeConfig.getQuota().getMaxArtworks();
             int windowMin = multiModeConfig.getQuota().getArchiveExpireMinutes();
-            return ResponseEntity.status(429).body(Map.of(
-                    "error", "pack rate limit exceeded",
-                    "maxPacks", max,
-                    "windowMinutes", windowMin
-            ));
+            return ResponseEntity.status(429).body(new PackRateLimitResponse(
+                    "pack rate limit exceeded", max, windowMin));
         }
 
         UserQuotaService.UserQuota quota = userQuotaService.getQuotaForUser(uuid);
@@ -106,30 +100,27 @@ public class ArchiveController {
 
         String token = userQuotaService.triggerArchive(uuid);
         long expireSeconds = (long) multiModeConfig.getQuota().getArchiveExpireMinutes() * 60;
-        return ResponseEntity.ok(Map.of(
-                "archiveToken", token,
-                "archiveExpireSeconds", expireSeconds
-        ));
+        return ResponseEntity.ok(new TriggerPackResponse(token, expireSeconds));
     }
 
     /**
      * 查询压缩包状态。
      */
     @GetMapping("/api/archive/status/{token}")
-    public ResponseEntity<Map<String, Object>> archiveStatus(@PathVariable String token) {
+    public ResponseEntity<ArchiveStatusResponse> archiveStatus(@PathVariable String token) {
         UserQuotaService.ArchiveEntry entry = userQuotaService.getArchive(token);
         if (entry == null) {
-            return ResponseEntity.ok(Map.of("status", "expired"));
+            return ResponseEntity.ok(new ArchiveStatusResponse(null, "expired", null));
         }
         long now = System.currentTimeMillis();
         if (now > entry.getExpireTime()) {
             userQuotaService.deleteArchive(token);
-            return ResponseEntity.ok(Map.of("status", "expired"));
+            return ResponseEntity.ok(new ArchiveStatusResponse(null, "expired", null));
         }
-        return ResponseEntity.ok(Map.of(
-                "token", token,
-                "status", entry.getStatus(),
-                "expireSeconds", (entry.getExpireTime() - now) / 1000
+        return ResponseEntity.ok(new ArchiveStatusResponse(
+                token,
+                entry.getStatus(),
+                (entry.getExpireTime() - now) / 1000
         ));
     }
 
@@ -140,16 +131,16 @@ public class ArchiveController {
     public ResponseEntity<?> downloadArchive(@PathVariable String token) {
         UserQuotaService.ArchiveEntry entry = userQuotaService.getArchive(token);
         if (entry == null || System.currentTimeMillis() > entry.getExpireTime()) {
-            return ResponseEntity.status(410).body("压缩包已过期或不存在");
+            return ResponseEntity.status(410).body(new ErrorResponse("压缩包已过期或不存在"));
         }
         if (!"ready".equals(entry.getStatus())) {
-            return ResponseEntity.status(202).body("压缩包正在准备中，请稍后再试");
+            return ResponseEntity.status(202).body(new ErrorResponse("压缩包正在准备中，请稍后再试"));
         }
         if (entry.getArchivePath() == null || !entry.getArchivePath().toFile().exists()) {
             if ("empty".equals(entry.getStatus())) {
-                return ResponseEntity.status(204).body("暂无已下载文件可打包");
+                return ResponseEntity.status(204).build();
             }
-            return ResponseEntity.status(404).body("压缩包文件不存在");
+            return ResponseEntity.status(404).body(new ErrorResponse("压缩包文件不存在"));
         }
 
         String filename = "pixiv_download_" + token.substring(0, 8) + ".zip";

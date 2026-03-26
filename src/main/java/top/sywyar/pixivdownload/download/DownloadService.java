@@ -7,8 +7,8 @@ import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClients;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.lang.Nullable;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -45,24 +45,27 @@ import java.util.zip.ZipInputStream;
 @Service
 public class DownloadService {
 
-    @Autowired
-    private DownloadConfig downloadConfig;
-
-    @Autowired
-    private ProxyConfig proxyConfig;
-
-    @Autowired
-    private ApplicationEventPublisher eventPublisher;
-
-    @Autowired
-    private PixivDatabase pixivDatabase;
-
-    @Autowired(required = false)
-    private UserQuotaService userQuotaService;
+    private final DownloadConfig downloadConfig;
+    private final ProxyConfig proxyConfig;
+    private final ApplicationEventPublisher eventPublisher;
+    private final PixivDatabase pixivDatabase;
+    private final UserQuotaService userQuotaService;
 
     // 存储下载状态
     private final ConcurrentHashMap<Long, DownloadStatus> downloadStatusMap = new ConcurrentHashMap<>();
     private final ScheduledExecutorService cleanupScheduler = Executors.newSingleThreadScheduledExecutor();
+
+    public DownloadService(DownloadConfig downloadConfig,
+                           ProxyConfig proxyConfig,
+                           ApplicationEventPublisher eventPublisher,
+                           PixivDatabase pixivDatabase,
+                           @Nullable UserQuotaService userQuotaService) {
+        this.downloadConfig = downloadConfig;
+        this.proxyConfig = proxyConfig;
+        this.eventPublisher = eventPublisher;
+        this.pixivDatabase = pixivDatabase;
+        this.userQuotaService = userQuotaService;
+    }
 
     @Async
     public void downloadImages(Long artworkId, String title, List<String> imageUrls,

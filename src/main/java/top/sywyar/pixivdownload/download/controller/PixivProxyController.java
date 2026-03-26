@@ -11,16 +11,18 @@ import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClients;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import top.sywyar.pixivdownload.config.ProxyConfig;
+import top.sywyar.pixivdownload.download.response.*;
 import top.sywyar.pixivdownload.quota.MultiModeConfig;
 import top.sywyar.pixivdownload.quota.UserQuotaService;
+import top.sywyar.pixivdownload.quota.response.ProxyRateLimitResponse;
 import top.sywyar.pixivdownload.setup.SetupService;
 
 import java.nio.charset.StandardCharsets;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.regex.Pattern;
 
 /**
@@ -37,17 +39,20 @@ public class PixivProxyController {
             Pattern.compile("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$");
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    @Autowired
-    private ProxyConfig proxyConfig;
+    private final ProxyConfig proxyConfig;
+    private final SetupService setupService;
+    private final UserQuotaService userQuotaService;
+    private final MultiModeConfig multiModeConfig;
 
-    @Autowired
-    private SetupService setupService;
-
-    @Autowired
-    private UserQuotaService userQuotaService;
-
-    @Autowired
-    private MultiModeConfig multiModeConfig;
+    public PixivProxyController(ProxyConfig proxyConfig,
+                                SetupService setupService,
+                                UserQuotaService userQuotaService,
+                                MultiModeConfig multiModeConfig) {
+        this.proxyConfig = proxyConfig;
+        this.setupService = setupService;
+        this.userQuotaService = userQuotaService;
+        this.multiModeConfig = multiModeConfig;
+    }
 
     /**
      * 多人模式访问控制：
@@ -62,17 +67,14 @@ public class PixivProxyController {
         }
         String uuid = extractExistingUuid(request);
         if (uuid == null) {
-            return ResponseEntity.status(401).body(Map.of("error", "missing user UUID"));
+            return ResponseEntity.status(401).body(new ErrorResponse("missing user UUID"));
         }
         if (multiModeConfig.getQuota().isEnabled()
                 && !userQuotaService.checkAndReserveProxy(uuid)) {
             int max = multiModeConfig.getQuota().getMaxArtworks();
             int hours = multiModeConfig.getQuota().getResetPeriodHours();
-            return ResponseEntity.status(429).body(Map.of(
-                    "error", "proxy rate limit exceeded",
-                    "maxRequests", max,
-                    "windowHours", hours
-            ));
+            return ResponseEntity.status(429).body(new ProxyRateLimitResponse(
+                    "proxy rate limit exceeded", max, hours));
         }
         return null;
     }
@@ -122,132 +124,107 @@ public class PixivProxyController {
     public ResponseEntity<?> getUserArtworks(
             @PathVariable String userId,
             @RequestHeader(value = "X-Pixiv-Cookie", required = false) String cookie,
-            HttpServletRequest request) {
+            HttpServletRequest request) throws Exception {
         ResponseEntity<?> deny = checkMultiModeAccess(request);
         if (deny != null) return deny;
-        try {
-            String body = proxyGet(
-                    "https://www.pixiv.net/ajax/user/" + userId + "/profile/all", cookie);
-            JsonNode root = objectMapper.readTree(body);
-            if (root.path("error").asBoolean(false)) {
-                return ResponseEntity.badRequest()
-                        .body(Map.of("error", root.path("message").asText()));
-            }
-            JsonNode b = root.path("body");
-            List<String> ids = new ArrayList<>();
-            b.path("illusts").fieldNames().forEachRemaining(ids::add);
-            b.path("manga").fieldNames().forEachRemaining(ids::add);
-            ids.sort((a, c2) -> Long.compare(Long.parseLong(c2), Long.parseLong(a)));
-            return ResponseEntity.ok(Map.of("ids", ids));
-        } catch (Exception e) {
-            log.error("获取用户作品列表失败: {}", e.getMessage(), e);
-            return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
+        String body = proxyGet(
+                "https://www.pixiv.net/ajax/user/" + userId + "/profile/all", cookie);
+        JsonNode root = objectMapper.readTree(body);
+        if (root.path("error").asBoolean(false)) {
+            return ResponseEntity.badRequest()
+                    .body(new ErrorResponse(root.path("message").asText()));
         }
+        JsonNode b = root.path("body");
+        List<String> ids = new ArrayList<>();
+        b.path("illusts").fieldNames().forEachRemaining(ids::add);
+        b.path("manga").fieldNames().forEachRemaining(ids::add);
+        ids.sort((a, c2) -> Long.compare(Long.parseLong(c2), Long.parseLong(a)));
+        return ResponseEntity.ok(new UserArtworksResponse(ids));
     }
 
     @GetMapping("/user/{userId}/meta")
     public ResponseEntity<?> getUserMeta(
             @PathVariable String userId,
             @RequestHeader(value = "X-Pixiv-Cookie", required = false) String cookie,
-            HttpServletRequest request) {
+            HttpServletRequest request) throws Exception {
         ResponseEntity<?> deny = checkMultiModeAccess(request);
         if (deny != null) return deny;
-        try {
-            String body = proxyGet(
-                    "https://www.pixiv.net/ajax/user/" + userId + "?lang=zh", cookie);
-            JsonNode root = objectMapper.readTree(body);
-            if (root.path("error").asBoolean(false)) {
-                return ResponseEntity.badRequest()
-                        .body(Map.of("error", root.path("message").asText()));
-            }
-            String name = root.path("body").path("name").asText();
-            return ResponseEntity.ok(Map.of("name", name, "userId", userId));
-        } catch (Exception e) {
-            log.error("获取用户信息失败: {}", e.getMessage(), e);
-            return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
+        String body = proxyGet(
+                "https://www.pixiv.net/ajax/user/" + userId + "?lang=zh", cookie);
+        JsonNode root = objectMapper.readTree(body);
+        if (root.path("error").asBoolean(false)) {
+            return ResponseEntity.badRequest()
+                    .body(new ErrorResponse(root.path("message").asText()));
         }
+        String name = root.path("body").path("name").asText();
+        return ResponseEntity.ok(new UserMetaResponse(name, userId));
     }
 
     @GetMapping("/artwork/{artworkId}/meta")
     public ResponseEntity<?> getArtworkMeta(
             @PathVariable String artworkId,
             @RequestHeader(value = "X-Pixiv-Cookie", required = false) String cookie,
-            HttpServletRequest request) {
+            HttpServletRequest request) throws Exception {
         ResponseEntity<?> deny = checkMultiModeAccess(request);
         if (deny != null) return deny;
-        try {
-            String body = proxyGet(
-                    "https://www.pixiv.net/ajax/illust/" + artworkId, cookie);
-            JsonNode root = objectMapper.readTree(body);
-            if (root.path("error").asBoolean(false)) {
-                return ResponseEntity.badRequest()
-                        .body(Map.of("error", root.path("message").asText()));
-            }
-            JsonNode b = root.path("body");
-            Map<String, Object> result = new LinkedHashMap<>();
-            result.put("illustType", b.path("illustType").asInt(0));
-            result.put("illustTitle", b.path("illustTitle").asText(""));
-            result.put("xRestrict", b.path("xRestrict").asInt(0));
-            return ResponseEntity.ok(result);
-        } catch (Exception e) {
-            log.error("获取作品信息失败: {}", e.getMessage(), e);
-            return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
+        String body = proxyGet(
+                "https://www.pixiv.net/ajax/illust/" + artworkId, cookie);
+        JsonNode root = objectMapper.readTree(body);
+        if (root.path("error").asBoolean(false)) {
+            return ResponseEntity.badRequest()
+                    .body(new ErrorResponse(root.path("message").asText()));
         }
+        JsonNode b = root.path("body");
+        return ResponseEntity.ok(new ArtworkMetaResponse(
+                b.path("illustType").asInt(0),
+                b.path("illustTitle").asText(""),
+                b.path("xRestrict").asInt(0)
+        ));
     }
 
     @GetMapping("/artwork/{artworkId}/pages")
     public ResponseEntity<?> getArtworkPages(
             @PathVariable String artworkId,
             @RequestHeader(value = "X-Pixiv-Cookie", required = false) String cookie,
-            HttpServletRequest request) {
+            HttpServletRequest request) throws Exception {
         ResponseEntity<?> deny = checkMultiModeAccess(request);
         if (deny != null) return deny;
-        try {
-            String body = proxyGet(
-                    "https://www.pixiv.net/ajax/illust/" + artworkId + "/pages", cookie);
-            JsonNode root = objectMapper.readTree(body);
-            if (root.path("error").asBoolean(false)) {
-                return ResponseEntity.badRequest()
-                        .body(Map.of("error", root.path("message").asText()));
-            }
-            List<String> urls = new ArrayList<>();
-            for (JsonNode page : root.path("body")) {
-                String origUrl = page.path("urls").path("original").asText("");
-                if (!origUrl.isEmpty()) urls.add(origUrl);
-            }
-            return ResponseEntity.ok(Map.of("urls", urls));
-        } catch (Exception e) {
-            log.error("获取作品页面失败: {}", e.getMessage(), e);
-            return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
+        String body = proxyGet(
+                "https://www.pixiv.net/ajax/illust/" + artworkId + "/pages", cookie);
+        JsonNode root = objectMapper.readTree(body);
+        if (root.path("error").asBoolean(false)) {
+            return ResponseEntity.badRequest()
+                    .body(new ErrorResponse(root.path("message").asText()));
         }
+        List<String> urls = new ArrayList<>();
+        for (JsonNode page : root.path("body")) {
+            String origUrl = page.path("urls").path("original").asText("");
+            if (!origUrl.isEmpty()) urls.add(origUrl);
+        }
+        return ResponseEntity.ok(new ArtworkPagesResponse(urls));
     }
 
     @GetMapping("/artwork/{artworkId}/ugoira")
     public ResponseEntity<?> getUgoiraMeta(
             @PathVariable String artworkId,
             @RequestHeader(value = "X-Pixiv-Cookie", required = false) String cookie,
-            HttpServletRequest request) {
+            HttpServletRequest request) throws Exception {
         ResponseEntity<?> deny = checkMultiModeAccess(request);
         if (deny != null) return deny;
-        try {
-            String body = proxyGet(
-                    "https://www.pixiv.net/ajax/illust/" + artworkId + "/ugoira_meta", cookie);
-            JsonNode root = objectMapper.readTree(body);
-            if (root.path("error").asBoolean(false)) {
-                return ResponseEntity.badRequest()
-                        .body(Map.of("error", root.path("message").asText()));
-            }
-            JsonNode b = root.path("body");
-            String zipUrl = b.path("originalSrc").asText("");
-            if (zipUrl.isEmpty()) zipUrl = b.path("src").asText("");
-            List<Integer> delays = new ArrayList<>();
-            for (JsonNode frame : b.path("frames")) {
-                delays.add(frame.path("delay").asInt(100));
-            }
-            return ResponseEntity.ok(Map.of("zipUrl", zipUrl, "delays", delays));
-        } catch (Exception e) {
-            log.error("获取动图信息失败: {}", e.getMessage(), e);
-            return ResponseEntity.status(500).body(Map.of("error", e.getMessage()));
+        String body = proxyGet(
+                "https://www.pixiv.net/ajax/illust/" + artworkId + "/ugoira_meta", cookie);
+        JsonNode root = objectMapper.readTree(body);
+        if (root.path("error").asBoolean(false)) {
+            return ResponseEntity.badRequest()
+                    .body(new ErrorResponse(root.path("message").asText()));
         }
+        JsonNode b = root.path("body");
+        String zipUrl = b.path("originalSrc").asText("");
+        if (zipUrl.isEmpty()) zipUrl = b.path("src").asText("");
+        List<Integer> delays = new ArrayList<>();
+        for (JsonNode frame : b.path("frames")) {
+            delays.add(frame.path("delay").asInt(100));
+        }
+        return ResponseEntity.ok(new UgoiraMetaResponse(zipUrl, delays));
     }
 }

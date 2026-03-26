@@ -4,8 +4,6 @@ import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
-import java.util.regex.Pattern;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -21,7 +19,10 @@ import top.sywyar.pixivdownload.setup.SetupService;
 
 import java.io.File;
 import java.nio.file.Files;
-import java.util.*;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import java.util.regex.Pattern;
 
 @RestController
 @RequestMapping("/api")
@@ -31,99 +32,84 @@ public class DownloadController {
     private static final Pattern UUID_PATTERN =
             Pattern.compile("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$");
 
-    @Autowired
-    private DownloadService downloadService;
+    private final DownloadService downloadService;
+    private final SetupService setupService;
+    private final UserQuotaService userQuotaService;
+    private final MultiModeConfig multiModeConfig;
+    private final PixivDatabase pixivDatabase;
 
-    @Autowired
-    private SetupService setupService;
-
-    @Autowired
-    private UserQuotaService userQuotaService;
-
-    @Autowired
-    private MultiModeConfig multiModeConfig;
-
-    @Autowired
-    private PixivDatabase pixivDatabase;
+    public DownloadController(DownloadService downloadService,
+                              SetupService setupService,
+                              UserQuotaService userQuotaService,
+                              MultiModeConfig multiModeConfig,
+                              PixivDatabase pixivDatabase) {
+        this.downloadService = downloadService;
+        this.setupService = setupService;
+        this.userQuotaService = userQuotaService;
+        this.multiModeConfig = multiModeConfig;
+        this.pixivDatabase = pixivDatabase;
+    }
 
     @PostMapping("/download/pixiv")
     public ResponseEntity<?> downloadPixivImages(
             @Valid @RequestBody DownloadRequest request,
             HttpServletRequest httpRequest) {
-        try {
-            // SSRF 防护：同步校验所有下载 URL，非法 URL 立即返回 400
-            try {
-                if (request.getOther().isUgoira() && request.getOther().getUgoiraZipUrl() != null) {
-                    DownloadService.validatePixivUrl(request.getOther().getUgoiraZipUrl());
-                } else {
-                    for (String url : request.getImageUrls()) DownloadService.validatePixivUrl(url);
-                }
-            } catch (SecurityException e) {
-                return ResponseEntity.badRequest().body(
-                        new DownloadResponse(false, "URL 不合法: " + e.getMessage()));
-            }
-
-            // 多人模式：never-delete/timed-delete 模式下，已下载过的作品直接返回成功，不消耗配额
-            if ("multi".equals(setupService.getMode())) {
-                String pdMode = multiModeConfig.getPostDownloadMode();
-                if ("never-delete".equals(pdMode) || "timed-delete".equals(pdMode)) {
-                    if (pixivDatabase.hasArtwork(request.getArtworkId())) {
-                        Map<String, Object> body = new HashMap<>();
-                        body.put("success", true);
-                        body.put("alreadyDownloaded", true);
-                        body.put("message", "作品已下载，无需重复下载");
-                        return ResponseEntity.ok(body);
-                    }
-                }
-            }
-
-            String userUuid = null;
-
-            // 多人模式且配额启用时，检查下载配额
-            if ("multi".equals(setupService.getMode()) && multiModeConfig.getQuota().isEnabled()) {
-                userUuid = extractUserUuid(httpRequest);
-                UserQuotaService.QuotaCheckResult check =
-                        userQuotaService.checkAndReserve(userUuid);
-
-                if (!check.allowed()) {
-                    // 配额不足：触发打包，返回 429
-                    String archiveToken = userQuotaService.triggerArchive(userUuid);
-                    Map<String, Object> body = new HashMap<>();
-                    body.put("quotaExceeded", true);
-                    body.put("message", "已达到下载限额，请下载已打包的文件后等待配额重置");
-                    body.put("archiveToken", archiveToken);
-                    body.put("archiveExpireSeconds",
-                            (long) multiModeConfig.getQuota().getArchiveExpireMinutes() * 60);
-                    body.put("artworksUsed", check.artworksUsed());
-                    body.put("maxArtworks", check.maxArtworks());
-                    body.put("resetSeconds", check.resetSeconds());
-                    return ResponseEntity.status(429).body(body);
-                }
-            }
-
-            // 异步处理下载任务
-            downloadService.downloadImages(
-                    request.getArtworkId(),
-                    request.getTitle(),
-                    request.getImageUrls(),
-                    request.getReferer(),
-                    request.getOther(),
-                    request.getCookie(),
-                    userUuid
-            );
-
-            return ResponseEntity.ok(new DownloadResponse(
-                    true,
-                    "下载任务已开始处理",
-                    "正在下载到作品 " + request.getArtworkId() + " 文件夹",
-                    request.getImageUrls().size()
-            ));
-
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body(
-                    new DownloadResponse(false, "下载请求处理失败: " + e.getMessage())
-            );
+        // SSRF 防护：同步校验所有下载 URL，非法 URL 抛出 SecurityException（由全局处理器返回 400）
+        if (request.getOther().isUgoira() && request.getOther().getUgoiraZipUrl() != null) {
+            DownloadService.validatePixivUrl(request.getOther().getUgoiraZipUrl());
+        } else {
+            for (String url : request.getImageUrls()) DownloadService.validatePixivUrl(url);
         }
+
+        // 多人模式：never-delete/timed-delete 模式下，已下载过的作品直接返回成功，不消耗配额
+        if ("multi".equals(setupService.getMode())) {
+            String pdMode = multiModeConfig.getPostDownloadMode();
+            if ("never-delete".equals(pdMode) || "timed-delete".equals(pdMode)) {
+                if (pixivDatabase.hasArtwork(request.getArtworkId())) {
+                    return ResponseEntity.ok(new AlreadyDownloadedResponse(true, true, "作品已下载，无需重复下载"));
+                }
+            }
+        }
+
+        String userUuid = null;
+
+        // 多人模式且配额启用时，检查下载配额
+        if ("multi".equals(setupService.getMode()) && multiModeConfig.getQuota().isEnabled()) {
+            userUuid = extractUserUuid(httpRequest);
+            UserQuotaService.QuotaCheckResult check = userQuotaService.checkAndReserve(userUuid);
+
+            if (!check.allowed()) {
+                // 配额不足：触发打包，返回 429
+                String archiveToken = userQuotaService.triggerArchive(userUuid);
+                return ResponseEntity.status(429).body(new QuotaExceededResponse(
+                        true,
+                        "已达到下载限额，请下载已打包的文件后等待配额重置",
+                        archiveToken,
+                        (long) multiModeConfig.getQuota().getArchiveExpireMinutes() * 60,
+                        check.artworksUsed(),
+                        check.maxArtworks(),
+                        check.resetSeconds()
+                ));
+            }
+        }
+
+        // 异步处理下载任务
+        downloadService.downloadImages(
+                request.getArtworkId(),
+                request.getTitle(),
+                request.getImageUrls(),
+                request.getReferer(),
+                request.getOther(),
+                request.getCookie(),
+                userUuid
+        );
+
+        return ResponseEntity.ok(new DownloadResponse(
+                true,
+                "下载任务已开始处理",
+                "正在下载到作品 " + request.getArtworkId() + " 文件夹",
+                request.getImageUrls().size()
+        ));
     }
 
     /** 提取用户 UUID：优先 cookie，其次 X-User-UUID 请求头，最后基于 IP+UA 生成 */
@@ -229,26 +215,22 @@ public class DownloadController {
     }
 
     @GetMapping("/downloaded/by-move-folder")
-    public ResponseEntity<Map<String, Object>> getArtworkByMoveFolder(
-            @RequestParam String path) {
+    public ResponseEntity<ArtworkIdResponse> getArtworkByMoveFolder(@RequestParam String path) {
         ArtworkRecord artwork = pixivDatabase.getArtworkByMoveFolder(path);
         if (artwork == null) {
             return ResponseEntity.notFound().build();
         }
-        return ResponseEntity.ok(Map.of("artworkId", artwork.artworkId()));
+        return ResponseEntity.ok(new ArtworkIdResponse(artwork.artworkId()));
     }
 
     @PostMapping("/downloaded/move/{artworkId}")
-    public ResponseEntity<String> moveArtWork(
+    public ResponseEntity<DownloadResponse> moveArtWork(
             @PathVariable Long artworkId,
             @RequestBody Map<String, Object> requestBody) {
-
         String movePath = ((String) requestBody.get("movePath")).replaceAll("[/\\\\]+$", "");
         Long moveTime = Long.valueOf(requestBody.get("moveTime").toString());
-
         downloadService.moveArtWork(artworkId, movePath, moveTime);
-
-        return ResponseEntity.ok("已尝试记录移动操作");
+        return ResponseEntity.ok(new DownloadResponse(true, "已尝试记录移动操作"));
     }
 
     @GetMapping("/downloaded/history")
@@ -257,42 +239,22 @@ public class DownloadController {
     }
 
     @GetMapping("/downloaded/history/paged")
-    public ResponseEntity<Map<String, Object>> getPagedHistory(
+    public ResponseEntity<PagedHistoryResponse> getPagedHistory(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size) {
-        try {
-            List<DownloadedResponse> downloadedResponses = new LinkedList<>();
+        List<DownloadedResponse> downloadedResponses = new LinkedList<>();
+        long totalElements = downloadService.getArtworkCount();
+        List<Long> artWorkIds = downloadService.getSortTimeArtworkPaged(page, size);
 
-            long totalElements = downloadService.getArtworkCount();
-            List<Long> artWorkIds = downloadService.getSortTimeArtworkPaged(page, size);
-
-            for (Long artworkId : artWorkIds) {
-                DownloadedResponse response = getArtWorkDownloadedResponse(artworkId);
-                if (response != null) {
-                    downloadedResponses.add(response);
-                }
+        for (Long artworkId : artWorkIds) {
+            DownloadedResponse response = getArtWorkDownloadedResponse(artworkId);
+            if (response != null) {
+                downloadedResponses.add(response);
             }
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("content", downloadedResponses);
-            response.put("totalElements", totalElements);
-            response.put("page", page);
-            response.put("size", size);
-            response.put("totalPages", (int) Math.ceil((double) totalElements / size));
-
-            return ResponseEntity.ok(response);
-        } catch (Exception e) {
-            log.error("获取下载历史失败，第{}页，大小：{}，原因：{}", page, size, e.getMessage(), e);
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("content", new LinkedList<>());
-            response.put("totalElements", 0);
-            response.put("page", 0);
-            response.put("size", 0);
-            response.put("totalPages", 0);
-
-            return ResponseEntity.badRequest().body(response);
         }
+
+        int totalPages = (int) Math.ceil((double) totalElements / size);
+        return ResponseEntity.ok(new PagedHistoryResponse(downloadedResponses, totalElements, page, size, totalPages));
     }
 
     @GetMapping("/downloaded/thumbnail/{artworkId}/{page}")
@@ -310,29 +272,24 @@ public class DownloadController {
     @GetMapping("/downloaded/rawfile/{artworkId}/{page}")
     public ResponseEntity<byte[]> getRawFile(
             @PathVariable Long artworkId,
-            @PathVariable int page) {
-        try {
-            File file = downloadService.getImageFile(artworkId, page);
-            if (file == null) return ResponseEntity.notFound().build();
+            @PathVariable int page) throws Exception {
+        File file = downloadService.getImageFile(artworkId, page);
+        if (file == null) return ResponseEntity.notFound().build();
 
-            byte[] bytes = Files.readAllBytes(file.toPath());
-            String name = file.getName().toLowerCase();
-            MediaType mediaType;
-            if (name.endsWith(".jpg") || name.endsWith(".jpeg")) {
-                mediaType = MediaType.IMAGE_JPEG;
-            } else if (name.endsWith(".gif")) {
-                mediaType = MediaType.IMAGE_GIF;
-            } else if (name.endsWith(".webp")) {
-                mediaType = MediaType.parseMediaType("image/webp");
-            } else {
-                mediaType = MediaType.IMAGE_PNG;
-            }
-
-            return ResponseEntity.ok().contentType(mediaType).body(bytes);
-        } catch (Exception e) {
-            log.error("获取原始图片失败，作品：{}，页码：{}", artworkId, page, e);
-            return ResponseEntity.status(500).build();
+        byte[] bytes = Files.readAllBytes(file.toPath());
+        String name = file.getName().toLowerCase();
+        MediaType mediaType;
+        if (name.endsWith(".jpg") || name.endsWith(".jpeg")) {
+            mediaType = MediaType.IMAGE_JPEG;
+        } else if (name.endsWith(".gif")) {
+            mediaType = MediaType.IMAGE_GIF;
+        } else if (name.endsWith(".webp")) {
+            mediaType = MediaType.parseMediaType("image/webp");
+        } else {
+            mediaType = MediaType.IMAGE_PNG;
         }
+
+        return ResponseEntity.ok().contentType(mediaType).body(bytes);
     }
 
     @GetMapping("/downloaded/image/{artworkId}/{page}")

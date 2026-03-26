@@ -5,6 +5,7 @@ import org.springframework.context.event.EventListener;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import top.sywyar.pixivdownload.download.response.DownloadResponse;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import top.sywyar.pixivdownload.download.DownloadProgressEvent;
 import top.sywyar.pixivdownload.download.DownloadStatus;
@@ -82,15 +83,10 @@ public class SSEController {
      * 安全关闭SSE连接
      */
     @PostMapping("/close/{artworkId}")
-    public ResponseEntity<String> closeSSEConnection(@PathVariable Long artworkId) {
-        try {
-            safeRemoveEmitter(artworkId);
-            log.info("SSE连接安全关闭: {}", artworkId);
-            return ResponseEntity.ok("SSE连接已安全关闭");
-        } catch (Exception e) {
-            log.error("关闭SSE连接时出错: {},", artworkId, e);
-            return ResponseEntity.status(500).body("关闭连接时出错: " + e.getMessage());
-        }
+    public ResponseEntity<DownloadResponse> closeSSEConnection(@PathVariable Long artworkId) {
+        safeRemoveEmitter(artworkId);
+        log.info("SSE连接安全关闭: {}", artworkId);
+        return ResponseEntity.ok(new DownloadResponse(true, "SSE连接已安全关闭"));
     }
 
     private void cancelHeartbeat(Long artworkId) {

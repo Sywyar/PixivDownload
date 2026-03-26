@@ -2,18 +2,16 @@ package top.sywyar.pixivdownload.migration;
 
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+import top.sywyar.pixivdownload.download.response.ErrorResponse;
 
 import java.io.IOException;
-import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -22,8 +20,11 @@ import java.util.concurrent.Executors;
 @Slf4j
 public class MigrationController {
 
-    @Autowired
-    private JsonToSqliteMigration migration;
+    private final JsonToSqliteMigration migration;
+
+    public MigrationController(JsonToSqliteMigration migration) {
+        this.migration = migration;
+    }
 
     /**
      * 触发 JSON → SQLite 迁移。
@@ -33,7 +34,7 @@ public class MigrationController {
     @PostMapping("/json-to-sqlite")
     public ResponseEntity<?> migrate(HttpServletRequest request) {
         if (!isLocalAddress(request.getRemoteAddr())) {
-            return ResponseEntity.status(403).body(Map.of("error", "Forbidden: local access only"));
+            return ResponseEntity.status(403).body(new ErrorResponse("Forbidden: local access only"));
         }
         JsonToSqliteMigration.MigrationResult result = migration.migrate();
         if (result.success()) {
@@ -46,12 +47,12 @@ public class MigrationController {
     /**
      * 带实时进度的迁移端点（SSE 流）。
      * 仅允许本地 IP 调用。
-     * curl 用法：curl -N <a href="http://localhost:6999/api/migration/json-to-sqlite/stream">...</a>
+     * curl 用法：curl -N http://localhost:6999/api/migration/json-to-sqlite/stream
      */
     @GetMapping(value = "/json-to-sqlite/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Object migrateWithProgress(HttpServletRequest request) {
         if (!isLocalAddress(request.getRemoteAddr())) {
-            return ResponseEntity.status(403).body(Map.of("error", "Forbidden: local access only"));
+            return ResponseEntity.status(403).body(new ErrorResponse("Forbidden: local access only"));
         }
         SseEmitter emitter = new SseEmitter(600_000L);
         ExecutorService executor = Executors.newSingleThreadExecutor();
