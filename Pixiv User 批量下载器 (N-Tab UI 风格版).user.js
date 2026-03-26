@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         Pixiv User 批量下载器 (N-Tab UI 风格版)
 // @namespace    http://tampermonkey.net/
-// @version      1.8.0
+// @version      2.0.0
 // @description  适配 Pixiv 用户页面，自动获取所有作品 ID，对接本地 Go 后端。界面复刻 N-Tab 风格。优化暂停逻辑：确保当前任务完成后再停止。已加入全局 username 机制。在标题显示用户名。
-// @author       Rewritten by ChatGPT
+// @author       Rewritten by ChatGPT,Claude,Sywyar
 // @match        https://www.pixiv.net/*
 // @grant        GM_xmlhttpRequest
 // @grant        GM_setValue
@@ -18,8 +18,6 @@
 
 (function () {
     'use strict';
-
-    console.log('[Pixiv Batch] Script Loaded (v1.8.0)');
 
     /* ========== 配置 ========== */
     const KEY_SERVER_URL = 'pixiv_server_base';

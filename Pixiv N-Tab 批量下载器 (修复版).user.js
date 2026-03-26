@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         Pixiv N-Tab 批量下载器 (修复版)
 // @namespace    http://tampermonkey.net/
-// @version      1.2.1
+// @version      2.0.0
 // @description  解析 N-Tab 导出，批量提交作品给本地后端下载，支持严格的下载状态校验（修复下载失败显示完成的Bug）。
-// @author       Rewritten by ChatGPT
+// @author       Rewritten by ChatGPT,Claude,Sywyar
 // @match        https://www.pixiv.net/*
 // @grant        GM_xmlhttpRequest
 // @grant        GM_setValue

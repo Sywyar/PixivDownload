@@ -3,7 +3,7 @@
 // @namespace    http://tampermonkey.net/
 // @version      1.2
 // @description  下载Pixiv作品的所有图片，并记录已下载的作品
-// @author       You
+// @author       Rewritten by ChatGPT,Claude,Sywyar
 // @match        https://www.pixiv.net/*
 // @grant        GM_registerMenuCommand
 // @grant        GM_xmlhttpRequest

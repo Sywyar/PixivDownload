@@ -18,75 +18,100 @@ import java.util.Properties;
 
 @Slf4j
 public class ImageClassifier extends JFrame {
-    private File parentFolder;
+
+    // =========================================================================
+    // 常量
+    // =========================================================================
+
+    private static final int    GROUP_SIZE         = 10;
+    private static final String CONFIG_FILE        = "image_classifier.properties";
+    private static final String[] IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp"};
+
+    // UI 配色
+    private static final Color C_BG          = new Color(242, 243, 247);
+    private static final Color C_PANEL       = Color.WHITE;
+    private static final Color C_BORDER      = new Color(218, 220, 226);
+    private static final Color C_PRIMARY     = new Color(59, 120, 231);
+    private static final Color C_DANGER      = new Color(211, 77, 42);
+    private static final Color C_NEUTRAL     = new Color(100, 108, 122);
+    private static final Color C_TEXT        = new Color(30, 34, 40);
+    private static final Color C_TEXT_MUTED  = new Color(110, 118, 132);
+    private static final Color C_THUMB_BG    = new Color(232, 233, 238);
+    private static final Color C_ROW_ALT     = new Color(249, 250, 252);
+
+    // =========================================================================
+    // 状态
+    // =========================================================================
+
+    private File       parentFolder;
     private List<File> subFolders;
-    private int currentFolderIndex = 0;
+    private int        currentFolderIndex = 0;
     private List<File> currentImages;
-    private int currentGroupIndex = 0; // 当前组索引
-    private static final int GROUP_SIZE = 10; // 每组显示10张图片
+    private int        currentGroupIndex  = 0;
+    private boolean    serverRunning      = false;
 
-    private boolean serverRunning = false;
+    // =========================================================================
+    // 配置
+    // =========================================================================
 
-    private final ThumbnailManager thumbnailManager = new ThumbnailManager();
-    // 配置管理
-    private Properties config;
-    private static final String CONFIG_FILE = "image_classifier.properties";
-
-    // 目标文件夹配置 - 从配置加载
+    private Properties   config;
     private List<String> targetFolders;
     private List<String> folderRemarks;
 
-    // UI组件
-    private JTextField folderPathField; // 改为输入框
-    private JPanel thumbnailsPanel;
-    private JTextField targetFolderField;
-    private JLabel remarkLabel;
-    private JButton prevGroupButton;
-    private JButton nextGroupButton;
-    private JButton classifyButton;
-    private JButton openFolderButton; // 改为打开按钮
-    private JButton browseFolderButton; // 保留浏览按钮
-    private JButton skipFolderButton; // 新增跳过按钮
-    private JButton prevFolderButton; // 上一个文件夹
-    private JButton refreshButton;    // 刷新缩略图
-    private JPanel categoriesPanel;
-    private JLabel statusLabel;
-    private JLabel[] thumbnailLabels;
-    private JLabel serverStatusLabel; // 新增服务器状态标签
-    private JButton settingsButton; // 新增设置按钮
+    // =========================================================================
+    // UI 组件
+    // =========================================================================
 
-    // 支持的图片格式
-    private static final String[] IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp"};
+    private JTextField folderPathField;
+    private JTextField targetFolderField;
+    private JLabel     remarkLabel;
+    private JLabel     statusLabel;
+    private JLabel     serverStatusLabel;
+    private JLabel[]   thumbnailLabels;
+    private JPanel     thumbnailsPanel;
+    private JPanel     categoriesPanel;
+    private JButton    openFolderButton;
+    private JButton    browseFolderButton;
+    private JButton    settingsButton;
+    private JButton    classifyButton;
+    private JButton    skipFolderButton;
+    private JButton    prevFolderButton;
+    private JButton    prevGroupButton;
+    private JButton    nextGroupButton;
+    private JButton    refreshButton;
+
+    // =========================================================================
+    // 工具
+    // =========================================================================
+
+    private final ThumbnailManager thumbnailManager = new ThumbnailManager();
+    private final RestTemplate     restTemplate     = new RestTemplate();
+
+    // =========================================================================
+    // 构造 & 入口
+    // =========================================================================
 
     public ImageClassifier() {
-        loadConfig(); // 加载配置
+        loadConfig();
         initUI();
-        checkServerStatus(); // 初始化时检查服务器状态
-
-        // 自动打开默认文件夹
+        checkServerStatus();
         autoOpenDefaultFolder();
     }
 
-    private void autoOpenDefaultFolder() {
-        String defaultFolder = config.getProperty("default.folder", "").trim();
-        if (!defaultFolder.isEmpty()) {
-            File folder = new File(defaultFolder);
-            if (folder.exists() && folder.isDirectory()) {
-                // 设置文件夹路径到输入框
-                folderPathField.setText(defaultFolder);
-
-                // 延迟执行打开操作，确保UI已经完全初始化
-                SwingUtilities.invokeLater(this::openParentFolderFromField);
-            } else {
-                log.warn("默认文件夹不存在或不是有效目录: {}", defaultFolder);
-            }
-        }
+    public static void main(String[] args) {
+        SwingUtilities.invokeLater(() -> {
+            ImageClassifier classifier = new ImageClassifier();
+            classifier.setVisible(true);
+        });
     }
+
+    // =========================================================================
+    // 配置管理
+    // =========================================================================
 
     private void loadConfig() {
         config = new Properties();
 
-        // 默认配置
         String[] defaultTargetFolders = {
                 "S:\\z\\Ovo\\小特",
                 "S:\\z\\Ovo\\气象学家",
@@ -105,7 +130,6 @@ public class ImageClassifier extends JFrame {
                 "类别5 - 删除",
         };
 
-        // 尝试加载配置文件
         try {
             File configFile = new File(CONFIG_FILE);
             if (configFile.exists()) {
@@ -115,11 +139,9 @@ public class ImageClassifier extends JFrame {
             log.warn("无法加载配置文件，使用默认配置: {}", e.getMessage());
         }
 
-        // 初始化目标文件夹配置 - 改为动态列表
         targetFolders = new ArrayList<>();
         folderRemarks = new ArrayList<>();
 
-        // 从配置加载目标文件夹，最多加载20个
         for (int i = 0; i < 20; i++) {
             String folder = config.getProperty("target.folder." + i);
             String remark = config.getProperty("folder.remark." + i);
@@ -129,7 +151,6 @@ public class ImageClassifier extends JFrame {
             }
         }
 
-        // 如果没有配置，使用默认值
         if (targetFolders.isEmpty()) {
             for (int i = 0; i < defaultTargetFolders.length; i++) {
                 targetFolders.add(defaultTargetFolders[i]);
@@ -140,18 +161,14 @@ public class ImageClassifier extends JFrame {
 
     private void saveConfig() {
         try {
-            // 清除旧的配置
             for (int i = 0; i < 20; i++) {
                 config.remove("target.folder." + i);
                 config.remove("folder.remark." + i);
             }
-
-            // 保存新的配置
             for (int i = 0; i < targetFolders.size(); i++) {
                 config.setProperty("target.folder." + i, targetFolders.get(i));
                 config.setProperty("folder.remark." + i, folderRemarks.get(i));
             }
-
             config.store(new FileOutputStream(CONFIG_FILE), "Image Classifier Configuration");
             log.info("配置已保存");
         } catch (IOException e) {
@@ -161,6 +178,10 @@ public class ImageClassifier extends JFrame {
         }
     }
 
+    // =========================================================================
+    // UI 初始化
+    // =========================================================================
+
     private void initUI() {
         try {
             UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
@@ -168,246 +189,269 @@ public class ImageClassifier extends JFrame {
             log.error(e.getMessage(), e);
         }
 
-        setTitle("图片分类工具 - 批量移动模式");
+        setTitle("图片分类工具");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        setSize(1200, 700);
+        setSize(1340, 800);
         setLocationRelativeTo(null);
 
-        // 创建主面板
-        JPanel mainPanel = new JPanel(new BorderLayout(10, 10));
-        mainPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
-
-        // 顶部面板 - 文件夹选择和服务器状态
-        JPanel topPanel = new JPanel(new BorderLayout());
-        topPanel.setBorder(BorderFactory.createTitledBorder("文件夹选择"));
-
-        // 文件夹选择部分 - 修改为输入框和按钮
-        JPanel folderSelectionPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        folderSelectionPanel.add(new JLabel("父文件夹路径:"));
-
-        folderPathField = new JTextField(30);
-        folderPathField.setFont(new Font("微软雅黑", Font.PLAIN, 12));
-        // 设置默认文件夹路径
-        String defaultFolder = config.getProperty("default.folder", "");
-        folderPathField.setText(defaultFolder);
-        folderSelectionPanel.add(folderPathField);
-
-        openFolderButton = new JButton("打开");
-        openFolderButton.setFont(new Font("微软雅黑", Font.BOLD, 12));
-        folderSelectionPanel.add(openFolderButton);
-
-        browseFolderButton = new JButton("浏览");
-        browseFolderButton.setFont(new Font("微软雅黑", Font.BOLD, 12));
-        folderSelectionPanel.add(browseFolderButton);
-
-        // 设置按钮
-        settingsButton = new JButton("设置");
-        settingsButton.setFont(new Font("微软雅黑", Font.BOLD, 12));
-        folderSelectionPanel.add(settingsButton);
-
-        // 服务器状态部分
-        JPanel serverStatusPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
-        serverStatusLabel = new JLabel("服务器状态: 检测中...");
-        serverStatusLabel.setFont(new Font("微软雅黑", Font.BOLD, 12));
-        serverStatusPanel.add(serverStatusLabel);
-
-        topPanel.add(folderSelectionPanel, BorderLayout.WEST);
-        topPanel.add(serverStatusPanel, BorderLayout.EAST);
-
-        // 中间面板 - 缩略图显示
-        JPanel centerPanel = new JPanel(new BorderLayout(10, 10));
-        centerPanel.setBorder(BorderFactory.createTitledBorder("图片预览"));
-
-        // 缩略图面板 - 2行5列
-        thumbnailsPanel = new JPanel(new GridLayout(2, 5, 10, 10));
-        thumbnailsPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
-
-        // 初始化10个缩略图标签
-        thumbnailLabels = new JLabel[GROUP_SIZE];
-        for (int i = 0; i < GROUP_SIZE; i++) {
-            thumbnailLabels[i] = new JLabel("图片 " + (i + 1), JLabel.CENTER);
-            thumbnailLabels[i].setBorder(BorderFactory.createLineBorder(Color.GRAY));
-            thumbnailLabels[i].setPreferredSize(new Dimension(150, 150));
-            thumbnailLabels[i].setOpaque(true);
-            thumbnailLabels[i].setBackground(Color.LIGHT_GRAY);
-            thumbnailsPanel.add(thumbnailLabels[i]);
-        }
-
-        // 导航面板
-        JPanel navPanel = new JPanel(new FlowLayout());
-        prevGroupButton = new JButton("← 上一组");
-        prevGroupButton.setFont(new Font("微软雅黑", Font.BOLD, 14));
-        prevGroupButton.setPreferredSize(new Dimension(120, 35));
-        nextGroupButton = new JButton("下一组 →");
-        nextGroupButton.setFont(new Font("微软雅黑", Font.BOLD, 14));
-        nextGroupButton.setPreferredSize(new Dimension(120, 35));
-        navPanel.add(prevGroupButton);
-        navPanel.add(Box.createHorizontalStrut(20));
-        navPanel.add(nextGroupButton);
-
-        centerPanel.add(thumbnailsPanel, BorderLayout.CENTER);
-        centerPanel.add(navPanel, BorderLayout.SOUTH);
-
-        // 分类说明面板
-        categoriesPanel = new JPanel();
-        categoriesPanel.setBorder(BorderFactory.createTitledBorder("分类说明"));
-        categoriesPanel.setLayout(new BoxLayout(categoriesPanel, BoxLayout.Y_AXIS));
-        updateCategoriesPanel();
-
-        // 分类操作面板
-        JPanel classifyPanel = new JPanel(new FlowLayout());
-        classifyPanel.setBorder(BorderFactory.createTitledBorder("文件夹分类"));
-        classifyPanel.add(new JLabel("目标文件夹编号:"));
-        targetFolderField = new JTextField(5);
-        targetFolderField.setFont(new Font("微软雅黑", Font.PLAIN, 14));
-        classifyPanel.add(targetFolderField);
-
-        remarkLabel = new JLabel("请输入0-" + (targetFolders.size() - 1) + "之间的数字");
-        remarkLabel.setForeground(Color.BLACK);
-        classifyPanel.add(remarkLabel);
-
-        classifyButton = new JButton("分类整个文件夹");
-        classifyButton.setFont(new Font("微软雅黑", Font.BOLD, 14));
-        classifyButton.setBackground(new Color(70, 130, 180));
-        classifyButton.setForeground(Color.BLACK);
-        classifyButton.setPreferredSize(new Dimension(150, 35));
-        classifyPanel.add(classifyButton);
-
-        // 添加跳过按钮
-        skipFolderButton = new JButton("跳过此文件夹");
-        skipFolderButton.setFont(new Font("微软雅黑", Font.BOLD, 14));
-        skipFolderButton.setBackground(new Color(220, 120, 60));
-        skipFolderButton.setForeground(Color.BLACK);
-        skipFolderButton.setPreferredSize(new Dimension(150, 35));
-        classifyPanel.add(skipFolderButton);
-
-        // 根据配置设置跳过按钮的可见性
-        boolean showSkipButton = Boolean.parseBoolean(config.getProperty("show.skip.button", "true"));
-        skipFolderButton.setVisible(showSkipButton);
-
-        prevFolderButton = new JButton("← 上一文件夹");
-        prevFolderButton.setFont(new Font("微软雅黑", Font.BOLD, 14));
-        prevFolderButton.setPreferredSize(new Dimension(150, 35));
-        classifyPanel.add(prevFolderButton);
-
-        refreshButton = new JButton("刷新缩略图");
-        refreshButton.setFont(new Font("微软雅黑", Font.BOLD, 14));
-        refreshButton.setPreferredSize(new Dimension(120, 35));
-        classifyPanel.add(refreshButton);
-
-        // 状态面板
-        JPanel statusPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        statusPanel.setBorder(BorderFactory.createTitledBorder("状态信息"));
-        statusLabel = new JLabel("请先选择包含数字文件夹的父目录");
-        statusPanel.add(statusLabel);
-
-        // 创建右侧面板，包含分类说明和分类操作
-        JPanel rightPanel = new JPanel(new BorderLayout());
-        rightPanel.add(categoriesPanel, BorderLayout.CENTER);
-        rightPanel.add(classifyPanel, BorderLayout.SOUTH);
-
-        // 添加面板到主面板
-        mainPanel.add(topPanel, BorderLayout.NORTH);
-        mainPanel.add(centerPanel, BorderLayout.CENTER);
-        mainPanel.add(rightPanel, BorderLayout.EAST);
-        mainPanel.add(statusPanel, BorderLayout.SOUTH);
+        JPanel mainPanel = new JPanel(new BorderLayout(0, 0));
+        mainPanel.setBackground(C_BG);
+        mainPanel.add(buildTopPanel(),    BorderLayout.NORTH);
+        mainPanel.add(buildCenterPanel(), BorderLayout.CENTER);
+        mainPanel.add(buildRightPanel(),  BorderLayout.EAST);
+        mainPanel.add(buildStatusPanel(), BorderLayout.SOUTH);
 
         add(mainPanel);
-
-        // 添加事件监听器
         setupEventListeners();
     }
 
-    private void checkServerStatus() {
-        new Thread(() -> {
-            try {
-                String serverUrl = config.getProperty("server.url", "http://localhost:6999");
-                String url = serverUrl + "/api/download/status";
-                ResponseEntity<String> response = restTemplate.getForEntity(url, String.class);
+    /** 顶部工具栏：路径输入 + 操作按钮 + 服务器状态 */
+    private JPanel buildTopPanel() {
+        JPanel bar = new JPanel(new BorderLayout());
+        bar.setBackground(C_PANEL);
+        bar.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createMatteBorder(0, 0, 1, 0, C_BORDER),
+                BorderFactory.createEmptyBorder(8, 12, 8, 12)));
 
-                if (response.getStatusCode() == HttpStatus.OK) {
-                    serverRunning = true;
-                    SwingUtilities.invokeLater(() -> {
-                        serverStatusLabel.setText("服务器状态: 正常运行");
-                        serverStatusLabel.setForeground(new Color(0, 128, 0)); // 绿色
-                    });
-                } else {
-                    serverRunning = false;
-                    SwingUtilities.invokeLater(() -> {
-                        serverStatusLabel.setText("服务器状态: 异常 (" + response.getStatusCode() + ")");
-                        serverStatusLabel.setForeground(Color.RED);
-                    });
-                }
-            } catch (Exception e) {
-                serverRunning = false;
-                SwingUtilities.invokeLater(() -> {
-                    serverStatusLabel.setText("服务器状态: 连接失败");
-                    serverStatusLabel.setForeground(Color.RED);
-                });
-                log.error("检查服务器状态失败: {}", e.getMessage());
-            }
-        }).start();
+        // 左侧
+        JPanel left = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        left.setOpaque(false);
+
+        JLabel pathLabel = new JLabel("文件夹路径");
+        pathLabel.setFont(new Font("微软雅黑", Font.PLAIN, 13));
+        pathLabel.setForeground(C_TEXT_MUTED);
+        left.add(pathLabel);
+
+        folderPathField = new JTextField(32);
+        folderPathField.setFont(new Font("微软雅黑", Font.PLAIN, 13));
+        folderPathField.setForeground(C_TEXT);
+        folderPathField.setText(config.getProperty("default.folder", ""));
+        left.add(folderPathField);
+
+        openFolderButton    = styledButton("打 开", C_PRIMARY);
+        browseFolderButton  = styledButton("浏 览", C_NEUTRAL);
+        settingsButton      = styledButton("设 置", C_NEUTRAL);
+        left.add(openFolderButton);
+        left.add(browseFolderButton);
+        left.add(settingsButton);
+
+        // 右侧：服务器状态
+        JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+        right.setOpaque(false);
+        serverStatusLabel = new JLabel("● 检测中...");
+        serverStatusLabel.setFont(new Font("微软雅黑", Font.PLAIN, 13));
+        serverStatusLabel.setForeground(C_TEXT_MUTED);
+        right.add(serverStatusLabel);
+
+        bar.add(left,  BorderLayout.WEST);
+        bar.add(right, BorderLayout.EAST);
+        return bar;
     }
 
-    private void updateCategoriesPanel() {
-        categoriesPanel.removeAll();
+    /** 中央区域：2×5 缩略图 + 分组翻页导航 */
+    private JPanel buildCenterPanel() {
+        JPanel wrap = new JPanel(new BorderLayout(0, 0));
+        wrap.setBackground(C_BG);
+        wrap.setBorder(BorderFactory.createEmptyBorder(12, 12, 0, 8));
 
-        for (int i = 0; i < targetFolders.size(); i++) {
-            JLabel categoryLabel = new JLabel("<html><b>" + i + "</b> - " + folderRemarks.get(i) + "<br/><font size='2' color='gray'>" +
-                    targetFolders.get(i) + "</font></html>");
-            categoryLabel.setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 5));
-            categoriesPanel.add(categoryLabel);
+        // ── 缩略图网格 ──
+        thumbnailsPanel = new JPanel(new GridLayout(2, 5, 8, 8));
+        thumbnailsPanel.setBackground(C_BG);
+
+        thumbnailLabels = new JLabel[GROUP_SIZE];
+        for (int i = 0; i < GROUP_SIZE; i++) {
+            thumbnailLabels[i] = new JLabel("", JLabel.CENTER);
+            thumbnailLabels[i].setOpaque(true);
+            thumbnailLabels[i].setBackground(C_THUMB_BG);
+            thumbnailLabels[i].setForeground(C_TEXT_MUTED);
+            thumbnailLabels[i].setFont(new Font("微软雅黑", Font.PLAIN, 12));
+            thumbnailLabels[i].setBorder(BorderFactory.createCompoundBorder(
+                    BorderFactory.createLineBorder(C_BORDER, 1),
+                    BorderFactory.createEmptyBorder(4, 4, 4, 4)));
+            thumbnailLabels[i].setPreferredSize(new Dimension(160, 160));
+            thumbnailsPanel.add(thumbnailLabels[i]);
         }
 
+        // ── 翻页导航 ──
+        JPanel navPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 16, 10));
+        navPanel.setBackground(C_BG);
+        prevGroupButton = styledButton("◀  上一组", C_NEUTRAL);
+        nextGroupButton = styledButton("下一组  ▶", C_NEUTRAL);
+        prevGroupButton.setPreferredSize(new Dimension(130, 34));
+        nextGroupButton.setPreferredSize(new Dimension(130, 34));
+        navPanel.add(prevGroupButton);
+        navPanel.add(nextGroupButton);
+
+        wrap.add(thumbnailsPanel, BorderLayout.CENTER);
+        wrap.add(navPanel,        BorderLayout.SOUTH);
+        return wrap;
+    }
+
+    /** 右侧面板：分类说明（滚动列表）+ 操作区 */
+    private JPanel buildRightPanel() {
+        JPanel right = new JPanel(new BorderLayout(0, 8));
+        right.setBackground(C_BG);
+        right.setBorder(BorderFactory.createEmptyBorder(12, 8, 0, 12));
+        right.setPreferredSize(new Dimension(280, 0));
+
+        // ── 分类说明（可滚动） ──
+        categoriesPanel = new JPanel();
+        categoriesPanel.setLayout(new BoxLayout(categoriesPanel, BoxLayout.Y_AXIS));
+        categoriesPanel.setBackground(C_PANEL);
+        updateCategoriesPanel();
+
+        JScrollPane catScroll = new JScrollPane(categoriesPanel,
+                JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED,
+                JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        catScroll.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createTitledBorder(
+                        BorderFactory.createLineBorder(C_BORDER),
+                        "分类说明",
+                        javax.swing.border.TitledBorder.LEFT,
+                        javax.swing.border.TitledBorder.TOP,
+                        new Font("微软雅黑", Font.BOLD, 13)),
+                BorderFactory.createEmptyBorder(0, 0, 0, 0)));
+
+        // ── 操作区 ──
+        JPanel actionPanel = new JPanel(new BorderLayout(0, 8));
+        actionPanel.setBackground(C_BG);
+        actionPanel.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createTitledBorder(
+                        BorderFactory.createLineBorder(C_BORDER),
+                        "文件夹分类",
+                        javax.swing.border.TitledBorder.LEFT,
+                        javax.swing.border.TitledBorder.TOP,
+                        new Font("微软雅黑", Font.BOLD, 13)),
+                BorderFactory.createEmptyBorder(4, 6, 8, 6)));
+
+        // 编号输入行
+        JPanel inputRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 4));
+        inputRow.setOpaque(false);
+        JLabel numLabel = new JLabel("编号:");
+        numLabel.setFont(new Font("微软雅黑", Font.PLAIN, 13));
+        numLabel.setForeground(C_TEXT_MUTED);
+        targetFolderField = new JTextField(4);
+        targetFolderField.setFont(new Font("微软雅黑", Font.PLAIN, 14));
+        remarkLabel = new JLabel("请输入 0–" + (targetFolders.size() - 1));
+        remarkLabel.setFont(new Font("微软雅黑", Font.PLAIN, 12));
+        remarkLabel.setForeground(C_TEXT_MUTED);
+        inputRow.add(numLabel);
+        inputRow.add(targetFolderField);
+        inputRow.add(remarkLabel);
+
+        // 四个操作按钮（2×2 网格）
+        classifyButton  = styledButton("分类整个文件夹", C_PRIMARY);
+        skipFolderButton = styledButton("跳过此文件夹",  C_DANGER);
+        prevFolderButton = styledButton("← 上一文件夹", C_NEUTRAL);
+        refreshButton    = styledButton("刷新缩略图",   C_NEUTRAL);
+        skipFolderButton.setVisible(Boolean.parseBoolean(config.getProperty("show.skip.button", "true")));
+
+        JPanel btnGrid = new JPanel(new GridLayout(2, 2, 6, 6));
+        btnGrid.setOpaque(false);
+        btnGrid.add(classifyButton);
+        btnGrid.add(skipFolderButton);
+        btnGrid.add(prevFolderButton);
+        btnGrid.add(refreshButton);
+
+        actionPanel.add(inputRow, BorderLayout.NORTH);
+        actionPanel.add(btnGrid,  BorderLayout.CENTER);
+
+        right.add(catScroll,    BorderLayout.CENTER);
+        right.add(actionPanel,  BorderLayout.SOUTH);
+        return right;
+    }
+
+    /** 底部状态栏 */
+    private JPanel buildStatusPanel() {
+        JPanel bar = new JPanel(new FlowLayout(FlowLayout.LEFT, 12, 6));
+        bar.setBackground(C_PANEL);
+        bar.setBorder(BorderFactory.createMatteBorder(1, 0, 0, 0, C_BORDER));
+        statusLabel = new JLabel("请先选择包含数字文件夹的父目录");
+        statusLabel.setFont(new Font("微软雅黑", Font.PLAIN, 13));
+        statusLabel.setForeground(C_TEXT_MUTED);
+        bar.add(statusLabel);
+        return bar;
+    }
+
+    /** 刷新分类说明列表 */
+    private void updateCategoriesPanel() {
+        categoriesPanel.removeAll();
+        for (int i = 0; i < targetFolders.size(); i++) {
+            boolean alt = (i % 2 == 1);
+            JPanel row = new JPanel(new BorderLayout());
+            row.setBackground(alt ? C_ROW_ALT : C_PANEL);
+            row.setOpaque(true);
+            row.setBorder(BorderFactory.createCompoundBorder(
+                    BorderFactory.createMatteBorder(0, 0, 1, 0, C_BORDER),
+                    BorderFactory.createEmptyBorder(6, 10, 6, 8)));
+            row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 52));
+
+            JLabel index = new JLabel(String.valueOf(i));
+            index.setFont(new Font("微软雅黑", Font.BOLD, 14));
+            index.setForeground(C_PRIMARY);
+            index.setPreferredSize(new Dimension(22, 0));
+            index.setHorizontalAlignment(SwingConstants.CENTER);
+
+            JPanel textCol = new JPanel();
+            textCol.setLayout(new BoxLayout(textCol, BoxLayout.Y_AXIS));
+            textCol.setOpaque(false);
+            JLabel name = new JLabel(folderRemarks.get(i));
+            name.setFont(new Font("微软雅黑", Font.PLAIN, 13));
+            name.setForeground(C_TEXT);
+            JLabel path = new JLabel(targetFolders.get(i));
+            path.setFont(new Font("微软雅黑", Font.PLAIN, 11));
+            path.setForeground(C_TEXT_MUTED);
+            textCol.add(name);
+            textCol.add(path);
+
+            row.add(index,   BorderLayout.WEST);
+            row.add(textCol, BorderLayout.CENTER);
+            categoriesPanel.add(row);
+        }
         categoriesPanel.revalidate();
         categoriesPanel.repaint();
     }
 
-    private void setupEventListeners() {
-        // 打开按钮事件 - 从输入框加载文件夹
-        openFolderButton.addActionListener(e -> openParentFolderFromField());
+    /** 统一按钮样式：彩色背景、白色文字、固定高度 */
+    private JButton styledButton(String text, Color bg) {
+        JButton btn = new JButton(text);
+        btn.setFont(new Font("微软雅黑", Font.BOLD, 13));
+        btn.setBackground(bg);
+        btn.setForeground(Color.WHITE);
+        btn.setFocusPainted(false);
+        btn.setOpaque(true);
+        btn.setBorderPainted(false);
+        btn.setPreferredSize(new Dimension(btn.getPreferredSize().width, 34));
+        btn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        return btn;
+    }
 
-        // 浏览按钮事件 - 选择文件夹并填入输入框
+    private void setupEventListeners() {
+        openFolderButton.addActionListener(e -> openParentFolderFromField());
         browseFolderButton.addActionListener(e -> browseParentFolder());
+        settingsButton.addActionListener(e -> showSettingsDialog());
 
         prevGroupButton.addActionListener(e -> showPreviousGroup());
-
         nextGroupButton.addActionListener(e -> showNextGroup());
 
         classifyButton.addActionListener(e -> classifyFolder());
-
-        // 添加跳过按钮的事件监听器
         skipFolderButton.addActionListener(e -> skipCurrentFolder());
-
         prevFolderButton.addActionListener(e -> moveToPrevFolder());
         refreshButton.addActionListener(e -> refreshCurrentFolder());
 
-        // 添加输入框监听器，实时更新备注显示
-        targetFolderField.addActionListener(e -> updateRemarkLabel());
-
-        targetFolderField.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
-            @Override
-            public void insertUpdate(javax.swing.event.DocumentEvent e) {
-                updateRemarkLabel();
-            }
-
-            @Override
-            public void removeUpdate(javax.swing.event.DocumentEvent e) {
-                updateRemarkLabel();
-            }
-
-            @Override
-            public void changedUpdate(javax.swing.event.DocumentEvent e) {
-                updateRemarkLabel();
-            }
-        });
-
-        // 为文件夹路径输入框添加回车键监听
         folderPathField.addActionListener(e -> openParentFolderFromField());
 
-        // 设置按钮事件
-        settingsButton.addActionListener(e -> showSettingsDialog());
+        targetFolderField.addActionListener(e -> updateRemarkLabel());
+        targetFolderField.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
+            @Override public void insertUpdate(javax.swing.event.DocumentEvent e)  { updateRemarkLabel(); }
+            @Override public void removeUpdate(javax.swing.event.DocumentEvent e)  { updateRemarkLabel(); }
+            @Override public void changedUpdate(javax.swing.event.DocumentEvent e) { updateRemarkLabel(); }
+        });
     }
+
+    // =========================================================================
+    // 对话框
+    // =========================================================================
 
     private void showSettingsDialog() {
         JDialog settingsDialog = new JDialog(this, "设置", true);
@@ -418,61 +462,112 @@ public class ImageClassifier extends JFrame {
         JPanel mainPanel = new JPanel(new BorderLayout(10, 10));
         mainPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
 
-        // 创建选项卡面板
+        // 用 JTabbedPane 的 clientProperty 在构建方法与保存 lambda 之间传递组件引用
         JTabbedPane tabbedPane = new JTabbedPane();
+        tabbedPane.addTab("基本设置",   buildBasicSettingsPanel(settingsDialog, tabbedPane));
+        tabbedPane.addTab("目标文件夹", buildTargetFoldersPanel(settingsDialog, tabbedPane));
+        mainPanel.add(tabbedPane, BorderLayout.CENTER);
 
-        // 基本设置选项卡 - 使用紧凑布局
-        JPanel basicPanel = new JPanel(new GridBagLayout());
-        basicPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+        JTextField defaultFolderField = (JTextField)  tabbedPane.getClientProperty("defaultFolderField");
+        JCheckBox  showSkipCheckBox   = (JCheckBox)   tabbedPane.getClientProperty("showSkipCheckBox");
+        JTextField serverUrlField     = (JTextField)  tabbedPane.getClientProperty("serverUrlField");
+        javax.swing.table.DefaultTableModel tableModel =
+                (javax.swing.table.DefaultTableModel) tabbedPane.getClientProperty("tableModel");
+
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        JButton saveButton   = new JButton("保存");
+        JButton cancelButton = new JButton("取消");
+        buttonPanel.add(saveButton);
+        buttonPanel.add(cancelButton);
+        mainPanel.add(buttonPanel, BorderLayout.SOUTH);
+
+        saveButton.addActionListener(e -> {
+            config.setProperty("default.folder", stripTrailingSlash(defaultFolderField.getText().trim()));
+            config.setProperty("show.skip.button", String.valueOf(showSkipCheckBox.isSelected()));
+            config.setProperty("server.url", serverUrlField.getText().trim());
+
+            targetFolders.clear();
+            folderRemarks.clear();
+            for (int i = 0; i < tableModel.getRowCount(); i++) {
+                targetFolders.add(stripTrailingSlash(tableModel.getValueAt(i, 1).toString()));
+                folderRemarks.add(tableModel.getValueAt(i, 2).toString());
+            }
+
+            saveConfig();
+            skipFolderButton.setVisible(showSkipCheckBox.isSelected());
+            updateCategoriesPanel();
+            remarkLabel.setText("请输入0-" + (targetFolders.size() - 1) + "之间的数字");
+            settingsDialog.dispose();
+            JOptionPane.showMessageDialog(this, "设置已保存", "提示", JOptionPane.INFORMATION_MESSAGE);
+        });
+
+        cancelButton.addActionListener(e -> settingsDialog.dispose());
+
+        settingsDialog.add(mainPanel);
+        settingsDialog.setVisible(true);
+    }
+
+    /**
+     * 构建「基本设置」选项卡，将组件引用存入 tabbedPane clientProperty 供保存 lambda 读取。
+     */
+    private JPanel buildBasicSettingsPanel(JDialog parent, JTabbedPane tabbedPane) {
+        JPanel panel = new JPanel(new GridBagLayout());
+        panel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
         GridBagConstraints gbc = new GridBagConstraints();
-        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.fill   = GridBagConstraints.HORIZONTAL;
         gbc.insets = new Insets(5, 5, 5, 5);
 
-        // 默认文件夹设置
-        gbc.gridx = 0;
-        gbc.gridy = 0;
-        basicPanel.add(new JLabel("默认打开文件夹:"), gbc);
+        // 默认文件夹
+        gbc.gridx = 0; gbc.gridy = 0; gbc.weightx = 0.0;
+        panel.add(new JLabel("默认打开文件夹:"), gbc);
 
-        gbc.gridx = 1;
-        gbc.gridy = 0;
-        gbc.weightx = 1.0;
+        gbc.gridx = 1; gbc.weightx = 1.0;
         JTextField defaultFolderField = new JTextField(config.getProperty("default.folder", ""));
-        basicPanel.add(defaultFolderField, gbc);
+        panel.add(defaultFolderField, gbc);
 
-        gbc.gridx = 2;
-        gbc.gridy = 0;
-        gbc.weightx = 0.0;
-        JButton browseDefaultFolderButton = new JButton("浏览");
-        basicPanel.add(browseDefaultFolderButton, gbc);
+        gbc.gridx = 2; gbc.weightx = 0.0;
+        JButton browseBtn = new JButton("浏览");
+        panel.add(browseBtn, gbc);
+        browseBtn.addActionListener(e -> {
+            JFileChooser fc = new JFileChooser();
+            fc.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+            fc.setDialogTitle("选择默认文件夹");
+            if (fc.showOpenDialog(parent) == JFileChooser.APPROVE_OPTION) {
+                defaultFolderField.setText(fc.getSelectedFile().getAbsolutePath());
+            }
+        });
 
-        // 显示跳过按钮设置
-        gbc.gridx = 0;
-        gbc.gridy = 1;
-        basicPanel.add(new JLabel("显示跳过按钮:"), gbc);
-
-        gbc.gridx = 1;
-        gbc.gridy = 1;
-        JCheckBox showSkipButtonCheckBox = new JCheckBox();
-        showSkipButtonCheckBox.setSelected(Boolean.parseBoolean(config.getProperty("show.skip.button", "false")));
-        basicPanel.add(showSkipButtonCheckBox, gbc);
-
-        // 服务器网址设置
-        gbc.gridx = 0;
-        gbc.gridy = 2;
-        basicPanel.add(new JLabel("服务器网址:"), gbc);
+        // 显示跳过按钮
+        gbc.gridx = 0; gbc.gridy = 1; gbc.weightx = 0.0;
+        panel.add(new JLabel("显示跳过按钮:"), gbc);
 
         gbc.gridx = 1;
-        gbc.gridy = 2;
-        gbc.gridwidth = 2;
+        JCheckBox showSkipCheckBox = new JCheckBox();
+        showSkipCheckBox.setSelected(Boolean.parseBoolean(config.getProperty("show.skip.button", "false")));
+        panel.add(showSkipCheckBox, gbc);
+
+        // 服务器网址
+        gbc.gridx = 0; gbc.gridy = 2; gbc.weightx = 0.0;
+        panel.add(new JLabel("服务器网址:"), gbc);
+
+        gbc.gridx = 1; gbc.gridwidth = 2; gbc.weightx = 1.0;
         JTextField serverUrlField = new JTextField(config.getProperty("server.url", "http://localhost:6999"));
-        basicPanel.add(serverUrlField, gbc);
+        panel.add(serverUrlField, gbc);
 
-        tabbedPane.addTab("基本设置", basicPanel);
+        // 存入 tabbedPane，供 showSettingsDialog 的保存 lambda 读取
+        tabbedPane.putClientProperty("defaultFolderField", defaultFolderField);
+        tabbedPane.putClientProperty("showSkipCheckBox",   showSkipCheckBox);
+        tabbedPane.putClientProperty("serverUrlField",     serverUrlField);
 
-        // 目标文件夹设置选项卡 - 使用表格布局
-        JPanel targetFoldersPanel = new JPanel(new BorderLayout(5, 5));
+        return panel;
+    }
 
-        // 创建表格模型 - 修复：明确使用 DefaultTableModel
+    /**
+     * 构建「目标文件夹」选项卡，tableModel 存入 JTabbedPane clientProperty 供外部读取。
+     */
+    private JPanel buildTargetFoldersPanel(JDialog parent, JTabbedPane tabbedPane) {
+        JPanel panel = new JPanel(new BorderLayout(5, 5));
+
         String[] columnNames = {"编号", "路径", "备注"};
         Object[][] data = new Object[targetFolders.size()][3];
         for (int i = 0; i < targetFolders.size(); i++) {
@@ -481,190 +576,74 @@ public class ImageClassifier extends JFrame {
             data[i][2] = folderRemarks.get(i);
         }
 
-        // 明确创建 DefaultTableModel
         javax.swing.table.DefaultTableModel tableModel = new javax.swing.table.DefaultTableModel(data, columnNames) {
             @Override
-            public boolean isCellEditable(int row, int column) {
-                // 只有编号列不可编辑
-                return column != 0;
-            }
+            public boolean isCellEditable(int row, int column) { return column != 0; }
         };
+        tabbedPane.putClientProperty("tableModel", tableModel);
 
-        JTable targetFoldersTable = new JTable(tableModel);
-        targetFoldersTable.setFillsViewportHeight(true);
-        targetFoldersTable.getColumnModel().getColumn(0).setMaxWidth(50);
-        targetFoldersTable.getColumnModel().getColumn(1).setPreferredWidth(200);
-        targetFoldersTable.getColumnModel().getColumn(2).setPreferredWidth(150);
+        JTable table = new JTable(tableModel);
+        table.setFillsViewportHeight(true);
+        table.getColumnModel().getColumn(0).setMaxWidth(50);
+        table.getColumnModel().getColumn(1).setPreferredWidth(200);
+        table.getColumnModel().getColumn(2).setPreferredWidth(150);
+        panel.add(new JScrollPane(table), BorderLayout.CENTER);
 
-        JScrollPane tableScrollPane = new JScrollPane(targetFoldersTable);
-        targetFoldersPanel.add(tableScrollPane, BorderLayout.CENTER);
+        // 操作按钮
+        JPanel btnPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        JButton addBtn      = new JButton("新增");
+        JButton editBtn     = new JButton("编辑");
+        JButton deleteBtn   = new JButton("删除");
+        JButton moveUpBtn   = new JButton("上移");
+        JButton moveDownBtn = new JButton("下移");
+        btnPanel.add(addBtn);
+        btnPanel.add(editBtn);
+        btnPanel.add(deleteBtn);
+        btnPanel.add(moveUpBtn);
+        btnPanel.add(moveDownBtn);
+        panel.add(btnPanel, BorderLayout.SOUTH);
 
-        // 按钮面板
-        JPanel targetFoldersButtonPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        JButton addFolderButton = new JButton("新增");
-        JButton editFolderButton = new JButton("编辑");
-        JButton deleteFolderButton = new JButton("删除");
-        JButton moveUpButton = new JButton("上移");
-        JButton moveDownButton = new JButton("下移");
+        addBtn.addActionListener(e -> showFolderEditDialog(parent, -1, tableModel));
 
-        targetFoldersButtonPanel.add(addFolderButton);
-        targetFoldersButtonPanel.add(editFolderButton);
-        targetFoldersButtonPanel.add(deleteFolderButton);
-        targetFoldersButtonPanel.add(moveUpButton);
-        targetFoldersButtonPanel.add(moveDownButton);
+        editBtn.addActionListener(e -> {
+            int row = table.getSelectedRow();
+            if (row >= 0) showFolderEditDialog(parent, row, tableModel);
+            else JOptionPane.showMessageDialog(parent, "请先选择一个文件夹进行编辑", "提示", JOptionPane.INFORMATION_MESSAGE);
+        });
 
-        targetFoldersPanel.add(targetFoldersButtonPanel, BorderLayout.SOUTH);
-
-        tabbedPane.addTab("目标文件夹", targetFoldersPanel);
-
-        mainPanel.add(tabbedPane, BorderLayout.CENTER);
-
-        // 按钮面板
-        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
-        JButton saveButton = new JButton("保存");
-        JButton cancelButton = new JButton("取消");
-
-        buttonPanel.add(saveButton);
-        buttonPanel.add(cancelButton);
-
-        mainPanel.add(buttonPanel, BorderLayout.SOUTH);
-
-        settingsDialog.add(mainPanel);
-
-        // 浏览默认文件夹按钮事件
-        browseDefaultFolderButton.addActionListener(e -> {
-            JFileChooser fileChooser = new JFileChooser();
-            fileChooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
-            fileChooser.setDialogTitle("选择默认文件夹");
-
-            int result = fileChooser.showOpenDialog(settingsDialog);
-            if (result == JFileChooser.APPROVE_OPTION) {
-                defaultFolderField.setText(fileChooser.getSelectedFile().getAbsolutePath());
+        deleteBtn.addActionListener(e -> {
+            int row = table.getSelectedRow();
+            if (row < 0) { JOptionPane.showMessageDialog(parent, "请先选择一个文件夹进行删除", "提示", JOptionPane.INFORMATION_MESSAGE); return; }
+            if (JOptionPane.showConfirmDialog(parent, "确定要删除选中的文件夹吗？", "确认删除", JOptionPane.YES_NO_OPTION) == JOptionPane.YES_OPTION) {
+                tableModel.removeRow(row);
+                for (int i = 0; i < tableModel.getRowCount(); i++) tableModel.setValueAt(i, i, 0);
             }
         });
 
-        // 新增文件夹按钮事件
-        addFolderButton.addActionListener(e -> showFolderEditDialog(settingsDialog, -1, tableModel));
-
-        // 编辑文件夹按钮事件
-        editFolderButton.addActionListener(e -> {
-            int selectedRow = targetFoldersTable.getSelectedRow();
-            if (selectedRow >= 0) {
-                showFolderEditDialog(settingsDialog, selectedRow, tableModel);
-            } else {
-                JOptionPane.showMessageDialog(settingsDialog, "请先选择一个文件夹进行编辑",
-                        "提示", JOptionPane.INFORMATION_MESSAGE);
-            }
+        moveUpBtn.addActionListener(e -> {
+            int row = table.getSelectedRow();
+            if (row <= 0) return;
+            swapTableRows(tableModel, row, row - 1);
+            table.setRowSelectionInterval(row - 1, row - 1);
         });
 
-        // 删除文件夹按钮事件
-        deleteFolderButton.addActionListener(e -> {
-            int selectedRow = targetFoldersTable.getSelectedRow();
-            if (selectedRow >= 0) {
-                int result = JOptionPane.showConfirmDialog(settingsDialog,
-                        "确定要删除选中的文件夹吗？", "确认删除",
-                        JOptionPane.YES_NO_OPTION);
-                if (result == JOptionPane.YES_OPTION) {
-                    tableModel.removeRow(selectedRow);
-                    // 更新编号
-                    for (int i = 0; i < tableModel.getRowCount(); i++) {
-                        tableModel.setValueAt(i, i, 0);
-                    }
-                }
-            } else {
-                JOptionPane.showMessageDialog(settingsDialog, "请先选择一个文件夹进行删除",
-                        "提示", JOptionPane.INFORMATION_MESSAGE);
-            }
+        moveDownBtn.addActionListener(e -> {
+            int row = table.getSelectedRow();
+            if (row < 0 || row >= tableModel.getRowCount() - 1) return;
+            swapTableRows(tableModel, row, row + 1);
+            table.setRowSelectionInterval(row + 1, row + 1);
         });
 
-        // 上移按钮事件
-        moveUpButton.addActionListener(e -> {
-            int selectedRow = targetFoldersTable.getSelectedRow();
-            if (selectedRow > 0) {
-                // 交换行数据
-                Object[] rowData = new Object[3];
-                for (int i = 0; i < 3; i++) {
-                    rowData[i] = tableModel.getValueAt(selectedRow, i);
-                }
+        return panel;
+    }
 
-                for (int i = 0; i < 3; i++) {
-                    tableModel.setValueAt(tableModel.getValueAt(selectedRow - 1, i), selectedRow, i);
-                }
-
-                for (int i = 0; i < 3; i++) {
-                    tableModel.setValueAt(rowData[i], selectedRow - 1, i);
-                }
-
-                // 更新编号
-                tableModel.setValueAt(selectedRow - 1, selectedRow - 1, 0);
-                tableModel.setValueAt(selectedRow, selectedRow, 0);
-
-                targetFoldersTable.setRowSelectionInterval(selectedRow - 1, selectedRow - 1);
-            }
-        });
-
-        // 下移按钮事件
-        moveDownButton.addActionListener(e -> {
-            int selectedRow = targetFoldersTable.getSelectedRow();
-            if (selectedRow >= 0 && selectedRow < tableModel.getRowCount() - 1) {
-                // 交换行数据
-                Object[] rowData = new Object[3];
-                for (int i = 0; i < 3; i++) {
-                    rowData[i] = tableModel.getValueAt(selectedRow, i);
-                }
-
-                for (int i = 0; i < 3; i++) {
-                    tableModel.setValueAt(tableModel.getValueAt(selectedRow + 1, i), selectedRow, i);
-                }
-
-                for (int i = 0; i < 3; i++) {
-                    tableModel.setValueAt(rowData[i], selectedRow + 1, i);
-                }
-
-                // 更新编号
-                tableModel.setValueAt(selectedRow, selectedRow, 0);
-                tableModel.setValueAt(selectedRow + 1, selectedRow + 1, 0);
-
-                targetFoldersTable.setRowSelectionInterval(selectedRow + 1, selectedRow + 1);
-            }
-        });
-
-        // 保存按钮事件
-        saveButton.addActionListener(e -> {
-            // 保存基本设置
-            config.setProperty("default.folder", stripTrailingSlash(defaultFolderField.getText().trim()));
-            config.setProperty("show.skip.button", String.valueOf(showSkipButtonCheckBox.isSelected()));
-            config.setProperty("server.url", serverUrlField.getText().trim());
-
-            // 保存目标文件夹设置
-            targetFolders.clear();
-            folderRemarks.clear();
-
-            for (int i = 0; i < tableModel.getRowCount(); i++) {
-                targetFolders.add(stripTrailingSlash(tableModel.getValueAt(i, 1).toString()));
-                folderRemarks.add(tableModel.getValueAt(i, 2).toString());
-            }
-
-            saveConfig(); // Fix 5: 移除冗余的 loadConfig()，内存状态已由上方代码正确更新
-
-            // 更新UI
-            skipFolderButton.setVisible(showSkipButtonCheckBox.isSelected());
-            updateCategoriesPanel();
-            remarkLabel.setText("请输入0-" + (targetFolders.size() - 1) + "之间的数字");
-
-            settingsDialog.dispose();
-
-            // 重新打开默认文件夹
-            //autoOpenDefaultFolder();
-
-            JOptionPane.showMessageDialog(this, "设置已保存",
-                    "提示", JOptionPane.INFORMATION_MESSAGE);
-        });
-
-        // 取消按钮事件
-        cancelButton.addActionListener(e -> settingsDialog.dispose());
-
-        settingsDialog.setVisible(true);
+    private void swapTableRows(javax.swing.table.DefaultTableModel model, int a, int b) {
+        Object[] rowA = new Object[3];
+        for (int i = 0; i < 3; i++) rowA[i] = model.getValueAt(a, i);
+        for (int i = 0; i < 3; i++) model.setValueAt(model.getValueAt(b, i), a, i);
+        for (int i = 0; i < 3; i++) model.setValueAt(rowA[i], b, i);
+        model.setValueAt(a, a, 0);
+        model.setValueAt(b, b, 0);
     }
 
     private void showFolderEditDialog(JDialog parent, int rowIndex, javax.swing.table.DefaultTableModel tableModel) {
@@ -678,120 +657,97 @@ public class ImageClassifier extends JFrame {
 
         JPanel formPanel = new JPanel(new GridBagLayout());
         GridBagConstraints gbc = new GridBagConstraints();
-        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.fill   = GridBagConstraints.HORIZONTAL;
         gbc.insets = new Insets(5, 5, 5, 5);
 
-        // 路径输入
-        gbc.gridx = 0;
-        gbc.gridy = 0;
+        gbc.gridx = 0; gbc.gridy = 0; gbc.weightx = 0.0;
         formPanel.add(new JLabel("文件夹路径:"), gbc);
-
-        gbc.gridx = 1;
-        gbc.gridy = 0;
-        gbc.weightx = 1.0;
+        gbc.gridx = 1; gbc.weightx = 1.0;
         JTextField pathField = new JTextField(20);
-        if (rowIndex >= 0) {
-            pathField.setText(tableModel.getValueAt(rowIndex, 1).toString());
-        }
+        if (rowIndex >= 0) pathField.setText(tableModel.getValueAt(rowIndex, 1).toString());
         formPanel.add(pathField, gbc);
-
-        gbc.gridx = 2;
-        gbc.gridy = 0;
-        gbc.weightx = 0.0;
+        gbc.gridx = 2; gbc.weightx = 0.0;
         JButton browsePathButton = new JButton("浏览");
         formPanel.add(browsePathButton, gbc);
 
-        // 备注输入
-        gbc.gridx = 0;
-        gbc.gridy = 1;
+        gbc.gridx = 0; gbc.gridy = 1;
         formPanel.add(new JLabel("文件夹备注:"), gbc);
-
-        gbc.gridx = 1;
-        gbc.gridy = 1;
-        gbc.gridwidth = 2;
+        gbc.gridx = 1; gbc.gridwidth = 2; gbc.weightx = 1.0;
         JTextField remarkField = new JTextField(20);
-        if (rowIndex >= 0) {
-            remarkField.setText(tableModel.getValueAt(rowIndex, 2).toString());
-        }
+        if (rowIndex >= 0) remarkField.setText(tableModel.getValueAt(rowIndex, 2).toString());
         formPanel.add(remarkField, gbc);
 
         mainPanel.add(formPanel, BorderLayout.CENTER);
 
-        // 按钮面板
         JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
-        JButton okButton = new JButton("确定");
+        JButton okButton     = new JButton("确定");
         JButton cancelButton = new JButton("取消");
-
         buttonPanel.add(okButton);
         buttonPanel.add(cancelButton);
-
         mainPanel.add(buttonPanel, BorderLayout.SOUTH);
 
         editDialog.add(mainPanel);
 
-        // 浏览路径按钮事件
         browsePathButton.addActionListener(e -> {
-            JFileChooser fileChooser = new JFileChooser();
-            fileChooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
-            fileChooser.setDialogTitle("选择目标文件夹");
-
-            int result = fileChooser.showOpenDialog(editDialog);
-            if (result == JFileChooser.APPROVE_OPTION) {
-                pathField.setText(fileChooser.getSelectedFile().getAbsolutePath());
+            JFileChooser fc = new JFileChooser();
+            fc.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+            fc.setDialogTitle("选择目标文件夹");
+            if (fc.showOpenDialog(editDialog) == JFileChooser.APPROVE_OPTION) {
+                pathField.setText(fc.getSelectedFile().getAbsolutePath());
             }
         });
 
-        // 确定按钮事件
         okButton.addActionListener(e -> {
             if (pathField.getText().trim().isEmpty()) {
-                JOptionPane.showMessageDialog(editDialog, "请输入文件夹路径",
-                        "错误", JOptionPane.ERROR_MESSAGE);
+                JOptionPane.showMessageDialog(editDialog, "请输入文件夹路径", "错误", JOptionPane.ERROR_MESSAGE);
                 return;
             }
-
             if (remarkField.getText().trim().isEmpty()) {
-                JOptionPane.showMessageDialog(editDialog, "请输入文件夹备注",
-                        "错误", JOptionPane.ERROR_MESSAGE);
+                JOptionPane.showMessageDialog(editDialog, "请输入文件夹备注", "错误", JOptionPane.ERROR_MESSAGE);
                 return;
             }
-
             if (rowIndex < 0) {
-                // 新增
-                int newRowIndex = tableModel.getRowCount();
-                tableModel.addRow(new Object[]{
-                        newRowIndex,
-                        pathField.getText().trim(),
-                        remarkField.getText().trim()
-                });
+                tableModel.addRow(new Object[]{tableModel.getRowCount(), pathField.getText().trim(), remarkField.getText().trim()});
             } else {
-                // 编辑
-                tableModel.setValueAt(pathField.getText().trim(), rowIndex, 1);
+                tableModel.setValueAt(pathField.getText().trim(),   rowIndex, 1);
                 tableModel.setValueAt(remarkField.getText().trim(), rowIndex, 2);
             }
-
             editDialog.dispose();
         });
 
-        // 取消按钮事件
         cancelButton.addActionListener(e -> editDialog.dispose());
 
         editDialog.setVisible(true);
     }
 
-    // 从输入框打开文件夹
+    // =========================================================================
+    // 文件夹加载 & 导航
+    // =========================================================================
+
+    private void autoOpenDefaultFolder() {
+        String defaultFolder = config.getProperty("default.folder", "").trim();
+        if (!defaultFolder.isEmpty()) {
+            File folder = new File(defaultFolder);
+            if (folder.exists() && folder.isDirectory()) {
+                folderPathField.setText(defaultFolder);
+                SwingUtilities.invokeLater(this::openParentFolderFromField);
+            } else {
+                log.warn("默认文件夹不存在或不是有效目录: {}", defaultFolder);
+            }
+        }
+    }
+
     private void openParentFolderFromField() {
         String folderPath = stripTrailingSlash(folderPathField.getText().trim());
         if (folderPath.isEmpty()) {
             JOptionPane.showMessageDialog(this, "请输入文件夹路径", "提示", JOptionPane.INFORMATION_MESSAGE);
             return;
         }
-
         File folder = new File(folderPath);
         if (!folder.exists() || !folder.isDirectory()) {
             JOptionPane.showMessageDialog(this, "文件夹不存在或不是有效目录", "错误", JOptionPane.ERROR_MESSAGE);
             return;
         }
-
         parentFolder = folder;
         loadSubFolders();
         if (!subFolders.isEmpty()) {
@@ -803,15 +759,12 @@ public class ImageClassifier extends JFrame {
         }
     }
 
-    // 浏览文件夹并填入输入框
     private void browseParentFolder() {
-        JFileChooser fileChooser = new JFileChooser();
-        fileChooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
-        fileChooser.setDialogTitle("选择包含数字文件夹的父文件夹");
-
-        int result = fileChooser.showOpenDialog(this);
-        if (result == JFileChooser.APPROVE_OPTION) {
-            parentFolder = fileChooser.getSelectedFile();
+        JFileChooser fc = new JFileChooser();
+        fc.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+        fc.setDialogTitle("选择包含数字文件夹的父文件夹");
+        if (fc.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
+            parentFolder = fc.getSelectedFile();
             folderPathField.setText(parentFolder.getAbsolutePath());
             loadSubFolders();
             if (!subFolders.isEmpty()) {
@@ -822,7 +775,43 @@ public class ImageClassifier extends JFrame {
         }
     }
 
-    // Fix 1: 无论文件夹是否有图片均允许跳过，避免空图片文件夹造成 UI 死锁
+    private void loadSubFolders() {
+        File[] folders = parentFolder.listFiles(File::isDirectory);
+        if (folders != null) {
+            Arrays.sort(folders, (f1, f2) -> {
+                try {
+                    return Integer.compare(Integer.parseInt(f1.getName()), Integer.parseInt(f2.getName()));
+                } catch (NumberFormatException e) {
+                    return f1.getName().compareTo(f2.getName());
+                }
+            });
+            subFolders = Arrays.asList(folders);
+            currentFolderIndex = 0;
+            currentGroupIndex  = 0;
+        } else {
+            subFolders = List.of();
+            JOptionPane.showMessageDialog(this, "选择的文件夹中没有子文件夹", "错误", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    private void loadImagesFromCurrentFolder() {
+        if (currentFolderIndex >= subFolders.size()) return;
+        File currentFolder = subFolders.get(currentFolderIndex);
+        File[] imageFiles  = currentFolder.listFiles((dir, name) -> {
+            for (String ext : IMAGE_EXTENSIONS) {
+                if (name.toLowerCase().endsWith(ext)) return true;
+            }
+            return false;
+        });
+        if (imageFiles != null && imageFiles.length > 0) {
+            Arrays.sort(imageFiles, Comparator.comparing(File::getName));
+            currentImages     = Arrays.asList(imageFiles);
+            currentGroupIndex = 0;
+        } else {
+            currentImages = List.of();
+        }
+    }
+
     private void skipCurrentFolder() {
         moveToNextFolder();
     }
@@ -835,6 +824,24 @@ public class ImageClassifier extends JFrame {
         updateStatus();
     }
 
+    private void moveToNextFolder() {
+        File currentFolder  = subFolders.get(currentFolderIndex);
+        File[] remaining    = currentFolder.listFiles();
+        if (remaining == null || remaining.length == 0) currentFolder.delete();
+
+        currentFolderIndex++;
+        if (currentFolderIndex < subFolders.size()) {
+            loadImagesFromCurrentFolder();
+            updateThumbnails();
+            updateStatus();
+        } else {
+            JOptionPane.showMessageDialog(this, "所有文件夹已处理完毕", "完成", JOptionPane.INFORMATION_MESSAGE);
+            for (JLabel label : thumbnailLabels) { label.setIcon(null); label.setText("已全部完成"); }
+            statusLabel.setText("所有文件夹已处理完毕");
+            statusLabel.setForeground(new Color(34, 139, 87));
+        }
+    }
+
     private void refreshCurrentFolder() {
         if (subFolders == null || currentFolderIndex >= subFolders.size()) return;
         thumbnailManager.clearCache();
@@ -843,77 +850,49 @@ public class ImageClassifier extends JFrame {
         updateStatus();
     }
 
-    private void updateRemarkLabel() {
-        String input = targetFolderField.getText().trim();
-        if (input.isEmpty()) {
-            remarkLabel.setText("请输入0-" + (targetFolders.size() - 1) + "之间的数字");
-            return;
-        }
-
-        try {
-            int index = Integer.parseInt(input);
-            if (index >= 0 && index < targetFolders.size()) {
-                remarkLabel.setText(folderRemarks.get(index));
-            } else {
-                remarkLabel.setText("无效编号，请输入0-" + (targetFolders.size() - 1));
-            }
-        } catch (NumberFormatException ex) {
-            remarkLabel.setText("请输入有效数字");
-        }
-    }
+    // =========================================================================
+    // 缩略图 & 导航按钮
+    // =========================================================================
 
     private void updateThumbnails() {
         if (currentImages == null || currentImages.isEmpty()) {
-            for (int i = 0; i < GROUP_SIZE; i++) {
-                thumbnailLabels[i].setIcon(null);
-                thumbnailLabels[i].setText("无图片");
-                thumbnailLabels[i].setBorder(BorderFactory.createLineBorder(Color.GRAY, 1));
+            for (JLabel label : thumbnailLabels) {
+                label.setIcon(null);
+                label.setText("无图片");
+                label.setBorder(BorderFactory.createLineBorder(Color.GRAY, 1));
             }
             updateNavigationButtons();
             return;
         }
 
-        // 计算当前组显示范围
         int startIndex = currentGroupIndex * GROUP_SIZE;
-        int endIndex = Math.min(startIndex + GROUP_SIZE, currentImages.size());
+        int endIndex   = Math.min(startIndex + GROUP_SIZE, currentImages.size());
+        int thumbW = 150, thumbH = 150;
 
-        int thumbW = 150;
-        int thumbH = 150;
-
-        // 显示当前组图片（异步 + 缓存）
         for (int i = 0; i < GROUP_SIZE; i++) {
-            int imgIndex = startIndex + i;
-            JLabel label = thumbnailLabels[i];
-
+            int    imgIndex = startIndex + i;
+            JLabel label    = thumbnailLabels[i];
             if (imgIndex < endIndex) {
-                File imageFile = currentImages.get(imgIndex);
-
-                // 立即显示占位，不阻塞 UI
+                File   imageFile = currentImages.get(imgIndex);
+                String fname     = imageFile.getName().toLowerCase();
+                String badge     = fname.endsWith(".webp") ? "动图" : null;
                 label.setText("加载中…");
                 label.setIcon(null);
-
-                // 使用异步缩略图管理器加载，动图文件显示标记
-                String fname = imageFile.getName().toLowerCase();
-                String badge = fname.endsWith(".webp") ? "动图" : null;
                 thumbnailManager.loadThumbnail(imageFile, label, thumbW, thumbH, badge);
             } else {
                 label.setIcon(null);
                 label.setText("无图片");
             }
-
             label.setBorder(BorderFactory.createLineBorder(Color.GRAY, 1));
         }
 
         int nextStart = (currentGroupIndex + 1) * GROUP_SIZE;
         if (nextStart < currentImages.size()) {
-            int nextEnd = Math.min(nextStart + GROUP_SIZE, currentImages.size());
-            List<File> nextGroup = currentImages.subList(nextStart, nextEnd);
-            thumbnailManager.prefetch(nextGroup, thumbW, thumbH);
+            thumbnailManager.prefetch(currentImages.subList(nextStart, Math.min(nextStart + GROUP_SIZE, currentImages.size())), thumbW, thumbH);
         }
 
         updateNavigationButtons();
     }
-
 
     private void updateNavigationButtons() {
         if (currentImages == null || currentImages.isEmpty()) {
@@ -921,109 +900,9 @@ public class ImageClassifier extends JFrame {
             nextGroupButton.setEnabled(false);
             return;
         }
-
-        // 检查是否有上一组
-        prevGroupButton.setEnabled(currentGroupIndex > 0);
-
-        // 检查是否有下一组
         int totalGroups = (int) Math.ceil((double) currentImages.size() / GROUP_SIZE);
+        prevGroupButton.setEnabled(currentGroupIndex > 0);
         nextGroupButton.setEnabled(currentGroupIndex < totalGroups - 1);
-    }
-
-    private void loadSubFolders() {
-        File[] folders = parentFolder.listFiles(File::isDirectory);
-        if (folders != null) {
-            // 按文件夹名称的数字顺序排序
-            Arrays.sort(folders, (f1, f2) -> {
-                try {
-                    int num1 = Integer.parseInt(f1.getName());
-                    int num2 = Integer.parseInt(f2.getName());
-                    return Integer.compare(num1, num2);
-                } catch (NumberFormatException e) {
-                    return f1.getName().compareTo(f2.getName());
-                }
-            });
-            subFolders = Arrays.asList(folders);
-            currentFolderIndex = 0;
-            currentGroupIndex = 0; // 重置组索引
-        } else {
-            subFolders = List.of();
-            JOptionPane.showMessageDialog(this, "选择的文件夹中没有子文件夹", "错误", JOptionPane.ERROR_MESSAGE);
-        }
-    }
-
-    private void loadImagesFromCurrentFolder() {
-        if (currentFolderIndex < subFolders.size()) {
-            File currentFolder = subFolders.get(currentFolderIndex);
-            File[] imageFiles = currentFolder.listFiles((dir, name) -> {
-                for (String ext : IMAGE_EXTENSIONS) {
-                    if (name.toLowerCase().endsWith(ext)) {
-                        return true;
-                    }
-                }
-                return false;
-            });
-
-            if (imageFiles != null && imageFiles.length > 0) {
-                // 按文件名排序
-                Arrays.sort(imageFiles, Comparator.comparing(File::getName));
-                currentImages = Arrays.asList(imageFiles);
-                currentGroupIndex = 0; // 切换到新文件夹时重置组索引
-            } else {
-                currentImages = List.of();
-            }
-        }
-    }
-
-    private void updateStatus() {
-        if (currentFolderIndex < subFolders.size()) {
-            File currentFolder = subFolders.get(currentFolderIndex);
-            int totalGroups = currentImages.isEmpty() ? 0 : (int) Math.ceil((double) currentImages.size() / GROUP_SIZE);
-            int currentGroup = currentGroupIndex + 1;
-
-            statusLabel.setText(String.format("当前文件夹: %s (%d 张图片) - 第 %d/%d 组",
-                    currentFolder.getName(),
-                    currentImages.size(),
-                    currentGroup,
-                    totalGroups));
-            statusLabel.setForeground(Color.BLACK);
-
-            // 更新窗口标题显示当前进度
-            setTitle(String.format("图片分类工具 - 共%s个文件夹 - %d 张图片",
-                    subFolders.size() - currentFolderIndex,
-                    currentImages.size()));
-
-            // 异步查询作品 R18 状态
-            if (serverRunning) {
-                Long resolvedId = resolveArtworkId(currentFolder);
-                if (resolvedId != null) {
-                    final long artworkId = resolvedId;
-                    new Thread(() -> {
-                        try {
-                            String serverUrl = config.getProperty("server.url", "http://localhost:6999");
-                            String url = serverUrl + "/api/downloaded/" + artworkId;
-                            ResponseEntity<Map> resp = restTemplate.getForEntity(url, Map.class);
-                            if (resp.getStatusCode() == HttpStatus.OK && resp.getBody() != null) {
-                                Object R18Val = resp.getBody().get("R18");
-                                Boolean isR18 = R18Val instanceof Boolean ? (Boolean) R18Val : null;
-                                SwingUtilities.invokeLater(() -> {
-                                    if (Boolean.TRUE.equals(isR18)) {
-                                        statusLabel.setText(statusLabel.getText() + "  [R18]");
-                                        statusLabel.setForeground(new Color(200, 0, 0));
-                                    } else if (Boolean.FALSE.equals(isR18)) {
-                                        statusLabel.setText(statusLabel.getText() + "  [SFW]");
-                                        statusLabel.setForeground(new Color(25, 135, 84));
-                                    } else {
-                                        statusLabel.setText(statusLabel.getText() + "  [未知]");
-                                        statusLabel.setForeground(new Color(120, 120, 120));
-                                    }
-                                });
-                            }
-                        } catch (Exception ignored) {}
-                    }).start();
-                }
-            }
-        }
     }
 
     private void showPreviousGroup() {
@@ -1042,6 +921,72 @@ public class ImageClassifier extends JFrame {
             updateStatus();
         }
     }
+
+    // =========================================================================
+    // 状态栏更新
+    // =========================================================================
+
+    private void updateStatus() {
+        if (currentFolderIndex >= subFolders.size()) return;
+        File currentFolder = subFolders.get(currentFolderIndex);
+        int  totalGroups   = currentImages.isEmpty() ? 0 : (int) Math.ceil((double) currentImages.size() / GROUP_SIZE);
+
+        statusLabel.setText(String.format("当前文件夹: %s   %d 张图片   第 %d / %d 组",
+                currentFolder.getName(), currentImages.size(), currentGroupIndex + 1, totalGroups));
+        statusLabel.setForeground(C_TEXT);
+
+        setTitle(String.format("图片分类工具 - 共%s个文件夹 - %d 张图片",
+                subFolders.size() - currentFolderIndex, currentImages.size()));
+
+        if (serverRunning) {
+            Long resolvedId = resolveArtworkId(currentFolder);
+            if (resolvedId != null) {
+                final long artworkId = resolvedId;
+                new Thread(() -> {
+                    try {
+                        String serverUrl = config.getProperty("server.url", "http://localhost:6999");
+                        ResponseEntity<Map> resp = restTemplate.getForEntity(serverUrl + "/api/downloaded/" + artworkId, Map.class);
+                        if (resp.getStatusCode() == HttpStatus.OK && resp.getBody() != null) {
+                            Object  r18Val = resp.getBody().get("R18");
+                            Boolean isR18  = r18Val instanceof Boolean ? (Boolean) r18Val : null;
+                            SwingUtilities.invokeLater(() -> {
+                                if (Boolean.TRUE.equals(isR18)) {
+                                    statusLabel.setText(statusLabel.getText() + "   [R18]");
+                                    statusLabel.setForeground(C_DANGER);
+                                } else if (Boolean.FALSE.equals(isR18)) {
+                                    statusLabel.setText(statusLabel.getText() + "   [SFW]");
+                                    statusLabel.setForeground(new Color(34, 139, 87));
+                                } else {
+                                    statusLabel.setText(statusLabel.getText() + "   [未知]");
+                                    statusLabel.setForeground(C_TEXT_MUTED);
+                                }
+                            });
+                        }
+                    } catch (Exception ignored) {}
+                }).start();
+            }
+        }
+    }
+
+    private void updateRemarkLabel() {
+        String input = targetFolderField.getText().trim();
+        if (input.isEmpty()) {
+            remarkLabel.setText("请输入0-" + (targetFolders.size() - 1) + "之间的数字");
+            return;
+        }
+        try {
+            int index = Integer.parseInt(input);
+            remarkLabel.setText(index >= 0 && index < targetFolders.size()
+                    ? folderRemarks.get(index)
+                    : "无效编号，请输入0-" + (targetFolders.size() - 1));
+        } catch (NumberFormatException ex) {
+            remarkLabel.setText("请输入有效数字");
+        }
+    }
+
+    // =========================================================================
+    // 分类 & 移动
+    // =========================================================================
 
     private void classifyFolder() {
         if (currentImages == null || currentImages.isEmpty()) {
@@ -1064,62 +1009,50 @@ public class ImageClassifier extends JFrame {
         }
 
         if (index < 0 || index >= targetFolders.size()) {
-            JOptionPane.showMessageDialog(this,
-                    "请输入0-" + (targetFolders.size() - 1) + "之间的数字",
+            JOptionPane.showMessageDialog(this, "请输入0-" + (targetFolders.size() - 1) + "之间的数字",
                     "错误", JOptionPane.ERROR_MESSAGE);
             return;
         }
 
         File currentSubFolder = subFolders.get(currentFolderIndex);
-        String currentFolderName = currentSubFolder.getName();
-        Long artworkId = resolveArtworkId(currentSubFolder);
+        Long artworkId        = resolveArtworkId(currentSubFolder);
         if (artworkId == null) {
             JOptionPane.showMessageDialog(this,
-                    "无法从文件夹名「" + currentFolderName + "」或数据库记录中找到对应的作品 ID。\n请使用「跳过此文件夹」处理。",
+                    "无法从文件夹名「" + currentSubFolder.getName() + "」或数据库记录中找到对应的作品 ID。\n请使用「跳过此文件夹」处理。",
                     "错误", JOptionPane.ERROR_MESSAGE);
             return;
         }
 
-        String targetFolderPath = targetFolders.get(index);
-        File targetFolder = new File(targetFolderPath);
-
-        if (!targetFolder.exists()) {
-            if (!targetFolder.mkdirs()) {
-                JOptionPane.showMessageDialog(this,
-                        "无法创建目标文件夹: " + targetFolderPath,
-                        "错误", JOptionPane.ERROR_MESSAGE);
-                return;
-            }
+        File targetFolder = new File(targetFolders.get(index));
+        if (!targetFolder.exists() && !targetFolder.mkdirs()) {
+            JOptionPane.showMessageDialog(this, "无法创建目标文件夹: " + targetFolder.getAbsolutePath(),
+                    "错误", JOptionPane.ERROR_MESSAGE);
+            return;
         }
 
         File destDir;
         File numberedFolder = null;
-
         try {
             if (currentImages.size() == 1) {
                 destDir = targetFolder;
             } else {
-                int nextFolderNumber = findNextFolderNumber(targetFolder);
-                numberedFolder = new File(targetFolder, String.valueOf(nextFolderNumber));
-                if (!numberedFolder.mkdirs()) {
-                    throw new IOException("无法创建子文件夹: " + numberedFolder.getAbsolutePath());
-                }
+                numberedFolder = new File(targetFolder, String.valueOf(findNextFolderNumber(targetFolder)));
+                if (!numberedFolder.mkdirs()) throw new IOException("无法创建子文件夹: " + numberedFolder.getAbsolutePath());
                 destDir = numberedFolder;
             }
 
-            final String moveReportPath = destDir.toPath().toString();
-            final File finalNumberedFolder = numberedFolder;
-            List<File[]> copyPairs = new ArrayList<>(); // [src, dest]
+            final String moveReportPath    = destDir.toPath().toString();
+            final File   finalNumberedFolder = numberedFolder;
+            List<File[]> copyPairs         = new ArrayList<>();
 
-            // Fix 2 Phase 1: 复制所有图片到目标目录
+            // Phase 1：复制所有文件
             try {
                 for (File image : currentImages) {
-                    File destFile = new File(destDir, image.getName());
-                    Files.copy(image.toPath(), destFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
-                    copyPairs.add(new File[]{image, destFile});
+                    File dest = new File(destDir, image.getName());
+                    Files.copy(image.toPath(), dest.toPath(), StandardCopyOption.REPLACE_EXISTING);
+                    copyPairs.add(new File[]{image, dest});
                 }
             } catch (IOException copyErr) {
-                // 回滚：删除已复制到目标目录的文件
                 for (File[] pair : copyPairs) {
                     try { Files.deleteIfExists(pair[1].toPath()); } catch (IOException re) { log.error("回滚删除失败: {}", re.getMessage()); }
                 }
@@ -1127,17 +1060,11 @@ public class ImageClassifier extends JFrame {
                 throw copyErr;
             }
 
-            // Fix 2 Phase 2: 删除源文件（所有复制已成功）
+            // Phase 2：删除源文件
             int deletedCount = 0;
             try {
-                for (File[] pair : copyPairs) {
-                    Files.delete(pair[0].toPath());
-                    deletedCount++;
-                }
+                for (File[] pair : copyPairs) { Files.delete(pair[0].toPath()); deletedCount++; }
             } catch (IOException delErr) {
-                // 回滚：
-                // copyPairs[0..deletedCount-1] 的源文件已被删除，目标是唯一副本，不能删
-                // copyPairs[deletedCount..n-1] 的源文件仍完整，删除目标文件以还原
                 for (int i = deletedCount; i < copyPairs.size(); i++) {
                     try { Files.deleteIfExists(copyPairs.get(i)[1].toPath()); } catch (IOException re) { log.error("回滚删除失败: {}", re.getMessage()); }
                 }
@@ -1148,7 +1075,6 @@ public class ImageClassifier extends JFrame {
                 throw delErr;
             }
 
-            // 上报服务器
             if (serverRunning) {
                 try { sendMoveArtWorkInfo(artworkId, moveReportPath); }
                 catch (Exception e) { log.error("记录失败", e); }
@@ -1157,118 +1083,102 @@ public class ImageClassifier extends JFrame {
             moveToNextFolder();
 
         } catch (IOException e) {
-            JOptionPane.showMessageDialog(this, "移动文件时出错（已回滚）: " + e.getMessage(),
-                    "错误", JOptionPane.ERROR_MESSAGE);
-            // 重新从磁盘加载以反映实际状态
+            JOptionPane.showMessageDialog(this, "移动文件时出错（已回滚）: " + e.getMessage(), "错误", JOptionPane.ERROR_MESSAGE);
             loadImagesFromCurrentFolder();
             updateThumbnails();
         }
     }
 
-    /**
-     * 从文件夹名解析作品 ID。
-     * 若文件夹名本身即为正整数（原始下载目录），直接返回；
-     * 否则向服务器查询 move_folder 记录（适用于已分类的序号目录，如 0、1、2）。
-     */
-    private static String stripTrailingSlash(String path) {
-        return path == null ? null : path.replaceAll("[/\\\\]+$", "");
-    }
+    // =========================================================================
+    // 服务器通信
+    // =========================================================================
 
-    private Long resolveArtworkId(File folder) {
-        // 优先通过 move_folder 反查（覆盖序号目录如 0/1/6 及多次移动场景）
-        if (serverRunning) {
+    private void checkServerStatus() {
+        new Thread(() -> {
             try {
                 String serverUrl = config.getProperty("server.url", "http://localhost:6999");
-                ResponseEntity<Map> resp = restTemplate.getForEntity(
-                        serverUrl + "/api/downloaded/by-move-folder?path={path}",
-                        Map.class,
-                        folder.getAbsolutePath()
-                );
-                if (resp.getStatusCode() == HttpStatus.OK && resp.getBody() != null) {
-                    Object idVal = resp.getBody().get("artworkId");
-                    if (idVal instanceof Number) return ((Number) idVal).longValue();
-                }
-            } catch (org.springframework.web.client.HttpClientErrorException ignored) {
-                // 未找到，继续回退
+                ResponseEntity<String> response = restTemplate.getForEntity(serverUrl + "/api/download/status", String.class);
+                boolean ok = response.getStatusCode() == HttpStatus.OK;
+                serverRunning = ok;
+                SwingUtilities.invokeLater(() -> {
+                    if (ok) {
+                        serverStatusLabel.setText("● 服务器正常");
+                        serverStatusLabel.setForeground(new Color(34, 139, 87));
+                    } else {
+                        serverStatusLabel.setText("● 服务器异常 (" + response.getStatusCode() + ")");
+                        serverStatusLabel.setForeground(C_DANGER);
+                    }
+                });
             } catch (Exception e) {
-                log.debug("通过 move_folder 查询作品 ID 失败: {}", e.getMessage());
+                serverRunning = false;
+                SwingUtilities.invokeLater(() -> {
+                    serverStatusLabel.setText("● 连接失败");
+                    serverStatusLabel.setForeground(C_DANGER);
+                });
+                log.error("检查服务器状态失败: {}", e.getMessage());
             }
-        }
-
-        // 回退：文件夹名本身即作品 ID（原始下载目录，如 137315774）
-        try {
-            long id = Long.parseLong(folder.getName());
-            if (id > 0) return id;
-        } catch (NumberFormatException ignored) {}
-
-        return null;
+        }).start();
     }
-
-    private int findNextFolderNumber(File parentFolder) {
-        for (int i = 0; i < Integer.MAX_VALUE; i++) {
-            if (!Files.exists(parentFolder.toPath().resolve(String.valueOf(i)))) {
-                return i;
-            }
-        }
-        return Integer.MAX_VALUE;
-    }
-
-    private void moveToNextFolder() {
-        // 删除已处理的文件夹
-        File currentFolder = subFolders.get(currentFolderIndex);
-        File[] remainingFiles = currentFolder.listFiles(); // Fix 4: 避免二次调用 listFiles()
-        if (remainingFiles == null || remainingFiles.length == 0) {
-            currentFolder.delete();
-        }
-
-        // 移动到下一个文件夹
-        currentFolderIndex++;
-
-        if (currentFolderIndex < subFolders.size()) {
-            // 加载下一个文件夹的图片
-            loadImagesFromCurrentFolder();
-            updateThumbnails();
-            updateStatus();
-        } else {
-            // 所有文件夹已处理完毕
-            JOptionPane.showMessageDialog(this, "所有文件夹已处理完毕", "完成", JOptionPane.INFORMATION_MESSAGE);
-            for (int i = 0; i < GROUP_SIZE; i++) {
-                thumbnailLabels[i].setIcon(null);
-                thumbnailLabels[i].setText("所有文件夹已处理完毕");
-            }
-            statusLabel.setText("状态: 所有文件夹已处理完毕");
-        }
-    }
-
-    private final RestTemplate restTemplate = new RestTemplate();
 
     private void sendMoveArtWorkInfo(Long artWork, String movePath) {
         String serverUrl = config.getProperty("server.url", "http://localhost:6999");
-        String url = serverUrl + "/api/downloaded/move/" + artWork;
+        String url       = serverUrl + "/api/downloaded/move/" + artWork;
 
         HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON); // 保持JSON类型
+        headers.setContentType(MediaType.APPLICATION_JSON);
 
         Map<String, Object> body = new HashMap<>();
         body.put("movePath", movePath);
         body.put("moveTime", System.currentTimeMillis() / 1000);
 
-        HttpEntity<Map<String, Object>> requestEntity =
-                new HttpEntity<>(body, headers);
-
         try {
-            ResponseEntity<String> response = restTemplate.exchange(
-                    url, HttpMethod.POST, requestEntity, String.class);
+            ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.POST, new HttpEntity<>(body, headers), String.class);
             log.info("Response: {}", response.getBody());
         } catch (Exception e) {
             log.error("发送请求失败: {}", e.getMessage());
         }
     }
 
-    public static void main(String[] args) {
-        SwingUtilities.invokeLater(() -> {
-            ImageClassifier classifier = new ImageClassifier();
-            classifier.setVisible(true);
-        });
+    // =========================================================================
+    // 工具方法
+    // =========================================================================
+
+    /**
+     * 从文件夹名解析作品 ID。
+     * 优先通过 move_folder 反查（覆盖序号目录及多次移动场景），
+     * 回退到文件夹名本身即作品 ID（原始下载目录，如 137315774）。
+     */
+    private Long resolveArtworkId(File folder) {
+        if (serverRunning) {
+            try {
+                String serverUrl = config.getProperty("server.url", "http://localhost:6999");
+                ResponseEntity<Map> resp = restTemplate.getForEntity(
+                        serverUrl + "/api/downloaded/by-move-folder?path={path}",
+                        Map.class, folder.getAbsolutePath());
+                if (resp.getStatusCode() == HttpStatus.OK && resp.getBody() != null) {
+                    Object idVal = resp.getBody().get("artworkId");
+                    if (idVal instanceof Number) return ((Number) idVal).longValue();
+                }
+            } catch (org.springframework.web.client.HttpClientErrorException ignored) {
+            } catch (Exception e) {
+                log.debug("通过 move_folder 查询作品 ID 失败: {}", e.getMessage());
+            }
+        }
+        try {
+            long id = Long.parseLong(folder.getName());
+            if (id > 0) return id;
+        } catch (NumberFormatException ignored) {}
+        return null;
+    }
+
+    private int findNextFolderNumber(File parentFolder) {
+        for (int i = 0; i < Integer.MAX_VALUE; i++) {
+            if (!Files.exists(parentFolder.toPath().resolve(String.valueOf(i)))) return i;
+        }
+        return Integer.MAX_VALUE;
+    }
+
+    private static String stripTrailingSlash(String path) {
+        return path == null ? null : path.replaceAll("[/\\\\]+$", "");
     }
 }
