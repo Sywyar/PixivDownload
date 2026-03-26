@@ -71,15 +71,30 @@ public class PixivDatabase {
     public void insertArtwork(long artworkId, String title, String folder, int count, String extensions, long time, Boolean isR18) {
         jdbcTemplate.update(
                 "INSERT OR IGNORE INTO artworks (artwork_id, title, folder, count, extensions, time, \"R18\") VALUES (?, ?, ?, ?, ?, ?, ?)",
-                artworkId, title, folder, count, extensions, time,
+                artworkId, title, stripTrailingSlash(folder), count, extensions, time,
                 isR18 == null ? null : (isR18 ? 1 : 0)
         );
+    }
+
+    private static String stripTrailingSlash(String path) {
+        return path == null ? null : path.replaceAll("[/\\\\]+$", "");
+    }
+
+    public ArtworkRecord getArtworkByMoveFolder(String moveFolder) {
+        // 去除末尾斜杠后比较，兼容 DB 中存在或不存在尾部分隔符的情况
+        String normalized = moveFolder.replaceAll("[/\\\\]+$", "");
+        List<ArtworkRecord> results = jdbcTemplate.query(
+                "SELECT artwork_id, title, folder, count, extensions, time, moved, move_folder, move_time, R18 FROM artworks WHERE RTRIM(RTRIM(move_folder, '/'), '\\') = ?",
+                this::mapArtworkRecord,
+                normalized
+        );
+        return results.isEmpty() ? null : results.get(0);
     }
 
     public void updateArtworkMove(long artworkId, String movePath, long moveTime) {
         jdbcTemplate.update(
                 "UPDATE artworks SET moved = 1, move_folder = ?, move_time = ? WHERE artwork_id = ?",
-                movePath, moveTime, artworkId
+                stripTrailingSlash(movePath), moveTime, artworkId
         );
     }
 

@@ -395,11 +395,14 @@ public class DownloadService {
     @Async
     public void moveArtWork(Long artworkId, String movePath, Long moveTime) {
         try {
-            if (!pixivDatabase.hasArtwork(artworkId)) {
+            ArtworkRecord existing = pixivDatabase.getArtwork(artworkId);
+            if (existing == null) {
                 return;
             }
             pixivDatabase.updateArtworkMove(artworkId, movePath, moveTime);
-            pixivDatabase.incrementMoved();
+            if (!existing.moved()) {
+                pixivDatabase.incrementMoved();
+            }
         } catch (Exception e) {
             log.error("移动记录失败: {}", e.getMessage(), e);
         }

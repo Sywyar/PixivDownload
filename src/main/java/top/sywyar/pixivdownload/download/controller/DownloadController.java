@@ -213,12 +213,22 @@ public class DownloadController {
         }
     }
 
+    @GetMapping("/downloaded/by-move-folder")
+    public ResponseEntity<Map<String, Object>> getArtworkByMoveFolder(
+            @RequestParam String path) {
+        ArtworkRecord artwork = pixivDatabase.getArtworkByMoveFolder(path);
+        if (artwork == null) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(Map.of("artworkId", artwork.artworkId()));
+    }
+
     @PostMapping("/downloaded/move/{artworkId}")
     public ResponseEntity<String> moveArtWork(
             @PathVariable Long artworkId,
             @RequestBody Map<String, Object> requestBody) {
 
-        String movePath = (String) requestBody.get("movePath");
+        String movePath = ((String) requestBody.get("movePath")).replaceAll("[/\\\\]+$", "");
         Long moveTime = Long.valueOf(requestBody.get("moveTime").toString());
 
         downloadService.moveArtWork(artworkId, movePath, moveTime);

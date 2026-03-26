@@ -47,6 +47,8 @@ public class ImageClassifier extends JFrame {
     private JButton openFolderButton; // 改为打开按钮
     private JButton browseFolderButton; // 保留浏览按钮
     private JButton skipFolderButton; // 新增跳过按钮
+    private JButton prevFolderButton; // 上一个文件夹
+    private JButton refreshButton;    // 刷新缩略图
     private JPanel categoriesPanel;
     private JLabel statusLabel;
     private JLabel[] thumbnailLabels;
@@ -122,7 +124,7 @@ public class ImageClassifier extends JFrame {
             String folder = config.getProperty("target.folder." + i);
             String remark = config.getProperty("folder.remark." + i);
             if (folder != null && remark != null) {
-                targetFolders.add(folder);
+                targetFolders.add(stripTrailingSlash(folder));
                 folderRemarks.add(remark);
             }
         }
@@ -283,6 +285,16 @@ public class ImageClassifier extends JFrame {
         boolean showSkipButton = Boolean.parseBoolean(config.getProperty("show.skip.button", "true"));
         skipFolderButton.setVisible(showSkipButton);
 
+        prevFolderButton = new JButton("← 上一文件夹");
+        prevFolderButton.setFont(new Font("微软雅黑", Font.BOLD, 14));
+        prevFolderButton.setPreferredSize(new Dimension(150, 35));
+        classifyPanel.add(prevFolderButton);
+
+        refreshButton = new JButton("刷新缩略图");
+        refreshButton.setFont(new Font("微软雅黑", Font.BOLD, 14));
+        refreshButton.setPreferredSize(new Dimension(120, 35));
+        classifyPanel.add(refreshButton);
+
         // 状态面板
         JPanel statusPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
         statusPanel.setBorder(BorderFactory.createTitledBorder("状态信息"));
@@ -366,6 +378,9 @@ public class ImageClassifier extends JFrame {
 
         // 添加跳过按钮的事件监听器
         skipFolderButton.addActionListener(e -> skipCurrentFolder());
+
+        prevFolderButton.addActionListener(e -> moveToPrevFolder());
+        refreshButton.addActionListener(e -> refreshCurrentFolder());
 
         // 添加输入框监听器，实时更新备注显示
         targetFolderField.addActionListener(e -> updateRemarkLabel());
@@ -617,7 +632,7 @@ public class ImageClassifier extends JFrame {
         // 保存按钮事件
         saveButton.addActionListener(e -> {
             // 保存基本设置
-            config.setProperty("default.folder", defaultFolderField.getText().trim());
+            config.setProperty("default.folder", stripTrailingSlash(defaultFolderField.getText().trim()));
             config.setProperty("show.skip.button", String.valueOf(showSkipButtonCheckBox.isSelected()));
             config.setProperty("server.url", serverUrlField.getText().trim());
 
@@ -626,7 +641,7 @@ public class ImageClassifier extends JFrame {
             folderRemarks.clear();
 
             for (int i = 0; i < tableModel.getRowCount(); i++) {
-                targetFolders.add(tableModel.getValueAt(i, 1).toString());
+                targetFolders.add(stripTrailingSlash(tableModel.getValueAt(i, 1).toString()));
                 folderRemarks.add(tableModel.getValueAt(i, 2).toString());
             }
 
@@ -765,7 +780,7 @@ public class ImageClassifier extends JFrame {
 
     // 从输入框打开文件夹
     private void openParentFolderFromField() {
-        String folderPath = folderPathField.getText().trim();
+        String folderPath = stripTrailingSlash(folderPathField.getText().trim());
         if (folderPath.isEmpty()) {
             JOptionPane.showMessageDialog(this, "请输入文件夹路径", "提示", JOptionPane.INFORMATION_MESSAGE);
             return;
@@ -810,6 +825,22 @@ public class ImageClassifier extends JFrame {
     // Fix 1: 无论文件夹是否有图片均允许跳过，避免空图片文件夹造成 UI 死锁
     private void skipCurrentFolder() {
         moveToNextFolder();
+    }
+
+    private void moveToPrevFolder() {
+        if (subFolders == null || currentFolderIndex <= 0) return;
+        currentFolderIndex--;
+        loadImagesFromCurrentFolder();
+        updateThumbnails();
+        updateStatus();
+    }
+
+    private void refreshCurrentFolder() {
+        if (subFolders == null || currentFolderIndex >= subFolders.size()) return;
+        thumbnailManager.clearCache();
+        loadImagesFromCurrentFolder();
+        updateThumbnails();
+        updateStatus();
     }
 
     private void updateRemarkLabel() {
@@ -964,8 +995,9 @@ public class ImageClassifier extends JFrame {
 
             // 异步查询作品 R18 状态
             if (serverRunning) {
-                try {
-                    long artworkId = Long.parseLong(currentFolder.getName());
+                Long resolvedId = resolveArtworkId(currentFolder);
+                if (resolvedId != null) {
+                    final long artworkId = resolvedId;
                     new Thread(() -> {
                         try {
                             String serverUrl = config.getProperty("server.url", "http://localhost:6999");
@@ -978,7 +1010,10 @@ public class ImageClassifier extends JFrame {
                                     if (Boolean.TRUE.equals(isR18)) {
                                         statusLabel.setText(statusLabel.getText() + "  [R18]");
                                         statusLabel.setForeground(new Color(200, 0, 0));
-                                    } else if (isR18 == null) {
+                                    } else if (Boolean.FALSE.equals(isR18)) {
+                                        statusLabel.setText(statusLabel.getText() + "  [SFW]");
+                                        statusLabel.setForeground(new Color(25, 135, 84));
+                                    } else {
                                         statusLabel.setText(statusLabel.getText() + "  [未知]");
                                         statusLabel.setForeground(new Color(120, 120, 120));
                                     }
@@ -986,7 +1021,7 @@ public class ImageClassifier extends JFrame {
                             }
                         } catch (Exception ignored) {}
                     }).start();
-                } catch (NumberFormatException ignored) {}
+                }
             }
         }
     }
@@ -1035,14 +1070,12 @@ public class ImageClassifier extends JFrame {
             return;
         }
 
-        // Fix 3: 提前校验文件夹名是否为合法作品 ID，给出明确错误提示，不再误导用户
-        String currentFolderName = subFolders.get(currentFolderIndex).getName();
-        Long artworkId;
-        try {
-            artworkId = Long.parseLong(currentFolderName);
-        } catch (NumberFormatException e) {
+        File currentSubFolder = subFolders.get(currentFolderIndex);
+        String currentFolderName = currentSubFolder.getName();
+        Long artworkId = resolveArtworkId(currentSubFolder);
+        if (artworkId == null) {
             JOptionPane.showMessageDialog(this,
-                    "当前文件夹名称「" + currentFolderName + "」不是有效的作品 ID（非数字）。\n请使用「跳过此文件夹」处理。",
+                    "无法从文件夹名「" + currentFolderName + "」或数据库记录中找到对应的作品 ID。\n请使用「跳过此文件夹」处理。",
                     "错误", JOptionPane.ERROR_MESSAGE);
             return;
         }
@@ -1095,14 +1128,18 @@ public class ImageClassifier extends JFrame {
             }
 
             // Fix 2 Phase 2: 删除源文件（所有复制已成功）
+            int deletedCount = 0;
             try {
                 for (File[] pair : copyPairs) {
                     Files.delete(pair[0].toPath());
+                    deletedCount++;
                 }
             } catch (IOException delErr) {
-                // 回滚：删除目标目录中已复制的文件（源文件仍完整）
-                for (File[] pair : copyPairs) {
-                    try { Files.deleteIfExists(pair[1].toPath()); } catch (IOException re) { log.error("回滚删除失败: {}", re.getMessage()); }
+                // 回滚：
+                // copyPairs[0..deletedCount-1] 的源文件已被删除，目标是唯一副本，不能删
+                // copyPairs[deletedCount..n-1] 的源文件仍完整，删除目标文件以还原
+                for (int i = deletedCount; i < copyPairs.size(); i++) {
+                    try { Files.deleteIfExists(copyPairs.get(i)[1].toPath()); } catch (IOException re) { log.error("回滚删除失败: {}", re.getMessage()); }
                 }
                 if (finalNumberedFolder != null) {
                     File[] remaining = finalNumberedFolder.listFiles();
@@ -1126,6 +1163,45 @@ public class ImageClassifier extends JFrame {
             loadImagesFromCurrentFolder();
             updateThumbnails();
         }
+    }
+
+    /**
+     * 从文件夹名解析作品 ID。
+     * 若文件夹名本身即为正整数（原始下载目录），直接返回；
+     * 否则向服务器查询 move_folder 记录（适用于已分类的序号目录，如 0、1、2）。
+     */
+    private static String stripTrailingSlash(String path) {
+        return path == null ? null : path.replaceAll("[/\\\\]+$", "");
+    }
+
+    private Long resolveArtworkId(File folder) {
+        // 优先通过 move_folder 反查（覆盖序号目录如 0/1/6 及多次移动场景）
+        if (serverRunning) {
+            try {
+                String serverUrl = config.getProperty("server.url", "http://localhost:6999");
+                ResponseEntity<Map> resp = restTemplate.getForEntity(
+                        serverUrl + "/api/downloaded/by-move-folder?path={path}",
+                        Map.class,
+                        folder.getAbsolutePath()
+                );
+                if (resp.getStatusCode() == HttpStatus.OK && resp.getBody() != null) {
+                    Object idVal = resp.getBody().get("artworkId");
+                    if (idVal instanceof Number) return ((Number) idVal).longValue();
+                }
+            } catch (org.springframework.web.client.HttpClientErrorException ignored) {
+                // 未找到，继续回退
+            } catch (Exception e) {
+                log.debug("通过 move_folder 查询作品 ID 失败: {}", e.getMessage());
+            }
+        }
+
+        // 回退：文件夹名本身即作品 ID（原始下载目录，如 137315774）
+        try {
+            long id = Long.parseLong(folder.getName());
+            if (id > 0) return id;
+        } catch (NumberFormatException ignored) {}
+
+        return null;
     }
 
     private int findNextFolderNumber(File parentFolder) {

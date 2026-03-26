@@ -13,6 +13,10 @@ public class DownloadConfig {
     // getters and setters
     private String rootFolder = "pixiv-download";
 
+    public String getRootFolder() {
+        return rootFolder == null ? "pixiv-download" : rootFolder.replaceAll("[/\\\\]+$", "");
+    }
+
     /**
      * User 模式下载目录结构：
      * false（默认）→ {rootFolder}/{username}/{artworkId}/
