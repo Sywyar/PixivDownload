@@ -1,0 +1,321 @@
+package top.sywyar.pixivdownload.setup;
+
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.http.Cookie;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpServletResponse;
+
+import static org.assertj.core.api.Assertions.*;
+import static org.mockito.Mockito.*;
+
+@ExtendWith(MockitoExtension.class)
+@DisplayName("AuthFilter 单元测试")
+class AuthFilterTest {
+
+    @Mock
+    private SetupService setupService;
+    @Mock
+    private FilterChain filterChain;
+
+    private AuthFilter authFilter;
+    private MockHttpServletRequest request;
+    private MockHttpServletResponse response;
+
+    @BeforeEach
+    void setUp() {
+        authFilter = new AuthFilter(setupService);
+        request = new MockHttpServletRequest();
+        response = new MockHttpServletResponse();
+    }
+
+    // ========== OPTIONS 预检请求 ==========
+
+    @Test
+    @DisplayName("OPTIONS 预检请求应直接放行")
+    void shouldPassThroughOptionsRequest() throws Exception {
+        request.setMethod("OPTIONS");
+        request.setRequestURI("/api/download/pixiv");
+
+        authFilter.doFilterInternal(request, response, filterChain);
+
+        verify(filterChain).doFilter(request, response);
+    }
+
+    // ========== 公开路径 ==========
+
+    @Nested
+    @DisplayName("公开路径放行")
+    class PublicPathTests {
+
+        @ParameterizedTest
+        @ValueSource(strings = {
+                "/setup.html",
+                "/login.html",
+                "/favicon.ico",
+                "/api/setup/status",
+                "/api/auth/login",
+                "/api/auth/check",
+                "/api/quota/init",
+                "/api/archive/status/some-token",
+                "/api/archive/download/some-token",
+                "/api/download/status"
+        })
+        @DisplayName("公开路径应直接放行")
+        void shouldPassThroughPublicPaths(String path) throws Exception {
+            request.setMethod("GET");
+            request.setRequestURI(path);
+
+            authFilter.doFilterInternal(request, response, filterChain);
+
+            verify(filterChain).doFilter(request, response);
+        }
+    }
+
+    // ========== /api/downloaded/ 本地访问控制 ==========
+
+    @Nested
+    @DisplayName("/api/downloaded/ 本地访问控制")
+    class DownloadedPathTests {
+
+        @Test
+        @DisplayName("POST /api/downloaded/move/ 本地 IP 应放行")
+        void shouldAllowLocalMoveRequest() throws Exception {
+            request.setMethod("POST");
+            request.setRequestURI("/api/downloaded/move/12345");
+            request.setRemoteAddr("127.0.0.1");
+
+            authFilter.doFilterInternal(request, response, filterChain);
+
+            verify(filterChain).doFilter(request, response);
+        }
+
+        @Test
+        @DisplayName("POST /api/downloaded/move/ 非本地 IP 应返回 403")
+        void shouldRejectRemoteMoveRequest() throws Exception {
+            request.setMethod("POST");
+            request.setRequestURI("/api/downloaded/move/12345");
+            request.setRemoteAddr("192.168.1.100");
+
+            authFilter.doFilterInternal(request, response, filterChain);
+
+            assertThat(response.getStatus()).isEqualTo(403);
+            verify(filterChain, never()).doFilter(request, response);
+        }
+
+        @Test
+        @DisplayName("GET /api/downloaded/* 本地 IP 应直接放行")
+        void shouldAllowLocalGetDownloadedRequest() throws Exception {
+            request.setMethod("GET");
+            request.setRequestURI("/api/downloaded/12345");
+            request.setRemoteAddr("127.0.0.1");
+
+            authFilter.doFilterInternal(request, response, filterChain);
+
+            verify(filterChain).doFilter(request, response);
+        }
+
+        @ParameterizedTest
+        @ValueSource(strings = {"0:0:0:0:0:0:0:1", "::1", "::ffff:127.0.0.1"})
+        @DisplayName("各种本地 IPv6 地址也应被识别为本地")
+        void shouldRecognizeIpv6LocalAddresses(String addr) throws Exception {
+            request.setMethod("GET");
+            request.setRequestURI("/api/downloaded/12345");
+            request.setRemoteAddr(addr);
+
+            authFilter.doFilterInternal(request, response, filterChain);
+
+            verify(filterChain).doFilter(request, response);
+        }
+    }
+
+    // ========== 未完成配置 ==========
+
+    @Nested
+    @DisplayName("未完成配置时的行为")
+    class SetupIncompleteTests {
+
+        @BeforeEach
+        void setupMocks() {
+            when(setupService.isSetupComplete()).thenReturn(false);
+        }
+
+        @Test
+        @DisplayName("API 请求应返回 503")
+        void shouldReturn503ForApiRequest() throws Exception {
+            request.setMethod("GET");
+            request.setRequestURI("/api/download/pixiv");
+            request.setRemoteAddr("192.168.1.100");
+
+            authFilter.doFilterInternal(request, response, filterChain);
+
+            assertThat(response.getStatus()).isEqualTo(503);
+        }
+
+        @Test
+        @DisplayName("非 API 请求应重定向到 setup.html")
+        void shouldRedirectToSetupPage() throws Exception {
+            request.setMethod("GET");
+            request.setRequestURI("/index.html");
+            request.setRemoteAddr("192.168.1.100");
+
+            authFilter.doFilterInternal(request, response, filterChain);
+
+            assertThat(response.getRedirectedUrl()).isEqualTo("/setup.html");
+        }
+    }
+
+    // ========== 多人模式 ==========
+
+    @Nested
+    @DisplayName("多人模式")
+    class MultiModeTests {
+
+        @BeforeEach
+        void setupMocks() {
+            when(setupService.isSetupComplete()).thenReturn(true);
+            when(setupService.getMode()).thenReturn("multi");
+        }
+
+        @Test
+        @DisplayName("无 Cookie 时应分配 UUID Cookie")
+        void shouldAssignUuidCookie() throws Exception {
+            request.setMethod("GET");
+            request.setRequestURI("/api/download/pixiv");
+            request.setRemoteAddr("192.168.1.100");
+
+            authFilter.doFilterInternal(request, response, filterChain);
+
+            verify(filterChain).doFilter(request, response);
+            // 应设置了 Set-Cookie 头
+            assertThat(response.getHeader("Set-Cookie"))
+                    .contains("pixiv_user_id=");
+        }
+
+        @Test
+        @DisplayName("已有 UUID Cookie 时不应重新分配")
+        void shouldNotReassignExistingUuidCookie() throws Exception {
+            request.setMethod("GET");
+            request.setRequestURI("/api/download/pixiv");
+            request.setRemoteAddr("192.168.1.100");
+            request.setCookies(new Cookie("pixiv_user_id", "existing-uuid-value"));
+
+            authFilter.doFilterInternal(request, response, filterChain);
+
+            verify(filterChain).doFilter(request, response);
+            // 不应设置新的 Cookie
+            assertThat(response.getHeader("Set-Cookie")).isNull();
+        }
+
+        @Test
+        @DisplayName("有效的 X-User-UUID 请求头应被使用")
+        void shouldUseValidXUserUuidHeader() throws Exception {
+            request.setMethod("GET");
+            request.setRequestURI("/api/download/pixiv");
+            request.setRemoteAddr("192.168.1.100");
+            request.addHeader("X-User-UUID", "12345678-1234-1234-1234-123456789abc");
+
+            authFilter.doFilterInternal(request, response, filterChain);
+
+            verify(filterChain).doFilter(request, response);
+            assertThat(response.getHeader("Set-Cookie"))
+                    .contains("12345678-1234-1234-1234-123456789abc");
+        }
+
+        @Test
+        @DisplayName("格式无效的 X-User-UUID 应被忽略，生成新 UUID")
+        void shouldIgnoreInvalidXUserUuidHeader() throws Exception {
+            request.setMethod("GET");
+            request.setRequestURI("/api/download/pixiv");
+            request.setRemoteAddr("192.168.1.100");
+            request.addHeader("X-User-UUID", "invalid-uuid");
+
+            authFilter.doFilterInternal(request, response, filterChain);
+
+            verify(filterChain).doFilter(request, response);
+            String cookie = response.getHeader("Set-Cookie");
+            assertThat(cookie).contains("pixiv_user_id=");
+            assertThat(cookie).doesNotContain("invalid-uuid");
+        }
+    }
+
+    // ========== Solo 模式 ==========
+
+    @Nested
+    @DisplayName("Solo 模式 - Session 校验")
+    class SoloModeTests {
+
+        @BeforeEach
+        void setupMocks() {
+            when(setupService.isSetupComplete()).thenReturn(true);
+            when(setupService.getMode()).thenReturn("solo");
+        }
+
+        @Test
+        @DisplayName("有效 Session Cookie 应放行")
+        void shouldPassWithValidSessionCookie() throws Exception {
+            when(setupService.isValidSession("valid-token")).thenReturn(true);
+
+            request.setMethod("GET");
+            request.setRequestURI("/api/download/pixiv");
+            request.setRemoteAddr("192.168.1.100");
+            request.setCookies(new Cookie("pixiv_session", "valid-token"));
+
+            authFilter.doFilterInternal(request, response, filterChain);
+
+            verify(filterChain).doFilter(request, response);
+        }
+
+        @Test
+        @DisplayName("无效 Session 的 API 请求应返回 401")
+        void shouldReturn401ForInvalidSessionApi() throws Exception {
+            when(setupService.isValidSession(any())).thenReturn(false);
+
+            request.setMethod("GET");
+            request.setRequestURI("/api/download/pixiv");
+            request.setRemoteAddr("192.168.1.100");
+
+            authFilter.doFilterInternal(request, response, filterChain);
+
+            assertThat(response.getStatus()).isEqualTo(401);
+            verify(filterChain, never()).doFilter(request, response);
+        }
+
+        @Test
+        @DisplayName("无效 Session 的非 API 请求应重定向到 login.html")
+        void shouldRedirectToLoginForInvalidSessionPage() throws Exception {
+            when(setupService.isValidSession(any())).thenReturn(false);
+
+            request.setMethod("GET");
+            request.setRequestURI("/index.html");
+            request.setRemoteAddr("192.168.1.100");
+
+            authFilter.doFilterInternal(request, response, filterChain);
+
+            assertThat(response.getRedirectedUrl()).contains("/login.html");
+        }
+
+        @Test
+        @DisplayName("X-Session-Token 请求头也应能认证")
+        void shouldAuthenticateViaXSessionTokenHeader() throws Exception {
+            when(setupService.isValidSession("header-token")).thenReturn(true);
+
+            request.setMethod("GET");
+            request.setRequestURI("/api/download/pixiv");
+            request.setRemoteAddr("192.168.1.100");
+            request.addHeader("X-Session-Token", "header-token");
+
+            authFilter.doFilterInternal(request, response, filterChain);
+
+            verify(filterChain).doFilter(request, response);
+        }
+    }
+}
