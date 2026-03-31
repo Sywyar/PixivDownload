@@ -149,18 +149,17 @@ Not installing ffmpeg does not affect normal image downloads; it is only require
 3. Normal artworks are saved to `pixiv-download/{username}/{artworkId}/`, R18 artworks are saved to `pixiv-download/{username}/R18/{artworkId}/`
 4. Download progress is obtained in real-time via SSE, with automatic polling fallback on disconnect; the same artwork will not be submitted twice
 
-### N-Tab Bookmark Batch Download
+### [N-Tab](https://github.com/scoful/N-Tab/) Bookmark Batch Download
 
-**Prerequisite:** Export your bookmarks from the [N-Tab](https://github.com/scoful/N-Tab/) extension as a JSON file.
-
-1. On any Pixiv page, click "Import N-Tab JSON" in the Tampermonkey menu
-2. Paste the N-Tab exported JSON content and confirm
-3. After the floating control panel appears, click "Start"
-4. Supports skip downloaded, R18 filtering, etc. — same operations as [User Homepage Batch Download](#user-homepage-batch-download)
+1. Send one or more tabs into one or more groups of tags
+2. Click "Other Functions - Export" in the navigation bar
+3. Click "Export" and copy the exported links into the input box
+4. After the floating control panel appears, click "Start"
+5. Supports skip downloaded, R18 filtering, etc. — same operations as [User Homepage Batch Download](#user-homepage-batch-download)
 
 ### Web Batch Download Page
 
-Visit `http://localhost:6999/pixiv-batch.html` (solo mode requires login first)
+Visit `http://localhost:6999/pixiv-batch.html` solo mode requires login first
 
 Enter Pixiv user ID and Cookie to directly trigger batch downloads from the web page, no userscript required.
 

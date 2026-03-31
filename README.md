@@ -149,18 +149,17 @@ proxy.port: 7890   # 修改为你的代理软件实际监听端口
 3. 普通作品保存在 `pixiv-download/{username}/{artworkId}/`，R18 作品保存在 `pixiv-download/{username}/R18/{artworkId}/`
 4. 下载进度通过 SSE 实时获取，断联时自动轮询兜底，同一作品不会被重复提交
 
-### N-Tab 书签批量下载
+### [N-Tab](https://github.com/scoful/N-Tab/) 书签批量下载
 
-**前置步骤：** 从 [N-Tab](https://github.com/scoful/N-Tab/) 扩展导出收藏列表为 JSON 文件。
-
-1. 在 Pixiv 任意页面，点击 Tampermonkey 菜单中的「导入 N-Tab JSON」
-2. 将 N-Tab 导出的 JSON 内容粘贴进去并确认
-3. 悬浮控制面板出现后，点击「开始」
-4. 支持跳过已下载、R18 过滤等选项，操作同[用户主页批量下载](#用户主页批量下载)
+1. 将一个或多个标签页发送成一组或多组标签
+2. 点击导航栏的「其他功能 - 导出」
+3. 点击「导出」后将导出的链接复制到输入框中
+4. 悬浮控制面板出现后，点击「开始」
+5. 支持跳过已下载、R18 过滤等选项，操作同[用户主页批量下载](#用户主页批量下载)
 
 ### Web 批量下载页面
 
-访问 `http://localhost:6999/pixiv-batch.html`（自用模式需先登录）
+访问 `http://localhost:6999/pixiv-batch.html` 自用模式需先登录
 
 输入 Pixiv 用户 ID 和 Cookie，在网页端直接触发批量下载，无需油猴脚本。
 
