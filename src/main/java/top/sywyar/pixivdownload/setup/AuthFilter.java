@@ -18,6 +18,7 @@ import top.sywyar.pixivdownload.common.NetworkUtils;
 import top.sywyar.pixivdownload.common.SessionUtils;
 import top.sywyar.pixivdownload.common.UuidUtils;
 import top.sywyar.pixivdownload.download.response.ErrorResponse;
+import top.sywyar.pixivdownload.quota.RateLimitService;
 
 import java.io.IOException;
 import java.net.URLEncoder;
@@ -31,6 +32,7 @@ import java.time.Duration;
 public class AuthFilter extends OncePerRequestFilter {
 
     private final SetupService setupService;
+    private final RateLimitService rateLimitService;
 
     @Override
     protected void doFilterInternal(HttpServletRequest req, HttpServletResponse res,
@@ -79,6 +81,14 @@ public class AuthFilter extends OncePerRequestFilter {
 
         // 多人模式：无需认证，但为用户分配 UUID cookie（用于配额追踪）
         if ("multi".equals(setupService.getMode())) {
+            // 速率限制：对所有 API 请求按 UUID 计数，超出时返回 429
+            if (isApi(path)) {
+                String uuid = UuidUtils.extractOrGenerateUuid(req);
+                if (!rateLimitService.isAllowed(uuid)) {
+                    sendJsonError(res, 429, "Too Many Requests");
+                    return;
+                }
+            }
             ensureUserUuidCookie(req, res);
             chain.doFilter(req, res);
             return;
@@ -100,14 +110,10 @@ public class AuthFilter extends OncePerRequestFilter {
 
     private boolean isPublic(String path) {
         return path.equals("/setup.html")
-            || path.equals("/login.html")
-            || path.equals("/favicon.ico")
-            || path.startsWith("/api/setup/")
-            || path.startsWith("/api/auth/")
-            || path.equals("/api/quota/init")
-            || path.startsWith("/api/archive/status/")
-            || path.startsWith("/api/archive/download/")
-            || path.equals("/api/download/status");
+                || path.equals("/login.html")
+                || path.equals("/favicon.ico")
+                || path.startsWith("/api/setup/")
+                || path.startsWith("/api/auth/");
     }
 
     private boolean isApi(String path) {

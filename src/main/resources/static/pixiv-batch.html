@@ -406,7 +406,7 @@ let quotaExceededHandled = false;
 
 async function initQuota() {
   try {
-    const res = await fetch(BASE + '/api/quota/init', { credentials: 'same-origin' });
+    const res = await fetch(BASE + '/api/quota/init', { method: 'POST', credentials: 'same-origin' });
     if (!res.ok) return;
     const data = await res.json();
     if (!data.enabled) return;

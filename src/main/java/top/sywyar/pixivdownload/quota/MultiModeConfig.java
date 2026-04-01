@@ -24,6 +24,9 @@ public class MultiModeConfig {
     /** timed-delete 模式：作品下载完成后多少小时自动删除源文件 */
     private int deleteAfterHours = 72;
 
+    /** 多人模式下每用户每分钟最大请求次数（0 表示不限制） */
+    private int requestLimitMinute = 300;
+
     @Data
     public static class Quota {
         /** 是否启用配额限制 */

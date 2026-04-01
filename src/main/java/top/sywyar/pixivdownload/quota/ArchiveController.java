@@ -32,7 +32,7 @@ public class ArchiveController {
      * 初始化配额会话：返回当前用户的 UUID 和配额状态。
      * 若用户没有 UUID cookie，则自动分配并写入 cookie。
      */
-    @GetMapping("/api/quota/init")
+    @PostMapping("/api/quota/init")
     public ResponseEntity<QuotaInitResponse> initQuota(HttpServletRequest request) {
 
         if (!"multi".equals(setupService.getMode())

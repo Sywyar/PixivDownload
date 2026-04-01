@@ -14,6 +14,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 
+import top.sywyar.pixivdownload.quota.RateLimitService;
+
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
@@ -24,6 +26,8 @@ class AuthFilterTest {
     @Mock
     private SetupService setupService;
     @Mock
+    private RateLimitService rateLimitService;
+    @Mock
     private FilterChain filterChain;
 
     private AuthFilter authFilter;
@@ -32,7 +36,7 @@ class AuthFilterTest {
 
     @BeforeEach
     void setUp() {
-        authFilter = new AuthFilter(setupService);
+        authFilter = new AuthFilter(setupService, rateLimitService);
         request = new MockHttpServletRequest();
         response = new MockHttpServletResponse();
     }
@@ -63,20 +67,60 @@ class AuthFilterTest {
                 "/favicon.ico",
                 "/api/setup/status",
                 "/api/auth/login",
-                "/api/auth/check",
-                "/api/quota/init",
-                "/api/archive/status/some-token",
-                "/api/archive/download/some-token",
-                "/api/download/status"
+                "/api/auth/check"
         })
-        @DisplayName("公开路径应直接放行")
-        void shouldPassThroughPublicPaths(String path) throws Exception {
+        @DisplayName("始终公开的路径应直接放行（与模式无关）")
+        void shouldPassThroughAlwaysPublicPaths(String path) throws Exception {
             request.setMethod("GET");
             request.setRequestURI(path);
 
             authFilter.doFilterInternal(request, response, filterChain);
 
             verify(filterChain).doFilter(request, response);
+        }
+
+        @ParameterizedTest
+        @ValueSource(strings = {
+                "/api/quota/init",
+                "/api/archive/status/some-token",
+                "/api/archive/download/some-token"
+        })
+        @DisplayName("多人模式下配额/归档路径经多人模式分支放行（非公开路径快速通道）")
+        void shouldPassThroughMultiModeQuotaPathsViaMultiBranch(String path) throws Exception {
+            when(setupService.isSetupComplete()).thenReturn(true);
+            when(setupService.getMode()).thenReturn("multi");
+            when(rateLimitService.isAllowed(any())).thenReturn(true);
+
+            request.setMethod("GET");
+            request.setRequestURI(path);
+            request.setRemoteAddr("192.168.1.100");
+
+            authFilter.doFilterInternal(request, response, filterChain);
+
+            verify(filterChain).doFilter(request, response);
+        }
+
+        @ParameterizedTest
+        @ValueSource(strings = {
+                "/api/quota/init",
+                "/api/archive/status/some-token",
+                "/api/archive/download/some-token",
+                "/api/download/status"
+        })
+        @DisplayName("Solo 模式下配额/归档路径不公开，无效 Session 应返回 401")
+        void shouldNotBePublicInSoloMode(String path) throws Exception {
+            when(setupService.isSetupComplete()).thenReturn(true);
+            when(setupService.getMode()).thenReturn("solo");
+            when(setupService.isValidSession(any())).thenReturn(false);
+
+            request.setMethod("GET");
+            request.setRequestURI(path);
+            request.setRemoteAddr("192.168.1.100");
+
+            authFilter.doFilterInternal(request, response, filterChain);
+
+            assertThat(response.getStatus()).isEqualTo(401);
+            verify(filterChain, never()).doFilter(request, response);
         }
     }
 
@@ -183,6 +227,7 @@ class AuthFilterTest {
         void setupMocks() {
             when(setupService.isSetupComplete()).thenReturn(true);
             when(setupService.getMode()).thenReturn("multi");
+            when(rateLimitService.isAllowed(any())).thenReturn(true);
         }
 
         @Test
@@ -244,6 +289,62 @@ class AuthFilterTest {
             String cookie = response.getHeader("Set-Cookie");
             assertThat(cookie).contains("pixiv_user_id=");
             assertThat(cookie).doesNotContain("invalid-uuid");
+        }
+    }
+
+    // ========== 速率限制 ==========
+
+    @Nested
+    @DisplayName("多人模式速率限制")
+    class RateLimitTests {
+
+        @BeforeEach
+        void setupMocks() {
+            when(setupService.isSetupComplete()).thenReturn(true);
+            when(setupService.getMode()).thenReturn("multi");
+        }
+
+        @Test
+        @DisplayName("超出速率限制时 API 请求应返回 429")
+        void shouldReturn429WhenRateLimitExceeded() throws Exception {
+            when(rateLimitService.isAllowed(any())).thenReturn(false);
+
+            request.setMethod("GET");
+            request.setRequestURI("/api/download/pixiv");
+            request.setRemoteAddr("192.168.1.100");
+
+            authFilter.doFilterInternal(request, response, filterChain);
+
+            assertThat(response.getStatus()).isEqualTo(429);
+            verify(filterChain, never()).doFilter(request, response);
+        }
+
+        @Test
+        @DisplayName("未超出速率限制时 API 请求应正常放行")
+        void shouldPassWhenRateLimitNotExceeded() throws Exception {
+            when(rateLimitService.isAllowed(any())).thenReturn(true);
+
+            request.setMethod("GET");
+            request.setRequestURI("/api/download/pixiv");
+            request.setRemoteAddr("192.168.1.100");
+
+            authFilter.doFilterInternal(request, response, filterChain);
+
+            assertThat(response.getStatus()).isEqualTo(200);
+            verify(filterChain).doFilter(request, response);
+        }
+
+        @Test
+        @DisplayName("非 API 路径不进行速率限制检查")
+        void shouldNotCheckRateLimitForNonApiPaths() throws Exception {
+            request.setMethod("GET");
+            request.setRequestURI("/index.html");
+            request.setRemoteAddr("192.168.1.100");
+
+            authFilter.doFilterInternal(request, response, filterChain);
+
+            verify(rateLimitService, never()).isAllowed(any());
+            verify(filterChain).doFilter(request, response);
         }
     }
 

@@ -5,7 +5,9 @@ import org.springframework.http.*;
 import org.springframework.web.client.RestTemplate;
 
 import javax.swing.*;
+import javax.swing.Timer;
 import java.awt.*;
+import java.awt.datatransfer.StringSelection;
 import java.awt.event.*;
 import java.io.File;
 import java.io.FileInputStream;
@@ -50,6 +52,7 @@ public class ImageClassifier extends JFrame {
     private List<File> currentImages;
     private int        currentGroupIndex  = 0;
     private boolean    serverRunning      = false;
+    private Long       currentArtworkId   = null;
 
     // =========================================================================
     // 配置
@@ -419,6 +422,29 @@ public class ImageClassifier extends JFrame {
 
             row.add(index,   BorderLayout.WEST);
             row.add(textCol, BorderLayout.CENTER);
+
+            final int folderIndex = i;
+            MouseAdapter clickToFill = new MouseAdapter() {
+                @Override
+                public void mouseClicked(MouseEvent e) {
+                    targetFolderField.setText(String.valueOf(folderIndex));
+                    targetFolderField.requestFocus();
+                }
+                @Override
+                public void mouseEntered(MouseEvent e) {
+                    row.setBackground(C_PRIMARY.brighter());
+                }
+                @Override
+                public void mouseExited(MouseEvent e) {
+                    row.setBackground(alt ? C_ROW_ALT : C_PANEL);
+                }
+            };
+            row.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+            row.addMouseListener(clickToFill);
+            index.addMouseListener(clickToFill);
+            name.addMouseListener(clickToFill);
+            path.addMouseListener(clickToFill);
+
             categoriesPanel.add(row);
         }
         categoriesPanel.revalidate();
@@ -453,6 +479,21 @@ public class ImageClassifier extends JFrame {
         refreshButton.addActionListener(e -> refreshCurrentFolder());
 
         folderPathField.addActionListener(e -> openParentFolderFromField());
+
+        statusLabel.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        statusLabel.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                if (currentArtworkId == null) return;
+                StringSelection selection = new StringSelection(String.valueOf(currentArtworkId));
+                Toolkit.getDefaultToolkit().getSystemClipboard().setContents(selection, null);
+                String prev = statusLabel.getText();
+                statusLabel.setText("已复制 artworkId: " + currentArtworkId);
+                Timer timer = new Timer(1500, ev -> statusLabel.setText(prev));
+                timer.setRepeats(false);
+                timer.start();
+            }
+        });
 
         targetFolderField.addActionListener(e -> updateRemarkLabel());
         targetFolderField.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
@@ -953,33 +994,40 @@ public class ImageClassifier extends JFrame {
         setTitle(String.format("图片分类工具 - 共%s个文件夹 - %d 张图片",
                 subFolders.size() - currentFolderIndex, currentImages.size()));
 
-        if (serverRunning) {
-            Long resolvedId = resolveArtworkId(currentFolder);
-            if (resolvedId != null) {
-                final long artworkId = resolvedId;
-                new Thread(() -> {
-                    try {
-                        String serverUrl = config.getProperty("server.url", "http://localhost:6999");
-                        ResponseEntity<Map> resp = restTemplate.getForEntity(serverUrl + "/api/downloaded/" + artworkId, Map.class);
-                        if (resp.getStatusCode() == HttpStatus.OK && resp.getBody() != null) {
-                            Object  r18Val = resp.getBody().get("R18");
-                            Boolean isR18  = r18Val instanceof Boolean ? (Boolean) r18Val : null;
-                            SwingUtilities.invokeLater(() -> {
-                                if (Boolean.TRUE.equals(isR18)) {
-                                    statusLabel.setText(statusLabel.getText() + "   [R18]");
-                                    statusLabel.setForeground(C_DANGER);
-                                } else if (Boolean.FALSE.equals(isR18)) {
-                                    statusLabel.setText(statusLabel.getText() + "   [SFW]");
-                                    statusLabel.setForeground(new Color(34, 139, 87));
-                                } else {
-                                    statusLabel.setText(statusLabel.getText() + "   [未知]");
-                                    statusLabel.setForeground(C_TEXT_MUTED);
-                                }
-                            });
-                        }
-                    } catch (Exception ignored) {}
-                }).start();
-            }
+        Long resolvedId = serverRunning ? resolveArtworkId(currentFolder) : null;
+        currentArtworkId = resolvedId;
+        if (resolvedId != null) {
+            final long artworkId = resolvedId;
+            final int remainingFolders = subFolders.size() - currentFolderIndex;
+            final int imageCount = currentImages.size();
+            new Thread(() -> {
+                try {
+                    String serverUrl = config.getProperty("server.url", "http://localhost:6999");
+                    ResponseEntity<Map> resp = restTemplate.getForEntity(serverUrl + "/api/downloaded/" + artworkId, Map.class);
+                    if (resp.getStatusCode() == HttpStatus.OK && resp.getBody() != null) {
+                        Object  r18Val   = resp.getBody().get("R18");
+                        Boolean isR18    = r18Val instanceof Boolean ? (Boolean) r18Val : null;
+                        Object  titleVal = resp.getBody().get("title");
+                        String  title    = titleVal instanceof String s ? s : null;
+                        SwingUtilities.invokeLater(() -> {
+                            if (title != null && !title.isEmpty()) {
+                                setTitle(String.format("图片分类工具 - 共%d个文件夹 - %d 张图片  |  %s",
+                                        remainingFolders, imageCount, title));
+                            }
+                            if (Boolean.TRUE.equals(isR18)) {
+                                statusLabel.setText(statusLabel.getText() + "   [R18]");
+                                statusLabel.setForeground(C_DANGER);
+                            } else if (Boolean.FALSE.equals(isR18)) {
+                                statusLabel.setText(statusLabel.getText() + "   [SFW]");
+                                statusLabel.setForeground(new Color(34, 139, 87));
+                            } else {
+                                statusLabel.setText(statusLabel.getText() + "   [未知]");
+                                statusLabel.setForeground(C_TEXT_MUTED);
+                            }
+                        });
+                    }
+                } catch (Exception ignored) {}
+            }).start();
         }
     }
 
@@ -1286,7 +1334,7 @@ public class ImageClassifier extends JFrame {
 
         viewer.setVisible(true);
         // invokeLater 确保对话框完成布局后再加载，viewport 尺寸才准确
-        SwingUtilities.invokeLater(loadImage::run);
+        SwingUtilities.invokeLater(loadImage);
     }
 
     /** 将任意 Image 转为 BufferedImage（用于 webp 等 ImageIO 不直接支持的格式回退路径）*/

@@ -4,7 +4,7 @@
 
 Local Pixiv batch image download tool, consisting of a **Spring Boot backend** + **Tampermonkey userscript**.
 
-**Features:** Single artwork download / User homepage batch download / N-Tab bookmark batch download / Animated image auto-conversion to WebP / Download history management / Image classification tool
+**Features:** Single artwork download / User homepage batch download / N-Tab bookmark batch download / Animated image auto-conversion to WebP / Download history management / Image classification tool / Multi-mode rate limiting
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
 
@@ -95,6 +95,21 @@ Ensure [Tampermonkey](https://www.tampermonkey.net/) extension is installed in y
 
 - **User Batch / N-Tab Scripts:** The server address input box at the bottom of the floating panel saves automatically on blur.
 - **Single Artwork Script:** Click the Tampermonkey icon next to the browser address bar → Select "⚙️ Set Server Address" from the menu.
+
+> **First-launch notice / Extra step when using an external server**
+>
+> All three scripts display a **one-time popup on first run** covering the following:
+>
+> Tampermonkey's `GM_xmlhttpRequest` is restricted by the `@connect` whitelist. Scripts only allow connections to `localhost` by default. **If the backend is deployed on another machine** (e.g. LAN IP `192.168.1.100` or a domain), you must manually update the `@connect` declaration in each script:
+>
+> 1. Open the Tampermonkey dashboard → Find the script → Click Edit
+> 2. Replace `// @connect      YOUR_SERVER_HOST` in the script header with the actual address, e.g.:
+>    ```
+>    // @connect      192.168.1.100
+>    ```
+> 3. Save the script (Ctrl+S) — repeat for all three scripts
+>
+> Alternatively, you can skip the userscripts entirely and download artworks directly via the web interface by visiting `http://<server-address>/login.html` in your browser.
 
 ### 4. Configure Proxy
 
@@ -317,6 +332,8 @@ multi-mode.quota.archive-expire-minutes: 60    # Archive download link expiratio
 multi-mode.post-download-mode: pack-and-delete
 
 multi-mode.delete-after-hours: 72              # timed-delete mode: hours to wait before auto-deletion
+
+multi-mode.request-limit-minute: 300           # Max requests per user per minute (0 = unlimited)
 ```
 
 ---

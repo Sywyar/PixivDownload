@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Pixiv User 批量下载器 (N-Tab UI 风格版)
 // @namespace    http://tampermonkey.net/
-// @version      2.0.0
+// @version      2.0.1
 // @description  适配 Pixiv 用户页面，自动获取所有作品 ID，对接本地 Go 后端。界面复刻 N-Tab 风格。优化暂停逻辑：确保当前任务完成后再停止。已加入全局 username 机制。在标题显示用户名。
 // @author       Rewritten by ChatGPT,Claude,Sywyar
 // @match        https://www.pixiv.net/*
@@ -13,6 +13,7 @@
 // @connect      i.pximg.net
 // @connect      www.pixiv.net
 // @connect      localhost
+// @connect      YOUR_SERVER_HOST
 // @run-at       document-end
 // ==/UserScript==
 
@@ -50,6 +51,50 @@
     // ====== 配额状态 ======
     let quotaInfo = { enabled: false, artworksUsed: 0, maxArtworks: 50, resetSeconds: 0 };
     let userUUID = GM_getValue(CONFIG.KEY_USER_UUID, null);
+
+    // 首次启动提示（只显示一次）
+    function checkExternalServerNotice() {
+        const key = 'pixiv_connect_notice_shown';
+        if (GM_getValue(key, false)) return;
+        GM_setValue(key, true);
+        alert(
+            'Pixiv 下载脚本初始化提示\n\n' +
+            '如果您使用外部服务器（非 localhost），需将三个脚本头部的：\n' +
+            '  // @connect      YOUR_SERVER_HOST\n' +
+            '替换为实际的服务器 IP 或域名，例如：\n' +
+            '  // @connect      192.168.1.100\n\n' +
+            '修改路径：Tampermonkey 管理面板 → 对应脚本 → 编辑 → 保存\n\n' +
+            '或者直接通过网页端下载作品（无需脚本）：\n' +
+            serverBase + '/login.html\n\n' +
+            '（此提示只显示一次）'
+        );
+    }
+
+    // 检查登录状态（solo 模式未登录返回 401）
+    function checkLoginStatus() {
+        return new Promise((resolve) => {
+            GM_xmlhttpRequest({
+                method: 'GET',
+                url: serverBase + '/api/download/status/0',
+                timeout: 5000,
+                onload: (res) => {
+                    if (res.status === 401) { handleUnauthorized(); resolve(false); }
+                    else resolve(true);
+                },
+                onerror: () => resolve(true),
+                ontimeout: () => resolve(true)
+            });
+        });
+    }
+
+    // 处理 solo 模式未登录（401），标志位避免批量时重复弹窗
+    let _unauthorizedHandled = false;
+    function handleUnauthorized() {
+        if (_unauthorizedHandled) return;
+        _unauthorizedHandled = true;
+        alert('后端服务需要登录验证，即将为您打开登录页面...');
+        window.open(serverBase + '/login.html', '_blank');
+    }
 
     // ====== 全局 username 变量 ======
     let username = null;
@@ -256,7 +301,10 @@
                     onload: (res) => {
                         try {
                             const data = JSON.parse(res.responseText);
-                            if (res.status === 429 && data.quotaExceeded) {
+                            if (res.status === 401) {
+                                handleUnauthorized();
+                                reject(new Error('需要登录'));
+                            } else if (res.status === 429 && data.quotaExceeded) {
                                 const err = new Error('quota_exceeded');
                                 err.quotaData = data;
                                 reject(err);
@@ -279,6 +327,7 @@
                     method: 'GET',
                     url: `${CONFIG.STATUS_URL}/${artworkId}`,
                     onload: (res) => {
+                        if (res.status === 401) { handleUnauthorized(); reject(new Error('需要登录')); return; }
                         try {
                             resolve(JSON.parse(res.responseText));
                         } catch (e) {
@@ -325,7 +374,7 @@
             if (userUUID) headers['X-User-UUID'] = userUUID;
             return new Promise((resolve) => {
                 GM_xmlhttpRequest({
-                    method: 'GET',
+                    method: 'POST',
                     url: CONFIG.QUOTA_INIT_URL,
                     headers,
                     onload: (res) => {
@@ -810,7 +859,19 @@
                 }
 
             } catch (e) {
-                if (e.message === 'quota_exceeded') {
+                if (e.message === '需要登录') {
+                    item.status = 'failed';
+                    item.lastMessage = '失败 - 需要登录';
+                    this.queue.forEach(q => {
+                        if (['pending', 'idle', 'paused'].includes(q.status)) {
+                            q.status = 'failed';
+                            q.lastMessage = '失败 - 需要登录';
+                        }
+                    });
+                    this.stopRequested = true;
+                    this.isRunning = false;
+                    this.ui.setStatus('需要登录，已停止下载', 'error');
+                } else if (e.message === 'quota_exceeded') {
                     item.status = 'failed';
                     item.lastMessage = '失败 - 达到限额';
                     if (!this._quotaExceededHandled) {
@@ -1587,7 +1648,13 @@
     const manager = new DownloadManager(ui);
     ui.bindManager(manager);
 
-    // 初始化配额（仅执行一次）
+    // 首次启动提示
+    checkExternalServerNotice();
+
+    // 第一步：检查登录状态，结果供后续所有后端操作使用
+    const _authPromise = checkLoginStatus();
+
+    // 初始化配额（仅执行一次，且必须在 auth 通过后）
     let quotaInitDone = false;
     let quotaResetTimer = null;
     function startQuotaResetCountdown() {
@@ -1602,22 +1669,25 @@
     function maybeInitQuota() {
         if (quotaInitDone) return;
         quotaInitDone = true;
-        Api.initQuota().then(data => {
-            if (!data.enabled) return;
-            quotaInfo = {
-                enabled: true,
-                artworksUsed: data.artworksUsed || 0,
-                maxArtworks: data.maxArtworks || 50,
-                resetSeconds: data.resetSeconds || 0
-            };
-            ui.updateQuotaBar(quotaInfo);
-            startQuotaResetCountdown();
-            // 恢复已有的压缩包链接
-            if (data.archive && data.archive.token) {
-                ui.restoreArchiveCard(data.archive.token, data.archive.expireSeconds,
-                    data.archive.status === 'ready');
-            }
-        }).catch(() => {});
+        _authPromise.then(authed => {
+            if (!authed) return;
+            Api.initQuota().then(data => {
+                if (!data.enabled) return;
+                quotaInfo = {
+                    enabled: true,
+                    artworksUsed: data.artworksUsed || 0,
+                    maxArtworks: data.maxArtworks || 50,
+                    resetSeconds: data.resetSeconds || 0
+                };
+                ui.updateQuotaBar(quotaInfo);
+                startQuotaResetCountdown();
+                // 恢复已有的压缩包链接
+                if (data.archive && data.archive.token) {
+                    ui.restoreArchiveCard(data.archive.token, data.archive.expireSeconds,
+                        data.archive.status === 'ready');
+                }
+            }).catch(() => {});
+        });
     }
 
     let lastUid = null;

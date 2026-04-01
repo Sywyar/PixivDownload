@@ -1,0 +1,103 @@
+package top.sywyar.pixivdownload.quota;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
+
+import static org.assertj.core.api.Assertions.*;
+
+@DisplayName("RateLimitService 单元测试")
+class RateLimitServiceTest {
+
+    private MultiModeConfig multiModeConfig;
+    private RateLimitService rateLimitService;
+
+    @BeforeEach
+    void setUp() {
+        multiModeConfig = new MultiModeConfig();
+        rateLimitService = new RateLimitService(multiModeConfig);
+    }
+
+    @Nested
+    @DisplayName("速率限制启用时")
+    class WhenLimitEnabled {
+
+        @BeforeEach
+        void setLimit() {
+            multiModeConfig.setRequestLimitMinute(3);
+        }
+
+        @Test
+        @DisplayName("在同一分钟内请求次数超过限制后应返回 429")
+        void shouldDenyRequestsAfterLimitExceeded() {
+            String uuid = "test-uuid-001";
+
+            // 前 3 次请求应放行
+            assertThat(rateLimitService.isAllowed(uuid)).isTrue();
+            assertThat(rateLimitService.isAllowed(uuid)).isTrue();
+            assertThat(rateLimitService.isAllowed(uuid)).isTrue();
+
+            // 第 4 次及之后超出限制，应被拒绝（对应 429）
+            assertThat(rateLimitService.isAllowed(uuid)).isFalse();
+            assertThat(rateLimitService.isAllowed(uuid)).isFalse();
+        }
+
+        @Test
+        @DisplayName("不同 UUID 的计数互相独立")
+        void shouldTrackCountersPerUuid() {
+            String uuid1 = "test-uuid-001";
+            String uuid2 = "test-uuid-002";
+
+            // uuid1 用完 3 次额度
+            rateLimitService.isAllowed(uuid1);
+            rateLimitService.isAllowed(uuid1);
+            rateLimitService.isAllowed(uuid1);
+            assertThat(rateLimitService.isAllowed(uuid1)).isFalse();
+
+            // uuid2 不受 uuid1 影响，仍可正常请求
+            assertThat(rateLimitService.isAllowed(uuid2)).isTrue();
+        }
+
+        @Test
+        @DisplayName("恰好到达限制时最后一次请求应被允许")
+        void shouldAllowRequestExactlyAtLimit() {
+            String uuid = "test-uuid-003";
+
+            for (int i = 0; i < 2; i++) {
+                rateLimitService.isAllowed(uuid);
+            }
+            // 第 3 次恰好到达上限，应放行
+            assertThat(rateLimitService.isAllowed(uuid)).isTrue();
+            // 第 4 次超出上限，应拒绝
+            assertThat(rateLimitService.isAllowed(uuid)).isFalse();
+        }
+    }
+
+    @Nested
+    @DisplayName("速率限制禁用时")
+    class WhenLimitDisabled {
+
+        @Test
+        @DisplayName("requestLimitMinute 为 0 时所有请求均放行")
+        void shouldAllowAllRequestsWhenLimitIsZero() {
+            multiModeConfig.setRequestLimitMinute(0);
+            String uuid = "test-uuid-004";
+
+            for (int i = 0; i < 1000; i++) {
+                assertThat(rateLimitService.isAllowed(uuid)).isTrue();
+            }
+        }
+
+        @Test
+        @DisplayName("requestLimitMinute 为负数时所有请求均放行")
+        void shouldAllowAllRequestsWhenLimitIsNegative() {
+            multiModeConfig.setRequestLimitMinute(-1);
+            String uuid = "test-uuid-005";
+
+            for (int i = 0; i < 10; i++) {
+                assertThat(rateLimitService.isAllowed(uuid)).isTrue();
+            }
+        }
+    }
+}

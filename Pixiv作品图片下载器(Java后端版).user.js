@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Pixiv作品图片下载器（Java后端版）
 // @namespace    http://tampermonkey.net/
-// @version      2.0.0
+// @version      2.0.1
 // @description  通过Java后端服务下载Pixiv作品图片
 // @author       Rewritten by ChatGPT,Claude,Sywyar
 // @match        https://www.pixiv.net/*
@@ -12,6 +12,7 @@
 // @connect      i.pximg.net
 // @connect      www.pixiv.net
 // @connect      localhost
+// @connect      YOUR_SERVER_HOST
 // @run-at       document-start
 // ==/UserScript==
 
@@ -32,6 +33,47 @@
 
     let userUUID = GM_getValue(KEY_USER_UUID, null);
     let quotaInfo = { enabled: false, artworksUsed: 0, maxArtworks: 50, resetSeconds: 0 };
+
+    // 首次启动提示（只显示一次）
+    function checkExternalServerNotice() {
+        const key = 'pixiv_connect_notice_shown';
+        if (GM_getValue(key, false)) return;
+        GM_setValue(key, true);
+        alert(
+            'Pixiv 下载脚本初始化提示\n\n' +
+            '如果您使用外部服务器（非 localhost），需将三个脚本头部的：\n' +
+            '  // @connect      YOUR_SERVER_HOST\n' +
+            '替换为实际的服务器 IP 或域名，例如：\n' +
+            '  // @connect      192.168.1.100\n\n' +
+            '修改路径：Tampermonkey 管理面板 → 对应脚本 → 编辑 → 保存\n\n' +
+            '或者直接通过网页端下载作品（无需脚本）：\n' +
+            serverBase + '/login.html\n\n' +
+            '（此提示只显示一次）'
+        );
+    }
+
+    // 检查登录状态（solo 模式未登录返回 401）
+    function checkLoginStatus() {
+        return new Promise((resolve) => {
+            GM_xmlhttpRequest({
+                method: 'GET',
+                url: serverBase + '/api/download/status/0',
+                timeout: 5000,
+                onload: (res) => {
+                    if (res.status === 401) { handleUnauthorized(); resolve(false); }
+                    else resolve(true);
+                },
+                onerror: () => resolve(true),
+                ontimeout: () => resolve(true)
+            });
+        });
+    }
+
+    // 处理 solo 模式未登录（401）
+    function handleUnauthorized() {
+        alert('后端服务需要登录验证，即将为您打开登录页面...');
+        window.open(serverBase + '/login.html', '_blank');
+    }
 
     // 等待页面加载完成
     function waitForPageLoad() {
@@ -143,7 +185,7 @@
         if (userUUID) headers['X-User-UUID'] = userUUID;
         return new Promise((resolve) => {
             GM_xmlhttpRequest({
-                method: 'GET',
+                method: 'POST',
                 url: getQuotaInitURL(),
                 headers,
                 onload: (res) => {
@@ -183,7 +225,10 @@
                 onload: function (response) {
                     try {
                         const data = JSON.parse(response.responseText);
-                        if (response.status === 429 && data.quotaExceeded) {
+                        if (response.status === 401) {
+                            handleUnauthorized();
+                            reject(new Error('需要登录'));
+                        } else if (response.status === 429 && data.quotaExceeded) {
                             const err = new Error('quota_exceeded');
                             err.quotaData = data;
                             reject(err);
@@ -609,27 +654,36 @@
         }
     });
 
-    // 初始化配额信息
-    initQuota().then(data => {
-        if (data && data.enabled) {
-            quotaInfo = {
-                enabled: true,
-                artworksUsed: data.artworksUsed || 0,
-                maxArtworks: data.maxArtworks || 50,
-                resetSeconds: data.resetSeconds || 0
-            };
-            // 恢复已有压缩包
-            if (data.archive && data.archive.token) {
-                window._pixivSingleArchiveState = {
-                    token: data.archive.token,
-                    expireSec: data.archive.expireSeconds || 3600,
-                    ready: data.archive.status === 'ready'
-                };
-            }
-            renderSingleQuotaBar();
-        }
-    });
+    // 首次启动提示
+    checkExternalServerNotice();
 
-    // 启动初始化
-    initDownloadUI();
+    // 第一步：检查登录状态，通过后再初始化
+    (async () => {
+        const authed = await checkLoginStatus();
+        if (!authed) return;
+
+        // 初始化配额信息
+        initQuota().then(data => {
+            if (data && data.enabled) {
+                quotaInfo = {
+                    enabled: true,
+                    artworksUsed: data.artworksUsed || 0,
+                    maxArtworks: data.maxArtworks || 50,
+                    resetSeconds: data.resetSeconds || 0
+                };
+                // 恢复已有压缩包
+                if (data.archive && data.archive.token) {
+                    window._pixivSingleArchiveState = {
+                        token: data.archive.token,
+                        expireSec: data.archive.expireSeconds || 3600,
+                        ready: data.archive.status === 'ready'
+                    };
+                }
+                renderSingleQuotaBar();
+            }
+        });
+
+        // 启动初始化
+        initDownloadUI();
+    })();
 })();
