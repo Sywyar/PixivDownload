@@ -1108,7 +1108,9 @@ public class ImageClassifier extends JFrame {
             final File   finalNumberedFolder = numberedFolder;
             List<File[]> copyPairs         = new ArrayList<>();
 
+            // ==========================================
             // Phase 1：复制所有文件
+            // ==========================================
             try {
                 for (File image : currentImages) {
                     File dest = new File(destDir, image.getName());
@@ -1116,28 +1118,63 @@ public class ImageClassifier extends JFrame {
                     copyPairs.add(new File[]{image, dest});
                 }
             } catch (IOException copyErr) {
-                for (File[] pair : copyPairs) {
-                    try { Files.deleteIfExists(pair[1].toPath()); } catch (IOException re) { log.error("回滚删除失败: {}", re.getMessage()); }
+                // 如果是多图创建了独立文件夹，直接删除整个新建的文件夹
+                if (finalNumberedFolder != null && finalNumberedFolder.exists()) {
+                    deleteDir(finalNumberedFolder);
+                } else {
+                    // 如果是单图没创建文件夹，则只删除已拷贝过去的文件
+                    for (File[] pair : copyPairs) {
+                        try { Files.deleteIfExists(pair[1].toPath()); } catch (IOException re) { log.error("回滚删除失败: {}", re.getMessage()); }
+                    }
                 }
-                if (finalNumberedFolder != null) finalNumberedFolder.delete();
-                throw copyErr;
+                throw copyErr; // 抛出异常交给外层 catch 弹窗并终止当前操作
             }
 
-            // Phase 2：删除源文件
-            int deletedCount = 0;
-            try {
-                for (File[] pair : copyPairs) { Files.delete(pair[0].toPath()); deletedCount++; }
-            } catch (IOException delErr) {
-                for (int i = deletedCount; i < copyPairs.size(); i++) {
-                    try { Files.deleteIfExists(copyPairs.get(i)[1].toPath()); } catch (IOException re) { log.error("回滚删除失败: {}", re.getMessage()); }
+            // ==========================================
+            // Phase 2：删除源文件 (发生错误不回滚目标文件)
+            // ==========================================
+            while (currentSubFolder.exists()) {
+                try {
+                    // 尝试删除所有源图片
+                    for (File image : currentImages) {
+                        if (image.exists()) {
+                            Files.delete(image.toPath());
+                        }
+                    }
+
+                    // 尝试删除源文件夹
+                    File[] remaining = currentSubFolder.listFiles();
+                    if (remaining == null || remaining.length == 0) {
+                        Files.delete(currentSubFolder.toPath());
+                    } else {
+                        throw new IOException("源文件夹中仍存在其他非图片文件 (" + remaining.length + "个)");
+                    }
+                } catch (Exception delErr) {
+                    // 如果在弹窗前，用户已经光速手动删除了文件夹，则直接跳出循环
+                    if (!currentSubFolder.exists()) {
+                        break;
+                    }
+
+                    int option = JOptionPane.showConfirmDialog(this,
+                            "删除源文件或源文件夹时出错: " + delErr.getMessage() + "\n\n" +
+                                    "目标文件已成功复制。\n" +
+                                    "您可以前往路径手动删除源文件夹后，点击「确定」继续；\n" +
+                                    "或者点击「取消」跳过清理直接进行下一个。\n\n" +
+                                    "源路径: " + currentSubFolder.getAbsolutePath(),
+                            "删除源文件失败",
+                            JOptionPane.OK_CANCEL_OPTION,
+                            JOptionPane.WARNING_MESSAGE);
+
+                    if (option != JOptionPane.OK_OPTION) {
+                        // 用户放弃挣扎，打断循环，保留源文件垃圾
+                        break;
+                    }
                 }
-                if (finalNumberedFolder != null) {
-                    File[] remaining = finalNumberedFolder.listFiles();
-                    if (remaining == null || remaining.length == 0) finalNumberedFolder.delete();
-                }
-                throw delErr;
             }
 
+            // ==========================================
+            // Phase 3：记录及跳转
+            // ==========================================
             if (serverRunning) {
                 try { sendMoveArtWorkInfo(artworkId, moveReportPath); }
                 catch (Exception e) { log.error("记录失败", e); }
@@ -1146,7 +1183,7 @@ public class ImageClassifier extends JFrame {
             moveToNextFolder();
 
         } catch (IOException e) {
-            JOptionPane.showMessageDialog(this, "移动文件时出错（已回滚）: " + e.getMessage(), "错误", JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(this, "移动文件时出错（已回滚目标文件）: " + e.getMessage(), "错误", JOptionPane.ERROR_MESSAGE);
             loadImagesFromCurrentFolder();
             updateThumbnails();
         }
@@ -1335,6 +1372,26 @@ public class ImageClassifier extends JFrame {
         viewer.setVisible(true);
         // invokeLater 确保对话框完成布局后再加载，viewport 尺寸才准确
         SwingUtilities.invokeLater(loadImage);
+    }
+
+    /**
+     * 递归删除文件夹及其所有内容
+     */
+    private void deleteDir(File file) {
+        if (file == null || !file.exists()) return;
+        if (file.isDirectory()) {
+            File[] files = file.listFiles();
+            if (files != null) {
+                for (File f : files) {
+                    deleteDir(f);
+                }
+            }
+        }
+        try {
+            file.delete();
+        } catch (Exception e) {
+            log.error("删除残留文件失败: {}", file.getAbsolutePath());
+        }
     }
 
     /** 将任意 Image 转为 BufferedImage（用于 webp 等 ImageIO 不直接支持的格式回退路径）*/
