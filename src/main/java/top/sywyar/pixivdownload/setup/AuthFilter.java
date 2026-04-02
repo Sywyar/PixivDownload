@@ -37,7 +37,7 @@ public class AuthFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest req, HttpServletResponse res,
                                     FilterChain chain) throws IOException, ServletException {
-        String path   = req.getRequestURI();
+        String path = req.getRequestURI();
         String method = req.getMethod();
 
         // OPTIONS 预检请求直接放行（CORS 处理）
@@ -53,7 +53,7 @@ public class AuthFilter extends OncePerRequestFilter {
         }
 
         // /api/downloaded/ 接口：POST /move/ 仅限本地 IP；其余接口本地 IP 直接放行，非本地走 session 校验
-        if (path.startsWith("/api/downloaded/")) {
+        if (path.startsWith("/api/downloaded/") || path.equals("/api/download/status")) {
             if ("POST".equalsIgnoreCase(method) && path.contains("/downloaded/move/")) {
                 if (!NetworkUtils.isLocalAddress(req.getRemoteAddr())) {
                     sendJsonError(res, 403, "Forbidden: local access only");
@@ -128,7 +128,9 @@ public class AuthFilter extends OncePerRequestFilter {
         res.getWriter().write(mapper.writeValueAsString(new ErrorResponse(message)));
     }
 
-    /** 多人模式：若没有 pixiv_user_id cookie，则基于请求头或 IP+UA 生成并写入 */
+    /**
+     * 多人模式：若没有 pixiv_user_id cookie，则基于请求头或 IP+UA 生成并写入
+     */
     private void ensureUserUuidCookie(HttpServletRequest req, HttpServletResponse res) {
         // 已有 cookie，无需重新生成
         Cookie[] cookies = req.getCookies();
