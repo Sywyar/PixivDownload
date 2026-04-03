@@ -872,7 +872,15 @@ public class ImageClassifier extends JFrame {
 
     private void moveToPrevFolder() {
         if (subFolders == null || currentFolderIndex <= 0) return;
-        currentFolderIndex--;
+        int temp = currentFolderIndex;
+        do {
+            temp--;
+        }while (temp >=0 && !subFolders.get(temp).exists());
+        if (temp == -1) {
+            JOptionPane.showMessageDialog(this,"没有上一个文件夹了","错误",JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+        currentFolderIndex = temp;
         loadImagesFromCurrentFolder();
         updateThumbnails();
         updateStatus();
@@ -883,7 +891,12 @@ public class ImageClassifier extends JFrame {
         File[] remaining    = currentFolder.listFiles();
         if (remaining == null || remaining.length == 0) currentFolder.delete();
 
-        currentFolderIndex++;
+        int temp = currentFolderIndex;
+        do {
+            temp++;
+        }while (temp < subFolders.size() && !subFolders.get(temp).exists());
+
+        currentFolderIndex = temp;
         if (currentFolderIndex < subFolders.size()) {
             loadImagesFromCurrentFolder();
             updateThumbnails();
