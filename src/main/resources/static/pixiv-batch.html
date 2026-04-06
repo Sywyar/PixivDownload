@@ -77,7 +77,8 @@
     transition: all .15s;
   }
   .tab:first-child { border-radius: 6px 0 0 6px; }
-  .tab:last-child  { border-radius: 0 6px 6px 0; border-left: none; }
+  .tab:last-child  { border-radius: 0 6px 6px 0; }
+  .tab:not(:first-child) { border-left: none; }
   .tab.active { background: #28a745; color: white; border-color: #28a745; }
 
   /* ---- Mode panels ---- */
@@ -293,6 +294,89 @@
       background: white;
       color: #28a745;
   }
+
+  /* ---- Search Mode ---- */
+  .search-controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+  .search-controls input[type=text] {
+    flex: 1; min-width: 200px; padding: 7px 10px;
+    border: 1px solid #ddd; border-radius: 5px; font-size: 13px;
+  }
+  .search-filter-row { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; font-size: 13px; }
+  .search-filter-row label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
+  .search-filter-row span { color: #555; font-weight: bold; margin-right: 2px; }
+
+  /* Thumbnail grid */
+  .search-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+  .search-thumb {
+    border: 2px solid transparent;
+    border-radius: 6px;
+    overflow: hidden;
+    cursor: pointer;
+    background: #eee;
+    transition: border-color .15s, transform .15s;
+    position: relative;
+  }
+  .search-thumb:hover { border-color: #28a745; transform: scale(1.03); }
+  .search-thumb.in-queue { border-color: #007bff; }
+  .search-thumb img {
+    width: 100%; aspect-ratio: 1 / 1; object-fit: cover; display: block;
+    background: #ddd;
+  }
+  .search-thumb img.blur-r18 { filter: blur(10px); transition: filter .2s; }
+  .search-thumb:hover img.blur-r18 { filter: none; }
+  .search-thumb .thumb-title {
+    font-size: 11px; padding: 4px 5px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    background: rgba(0,0,0,.05); color: #333;
+  }
+  .search-thumb .thumb-badge {
+    position: absolute; top: 4px; right: 4px;
+    background: #dc3545; color: white;
+    font-size: 9px; font-weight: bold;
+    padding: 1px 4px; border-radius: 3px; pointer-events: none;
+  }
+  .search-thumb .thumb-pages {
+    position: absolute; bottom: 28px; right: 4px;
+    background: rgba(0,0,0,.65); color: white;
+    font-size: 9px; padding: 1px 5px; border-radius: 3px; pointer-events: none;
+  }
+  .search-thumb .thumb-in-queue-mark {
+    position: absolute; top: 4px; left: 4px;
+    background: #007bff; color: white;
+    font-size: 9px; font-weight: bold;
+    padding: 1px 4px; border-radius: 3px; pointer-events: none;
+    display: none;
+  }
+  .search-thumb.in-queue .thumb-in-queue-mark { display: block; }
+
+  /* Loading spinner */
+  .search-spinner { text-align: center; padding: 40px 0; color: #999; font-size: 13px; }
+  .search-spinner-icon {
+    display: block; margin: 0 auto 10px;
+    width: 28px; height: 28px;
+    border: 3px solid #ddd; border-top-color: #28a745;
+    border-radius: 50%; animation: spin .7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Pagination */
+  .search-pagination {
+    display: flex; align-items: center; justify-content: center;
+    gap: 5px; flex-wrap: wrap; margin-top: 8px;
+  }
+  .search-pagination .pg-info { font-size: 12px; color: #666; padding: 0 8px; }
+  .search-pagination button {
+    padding: 5px 10px; border: 1px solid #ddd; border-radius: 4px;
+    background: #f9f9f9; cursor: pointer; font-size: 12px; min-width: 32px;
+  }
+  .search-pagination button:hover:not(:disabled) { background: #e8f5e9; border-color: #28a745; }
+  .search-pagination button:disabled { opacity: .4; cursor: not-allowed; }
+  .search-pagination button.pg-active { background: #28a745; color: white; border-color: #28a745; cursor: default; }
 </style>
 </head>
 <body>
@@ -331,6 +415,7 @@
   <div class="tabs">
     <div class="tab active" id="tab-ntab" onclick="switchMode('ntab')">🎨 N-Tab 模式</div>
     <div class="tab" id="tab-user" onclick="switchMode('user')">👤 User 模式</div>
+    <div class="tab" id="tab-search" onclick="switchMode('search')">🔍 Search 模式</div>
   </div>
 
   <!-- N-Tab panel -->
@@ -353,6 +438,38 @@
       <button class="btn btn-purple" onclick="handleFetchNew()">🆕 仅获取新作品并下载</button>
     </div>
     <div id="user-info-display" style="margin-top:8px;">-</div>
+  </div>
+
+  <!-- Search panel -->
+  <div class="card mode-panel" id="panel-search">
+    <div class="card-title">作品搜索</div>
+    <div class="search-controls">
+      <input type="text" id="search-word" placeholder="输入关键词..." onkeydown="if(event.key==='Enter')performSearch(1)">
+      <button class="btn btn-blue" onclick="performSearch(1)">🔍 搜索</button>
+      <button class="btn btn-green" id="btn-add-all" onclick="addAllSearchResultsToQueue()" disabled>➕ 全部加入队列</button>
+    </div>
+    <div class="search-filter-row">
+      <span>内容:</span>
+      <label><input type="radio" name="search-mode" value="all" checked> 全部</label>
+      <label><input type="radio" name="search-mode" value="safe"> 全年龄</label>
+      <label><input type="radio" name="search-mode" value="r18"> R18</label>
+      <span style="margin-left:12px;">搜索方式:</span>
+      <label><input type="radio" name="search-smode" value="s_tag" checked> 标签</label>
+      <label><input type="radio" name="search-smode" value="s_tc"> 标题/描述</label>
+      <span style="margin-left:12px;">排序:</span>
+      <label><input type="radio" name="search-order" value="date_d" checked> 最新</label>
+      <label><input type="radio" name="search-order" value="date"> 最旧</label>
+      <label title="未购买 Pixiv Premium 时将自动按最新排序"><input type="radio" name="search-order" value="popular_d"> 热门 ⚠</label>
+    </div>
+    <div id="search-premium-tip" style="display:none;font-size:11px;color:#e6a700;margin-bottom:8px;">⚠ 热门排序需要 Pixiv Premium 会员，未购买时 Pixiv 将自动按最新排序返回结果</div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;font-size:13px;">
+      <input type="checkbox" id="search-blur-r18" checked onchange="toggleBlurR18()">
+      <label for="search-blur-r18" style="cursor:pointer;color:#d63384;">模糊 R18 缩略图（悬停查看）</label>
+    </div>
+    <div id="search-results-area">
+      <div style="text-align:center;color:#aaa;padding:24px 0;font-size:13px;">输入关键词后点击搜索；未保存 Cookie 时搜索结果可能减少</div>
+    </div>
+    <div class="search-pagination" id="search-pagination" style="display:none;"></div>
   </div>
 
   <!-- Settings -->
@@ -1407,10 +1524,10 @@ async function fetchUserArtworks(onlyNew) {
 ============================================================ */
 function switchMode(mode) {
   state.mode = mode;
-  document.getElementById('tab-ntab').classList.toggle('active', mode === 'ntab');
-  document.getElementById('tab-user').classList.toggle('active', mode === 'user');
-  document.getElementById('panel-ntab').classList.toggle('active', mode === 'ntab');
-  document.getElementById('panel-user').classList.toggle('active', mode === 'user');
+  ['ntab', 'user', 'search'].forEach(m => {
+    document.getElementById('tab-' + m).classList.toggle('active', m === mode);
+    document.getElementById('panel-' + m).classList.toggle('active', m === mode);
+  });
   storeSet('pixiv_mode', mode);
 }
 
@@ -1463,7 +1580,9 @@ function renderQueue() {
     const desc = q.lastMessage || statusText(q.status);
     const srcLabel = q.source === 'user'
       ? `<span style="background:#007bff;color:white;border-radius:3px;padding:1px 5px;font-size:10px;margin-left:5px;vertical-align:middle;">User</span>`
-      : `<span style="background:#6610f2;color:white;border-radius:3px;padding:1px 5px;font-size:10px;margin-left:5px;vertical-align:middle;">N-Tab</span>`;
+      : q.source === 'search'
+        ? `<span style="background:#28a745;color:white;border-radius:3px;padding:1px 5px;font-size:10px;margin-left:5px;vertical-align:middle;">Search</span>`
+        : `<span style="background:#6610f2;color:white;border-radius:3px;padding:1px 5px;font-size:10px;margin-left:5px;vertical-align:middle;">N-Tab</span>`;
     const R18Label = q.isR18 === true
       ? `<span style="background:#dc3545;color:white;border-radius:3px;padding:1px 5px;font-size:10px;margin-left:3px;vertical-align:middle;">R18</span>`
       : q.isR18 === false
@@ -1587,6 +1706,186 @@ function syncSettings() {
 }
 
 /* ============================================================
+   搜索模式
+============================================================ */
+let searchState = {
+  results: [],
+  total: 0,
+  currentPage: 1,
+  currentWord: '',
+  currentMode: 'all',
+  currentOrder: 'date_d',
+  currentSMode: 's_tag',
+  blurR18: true,
+  noCookie: false,
+  activeBlobUrls: []
+};
+
+function hasPixivCookie() {
+  return !!getCookie().trim();
+}
+
+async function performSearch(page) {
+  const word = document.getElementById('search-word').value.trim();
+  if (!word) { setStatus('请输入搜索关键词', 'error'); return; }
+
+  const mode  = document.querySelector('input[name="search-mode"]:checked').value;
+  const sMode = document.querySelector('input[name="search-smode"]:checked').value;
+  const order = document.querySelector('input[name="search-order"]:checked').value;
+
+  document.getElementById('search-premium-tip').style.display = order === 'popular_d' ? 'block' : 'none';
+
+  cleanupBlobUrls();
+
+  searchState.currentWord  = word;
+  searchState.currentMode  = mode;
+  searchState.currentOrder = order;
+  searchState.currentSMode = sMode;
+  searchState.currentPage  = page;
+
+  document.getElementById('search-results-area').innerHTML =
+    '<div class="search-spinner"><span class="search-spinner-icon"></span>搜索中...</div>';
+  document.getElementById('search-pagination').style.display = 'none';
+  document.getElementById('btn-add-all').disabled = true;
+
+  try {
+    const params = new URLSearchParams({ word, order, mode, sMode, page });
+    const res = await fetch(`${BASE}/api/pixiv/search?${params}`, { headers: pixivHeader() });
+    const data = await res.json();
+    if (!res.ok) {
+      document.getElementById('search-results-area').innerHTML =
+        `<div style="color:#dc3545;text-align:center;padding:24px 0;">搜索失败：${esc(data.error || '未知错误')}</div>`;
+      return;
+    }
+    searchState.results  = data.items || [];
+    searchState.total    = data.total  || 0;
+    searchState.noCookie = !hasPixivCookie();
+    renderSearchResults();
+    renderSearchPagination();
+    document.getElementById('btn-add-all').disabled = searchState.results.length === 0;
+    setStatus(`搜索完成：共 ${searchState.total.toLocaleString()} 个结果`, 'success');
+  } catch (e) {
+    document.getElementById('search-results-area').innerHTML =
+      `<div style="color:#dc3545;text-align:center;padding:24px 0;">请求失败：${esc(e.message)}</div>`;
+  }
+}
+
+function renderSearchResults() {
+  const area = document.getElementById('search-results-area');
+  if (!searchState.results.length) {
+    area.innerHTML = '<div style="color:#aaa;text-align:center;padding:24px 0;">无搜索结果</div>';
+    return;
+  }
+  const inQueue = new Set(state.queue.map(q => q.id));
+  area.innerHTML = `
+    ${searchState.noCookie ? '<div style="font-size:12px;color:#e6a700;margin-bottom:8px;">⚠ 未保存 Cookie，搜索结果可能减少</div>' : ''}
+    <div style="font-size:12px;color:#888;margin-bottom:10px;">
+      共 ${searchState.total.toLocaleString()} 个结果，当前第 ${searchState.currentPage} 页，显示 ${searchState.results.length} 个
+    </div>
+    <div class="search-grid">
+      ${searchState.results.map((item, idx) => {
+        const isR18 = item.xRestrict > 0;
+        const blurClass = (isR18 && searchState.blurR18) ? 'blur-r18' : '';
+        const r18Badge    = isR18 ? '<span class="thumb-badge">R18</span>' : '';
+        const pagesLabel  = item.pageCount > 1 ? `<span class="thumb-pages">${item.pageCount}P</span>` : '';
+        const inQueueClass = inQueue.has(item.id) ? ' in-queue' : '';
+        return `<div class="search-thumb${inQueueClass}" id="thumb-${idx}"
+                     onclick="addSearchItemToQueue(${idx})" title="${esc(item.title)} (${esc(item.userName)})">
+          <img id="thumb-img-${idx}" src="" alt="${esc(item.title)}" class="${blurClass}">
+          ${r18Badge}
+          ${pagesLabel}
+          <span class="thumb-in-queue-mark">✓</span>
+          <div class="thumb-title">${esc(item.title)}</div>
+        </div>`;
+      }).join('')}
+    </div>`;
+  loadThumbnailsBatched(searchState.results);
+}
+
+async function loadThumbnailsBatched(items) {
+  const BATCH = 10;
+  for (let i = 0; i < items.length; i += BATCH) {
+    const batch = items.slice(i, i + BATCH);
+    await Promise.allSettled(batch.map((item, offset) => loadSingleThumbnail(item, i + offset)));
+  }
+}
+
+async function loadSingleThumbnail(item, idx) {
+  if (!item.thumbnailUrl) return;
+  const imgEl = document.getElementById(`thumb-img-${idx}`);
+  if (!imgEl) return;
+  try {
+    const params = new URLSearchParams({ url: item.thumbnailUrl });
+    const res = await fetch(`${BASE}/api/pixiv/thumbnail-proxy?${params}`, { headers: pixivHeader() });
+    if (!res.ok) return;
+    const blob = await res.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    searchState.activeBlobUrls.push(blobUrl);
+    if (imgEl.isConnected) imgEl.src = blobUrl;
+  } catch {}
+}
+
+function cleanupBlobUrls() {
+  searchState.activeBlobUrls.forEach(u => { try { URL.revokeObjectURL(u); } catch {} });
+  searchState.activeBlobUrls = [];
+}
+
+function addSearchItemToQueue(idx) {
+  const item = searchState.results[idx];
+  if (!item) return;
+  const added = addItemsToQueue([item.id], [{ title: item.title }], 'search', '');
+  const thumbEl = document.getElementById(`thumb-${idx}`);
+  if (thumbEl) thumbEl.classList.add('in-queue');
+  setStatus(added > 0 ? `已加入队列：${item.title}` : `已在队列中：${item.title}`,
+            added > 0 ? 'success' : 'info');
+}
+
+function addAllSearchResultsToQueue() {
+  if (!searchState.results.length) return;
+  const ids   = searchState.results.map(r => r.id);
+  const metas = searchState.results.map(r => ({ title: r.title }));
+  const added = addItemsToQueue(ids, metas, 'search', '');
+  searchState.results.forEach((_, idx) => {
+    const el = document.getElementById(`thumb-${idx}`);
+    if (el) el.classList.add('in-queue');
+  });
+  setStatus(`已将 ${added} 个作品加入队列（共 ${ids.length} 个，${ids.length - added} 个已在队列中）`, 'success');
+}
+
+function renderSearchPagination() {
+  const totalPages = Math.ceil(searchState.total / 60);
+  const cur = searchState.currentPage;
+  const pag = document.getElementById('search-pagination');
+  if (totalPages <= 1) { pag.style.display = 'none'; return; }
+  pag.style.display = 'flex';
+  const radius = 3;
+  const pages = [];
+  for (let p = Math.max(1, cur - radius); p <= Math.min(totalPages, cur + radius); p++) {
+    pages.push(p);
+  }
+  pag.innerHTML =
+    `<button onclick="performSearch(1)" ${cur === 1 ? 'disabled' : ''}>«</button>` +
+    `<button onclick="performSearch(${cur - 1})" ${cur === 1 ? 'disabled' : ''}>‹</button>` +
+    pages.map(p =>
+      `<button onclick="${p === cur ? '' : `performSearch(${p})`}" ${p === cur ? 'class="pg-active" disabled' : ''}>${p}</button>`
+    ).join('') +
+    `<button onclick="performSearch(${cur + 1})" ${cur === totalPages ? 'disabled' : ''}>›</button>` +
+    `<button onclick="performSearch(${totalPages})" ${cur === totalPages ? 'disabled' : ''}>»</button>` +
+    `<span class="pg-info">第 ${cur} / ${totalPages} 页 · 共 ${searchState.total.toLocaleString()} 个</span>`;
+}
+
+function toggleBlurR18() {
+  searchState.blurR18 = document.getElementById('search-blur-r18').checked;
+  storeSet('pixiv_search_blur_r18', String(searchState.blurR18));
+  searchState.results.forEach((item, idx) => {
+    if (item.xRestrict > 0) {
+      const imgEl = document.getElementById(`thumb-img-${idx}`);
+      if (imgEl) imgEl.classList.toggle('blur-r18', searchState.blurR18);
+    }
+  });
+}
+
+/* ============================================================
    初始化
 ============================================================ */
 async function init() {
@@ -1651,6 +1950,14 @@ async function init() {
       document.getElementById('user-id-input').value = savedUserId;
       document.getElementById('user-info-display').textContent =
           savedUsername ? `用户：${savedUsername}（ID: ${savedUserId}）` : `ID: ${savedUserId}`;
+    }
+  }
+
+  if (savedMode === 'search') {
+    const blurPref = storeGet('pixiv_search_blur_r18');
+    if (blurPref !== null) {
+      searchState.blurR18 = blurPref !== 'false';
+      document.getElementById('search-blur-r18').checked = searchState.blurR18;
     }
   }
 

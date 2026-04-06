@@ -4,7 +4,7 @@
 
 Local Pixiv batch image download tool, consisting of a **Spring Boot backend** + **Tampermonkey userscript**.
 
-**Features:** Single artwork download / User homepage batch download / N-Tab bookmark batch download / Animated image auto-conversion to WebP / Download history management / Image classification tool / Multi-mode rate limiting
+**Features:** Single artwork download / User homepage batch download / N-Tab bookmark batch download / Keyword search download / Animated image auto-conversion to WebP / Download history management / Image classification tool / Multi-mode rate limiting
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
 
@@ -24,6 +24,7 @@ Local Pixiv batch image download tool, consisting of a **Spring Boot backend** +
   - [User Homepage Batch Download](#user-homepage-batch-download)
   - [N-Tab Bookmark Batch Download](#n-tab-bookmark-batch-download)
   - [Web Batch Download Page](#web-batch-download-page)
+    - [Search Mode](#search-mode)
   - [Download Monitor Page](#download-monitor-page)
 - [Tools](#tools)
   - [Image Classifier](#image-classifier)
@@ -175,9 +176,15 @@ Not installing ffmpeg does not affect normal image downloads; it is only require
 
 ### Web Batch Download Page
 
-Visit `http://localhost:6999/pixiv-batch.html` solo mode requires login first
+Visit `http://localhost:6999/pixiv-batch.html` — solo mode requires login first.
 
-Enter Pixiv user ID and Cookie to directly trigger batch downloads from the web page, no userscript required.
+Trigger batch downloads directly from the web page without any userscript. Three modes are available:
+
+| Mode | Description |
+|---|---|
+| 🎨 N-Tab Mode | Paste N-Tab exported artwork links for batch queuing |
+| 👤 User Mode | Enter a Pixiv user ID to fetch and queue all their artworks |
+| 🔍 Search Mode | Search Pixiv by keyword, preview thumbnails, and add to queue (requires Cookie) |
 
 **How to Get Cookie (Cookie-Editor recommended):**
 
@@ -187,6 +194,20 @@ Enter Pixiv user ID and Cookie to directly trigger batch downloads from the web 
 4. Above the page Cookie input box, switch format to **Netscape**, paste and save
 
 > In solo mode, cookies are stored server-side (`batch_state.json`), shared across devices; in multi mode, they are stored in browser `localStorage`, independent for each visitor.
+
+#### Search Mode
+
+Search for Pixiv artworks and preview thumbnails in the Search mode tab. **A saved Pixiv Cookie is required.**
+
+| Feature | Description |
+|---|---|
+| Keyword search | Enter a keyword and press Enter or click "Search" |
+| Content filter | All / Safe / R18 (R18 requires a logged-in Cookie) |
+| Sort order | Newest / Oldest / Popular (Popular sort requires Pixiv Premium) |
+| Thumbnail preview | Results displayed as a 60-per-page grid, consistent with Pixiv's pagination |
+| R18 blur | Optionally blur R18 thumbnails; hover to reveal the original |
+| Add to queue | Click a thumbnail or "Add All to Queue" to add results to the download queue |
+| Pagination | First/Last/Prev/Next/direct page number navigation |
 
 ### Download Monitor Page
 

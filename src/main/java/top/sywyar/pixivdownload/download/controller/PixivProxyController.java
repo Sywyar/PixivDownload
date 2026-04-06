@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.CacheControl;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -18,9 +19,15 @@ import top.sywyar.pixivdownload.quota.UserQuotaService;
 import top.sywyar.pixivdownload.quota.response.ProxyRateLimitResponse;
 import top.sywyar.pixivdownload.setup.SetupService;
 
+import org.springframework.web.util.UriComponentsBuilder;
+
 import java.io.IOException;
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.TimeUnit;
 
 /**
  * 代理 Pixiv AJAX API，供 pixiv-batch.html 使用。
@@ -66,7 +73,7 @@ public class PixivProxyController {
         return null;
     }
 
-    private String proxyGet(String url, String cookie) throws IOException {
+    private String proxyGet(String url, String cookie) {
         HttpHeaders headers = new HttpHeaders();
         headers.set("Referer", PIXIV_REFERER);
         headers.set("User-Agent", USER_AGENT);
@@ -185,5 +192,98 @@ public class PixivProxyController {
             delays.add(frame.path("delay").asInt(100));
         }
         return ResponseEntity.ok(new UgoiraMetaResponse(zipUrl, delays));
+    }
+
+    private static final Set<String> VALID_ORDERS  = Set.of("date_d", "date", "popular_d");
+    private static final Set<String> VALID_MODES   = Set.of("all", "safe", "r18");
+    private static final Set<String> VALID_S_MODES = Set.of("s_tag", "s_tc");
+
+    @GetMapping("/search")
+    public ResponseEntity<?> searchArtworks(
+            @RequestParam String word,
+            @RequestParam(defaultValue = "date_d") String order,
+            @RequestParam(defaultValue = "all") String mode,
+            @RequestParam(defaultValue = "s_tag") String sMode,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestHeader(value = "X-Pixiv-Cookie", required = false) String cookie,
+            HttpServletRequest request) throws IOException {
+        ResponseEntity<?> deny = checkMultiModeAccess(request);
+        if (deny != null) return deny;
+        if (!VALID_ORDERS.contains(order)) {
+            return ResponseEntity.badRequest().body(new ErrorResponse("invalid order parameter: " + order));
+        }
+        if (!VALID_MODES.contains(mode)) {
+            return ResponseEntity.badRequest().body(new ErrorResponse("invalid mode parameter: " + mode));
+        }
+        if (!VALID_S_MODES.contains(sMode)) {
+            return ResponseEntity.badRequest().body(new ErrorResponse("invalid sMode parameter: " + sMode));
+        }
+        if (page < 1) page = 1;
+        URI searchUri = UriComponentsBuilder
+                .fromUriString("https://www.pixiv.net/ajax/search/artworks/{word}")
+                .queryParam("word", "{word}")
+                .queryParam("order", order)
+                .queryParam("mode", mode)
+                .queryParam("type", "illust_and_ugoira")
+                .queryParam("s_mode", sMode)
+                .queryParam("p", page)
+                .queryParam("lang", "zh")
+                .buildAndExpand(Map.of("word", word))
+                .encode()
+                .toUri();
+        String body = proxyGet(searchUri.toString(), cookie);
+        JsonNode root = objectMapper.readTree(body);
+        if (root.path("error").asBoolean(false)) {
+            return ResponseEntity.badRequest()
+                    .body(new ErrorResponse(root.path("message").asText()));
+        }
+        JsonNode illustManga = root.path("body").path("illustManga");
+        int total = illustManga.path("total").asInt(0);
+        List<SearchResponse.SearchItem> items = new ArrayList<>();
+        for (JsonNode item : illustManga.path("data")) {
+            items.add(new SearchResponse.SearchItem(
+                    item.path("id").asText(""),
+                    item.path("title").asText(""),
+                    item.path("illustType").asInt(0),
+                    item.path("xRestrict").asInt(0),
+                    item.path("url").asText(""),
+                    item.path("pageCount").asInt(1),
+                    item.path("userId").asText(""),
+                    item.path("userName").asText("")
+            ));
+        }
+        return ResponseEntity.ok(new SearchResponse(items, total, page));
+    }
+
+    @GetMapping("/thumbnail-proxy")
+    public ResponseEntity<byte[]> proxyThumbnail(
+            @RequestParam String url,
+            @RequestHeader(value = "X-Pixiv-Cookie", required = false) String cookie) {
+        URI uri;
+        try {
+            uri = URI.create(url);
+        } catch (IllegalArgumentException e) {
+            throw new SecurityException("malformed thumbnail URL");
+        }
+        String host = uri.getHost();
+        if (host == null || !host.endsWith(".pximg.net")) {
+            throw new SecurityException("thumbnail URL host must be a pximg.net subdomain");
+        }
+        byte[] bytes = proxyGetBytes(url, cookie);
+        HttpHeaders responseHeaders = new HttpHeaders();
+        responseHeaders.setCacheControl(CacheControl.maxAge(1, TimeUnit.HOURS).cachePublic());
+        return ResponseEntity.ok().headers(responseHeaders).body(bytes);
+    }
+
+    private byte[] proxyGetBytes(String url, String cookie) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("Referer", PIXIV_REFERER);
+        headers.set("User-Agent", USER_AGENT);
+        if (cookie != null && !cookie.trim().isEmpty()) {
+            headers.set("Cookie", cookie);
+        }
+        HttpEntity<Void> entity = new HttpEntity<>(headers);
+        ResponseEntity<byte[]> response = restTemplate.exchange(url, HttpMethod.GET, entity, byte[].class);
+        return response.getBody() != null ? response.getBody() : new byte[0];
     }
 }
