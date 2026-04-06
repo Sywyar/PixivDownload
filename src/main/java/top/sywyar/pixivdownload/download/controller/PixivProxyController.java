@@ -86,6 +86,18 @@ public class PixivProxyController {
         return response.getBody();
     }
 
+    private String proxyGetUri(URI uri, String cookie) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("Referer", PIXIV_REFERER);
+        headers.set("User-Agent", USER_AGENT);
+        if (cookie != null && !cookie.trim().isEmpty()) {
+            headers.set("Cookie", cookie);
+        }
+        HttpEntity<Void> entity = new HttpEntity<>(headers);
+        ResponseEntity<String> response = restTemplate.exchange(uri, HttpMethod.GET, entity, String.class);
+        return response.getBody();
+    }
+
     @GetMapping("/user/{userId}/artworks")
     public ResponseEntity<?> getUserArtworks(
             @PathVariable String userId,
@@ -231,7 +243,7 @@ public class PixivProxyController {
                 .buildAndExpand(Map.of("word", word))
                 .encode()
                 .toUri();
-        String body = proxyGet(searchUri.toString(), cookie);
+        String body = proxyGetUri(searchUri, cookie);
         JsonNode root = objectMapper.readTree(body);
         if (root.path("error").asBoolean(false)) {
             return ResponseEntity.badRequest()
