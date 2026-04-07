@@ -36,7 +36,10 @@ jobs:
       - name: Delete existing release if any
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release delete "${{ github.ref_name }}" --yes || true
+        run: |
+          gh release delete "${{ github.ref_name }}" --yes --cleanup-tag || true
+          sleep 3
+          git tag "${{ github.ref_name }}" || true
 
       - name: Create Release
         env:
@@ -72,6 +75,5 @@ jobs:
             --title "${{ github.ref_name }}" \
             --notes-file release_body.md \
             --generate-notes \
-            --clobber \
             target/PixivDownload-${{ github.ref_name }}.jar \
             *.user.js
