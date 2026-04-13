@@ -34,6 +34,7 @@ Local Pixiv batch image download tool, consisting of a **Spring Boot backend** +
   - [Folder Path Checker](#folder-path-checker)
   - [Legacy Data Migration Tool](#legacy-data-migration-tool)
 - [Configuration](#configuration)
+  - [HTTPS Configuration Guide](#https-configuration-guide)
 - [Disclaimer](#disclaimer)
 
 ---
@@ -392,7 +393,85 @@ multi-mode.post-download-mode: pack-and-delete
 multi-mode.delete-after-hours: 72              # timed-delete mode: hours to wait before auto-deletion
 
 multi-mode.request-limit-minute: 300           # Max requests per user per minute (0 = unlimited)
+
+# ---- HTTPS / SSL Configuration (choose one type; if both are set, PEM takes priority) ----
+
+# Type 1: PEM certificate (recommended)
+# server.ssl.enabled: true
+# server.ssl.certificate: /path/to/cert.pem
+# server.ssl.certificate-private-key: /path/to/key.pem
+
+# Type 2: JKS certificate
+# server.ssl.enabled: true
+# server.ssl.key-store-type: JKS
+# server.ssl.key-store: /path/to/keystore.jks
+# server.ssl.key-store-password: yourpassword
+
+ssl.http-redirect: false                        # Listen on ssl.http-redirect-port for HTTP and redirect to HTTPS (requires server.ssl.* to be configured)
+ssl.http-redirect-port: 80                     # HTTP redirect listener port (default 80)
 ```
+
+### HTTPS Configuration Guide
+
+Two certificate types are supported. **If both are configured simultaneously, PEM takes priority** (consistent with Spring Boot's internal `WebServerSslBundle` behaviour).
+
+---
+
+**Type 1: PEM Certificate (Recommended)**
+
+Works directly with `.pem` / `.crt` + `.key` files from Let's Encrypt, acme.sh, etc. No conversion needed.
+
+```yaml
+server.ssl.enabled: true
+server.ssl.certificate: /path/to/cert.pem              # Certificate file (full chain)
+server.ssl.certificate-private-key: /path/to/key.pem  # Private key file
+```
+
+Generate a self-signed PEM certificate (for testing only):
+
+```bash
+openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -days 365 -nodes \
+  -subj "/CN=localhost"
+```
+
+---
+
+**Type 2: JKS Certificate**
+
+For deployments that already have a Java KeyStore file.
+
+```yaml
+server.ssl.enabled: true
+server.ssl.key-store-type: JKS
+server.ssl.key-store: /path/to/keystore.jks
+server.ssl.key-store-password: yourpassword
+```
+
+Generate a self-signed JKS certificate:
+
+```bash
+keytool -genkeypair -alias pixiv -keyalg RSA -keysize 4096 -validity 365 \
+  -keystore keystore.jks -storepass yourpassword -keypass yourpassword \
+  -dname "CN=localhost, O=, C=CN"
+```
+
+---
+
+**HTTP→HTTPS Redirect Example**
+
+```yaml
+server.port: 6999
+server.ssl.enabled: true
+server.ssl.certificate: /path/to/cert.pem
+server.ssl.certificate-private-key: /path/to/key.pem
+
+ssl.http-redirect: true        # Enable HTTP→HTTPS redirect
+ssl.http-redirect-port: 80    # Listen for HTTP on port 80
+```
+
+After enabling, the service is accessible at `https://your-domain:6999`. With `ssl.http-redirect: true`, visiting `http://your-domain` will automatically redirect to HTTPS.
+
+> **Note:** Listening on port 80 typically requires administrator/root privileges (on Linux, use `sudo` or grant `CAP_NET_BIND_SERVICE`). If you don't need the redirect, configuring `server.ssl.*` alone is sufficient — only the HTTPS port will be accessible.
 
 ---
 

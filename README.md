@@ -34,6 +34,7 @@
   - [文件夹路径检查工具](#文件夹路径检查工具)
   - [旧版数据迁移工具](#旧版数据迁移工具)
 - [配置说明](#配置说明)
+  - [HTTPS 配置说明](#https-配置说明)
 - [免责声明](#免责声明)
 
 ---
@@ -392,7 +393,85 @@ multi-mode.post-download-mode: pack-and-delete
 multi-mode.delete-after-hours: 72              # timed-delete 模式：下载后多少小时自动删除
 
 multi-mode.request-limit-minute: 300           # 每用户每分钟最大请求次数（0 表示不限制）
+
+# ---- HTTPS / SSL 配置（两种类型二选一，若同时配置则 PEM 优先）----
+
+# 类型一：PEM 证书（推荐）
+# server.ssl.enabled: true
+# server.ssl.certificate: /path/to/cert.pem
+# server.ssl.certificate-private-key: /path/to/key.pem
+
+# 类型二：JKS 证书
+# server.ssl.enabled: true
+# server.ssl.key-store-type: JKS
+# server.ssl.key-store: /path/to/keystore.jks
+# server.ssl.key-store-password: yourpassword
+
+ssl.http-redirect: false                        # 是否在 ssl.http-redirect-port 监听 HTTP 并自动重定向到 HTTPS（需先配置 server.ssl.*）
+ssl.http-redirect-port: 80                     # HTTP 重定向监听端口（默认 80）
 ```
+
+### HTTPS 配置说明
+
+支持两种证书类型，**若同时配置则 PEM 优先**（Spring Boot 内部行为一致）。
+
+---
+
+**类型一：PEM 证书（推荐）**
+
+适用于 Let's Encrypt、acme.sh 等工具签发的证书，直接使用 `.pem` / `.crt` + `.key` 文件，无需额外转换。
+
+```yaml
+server.ssl.enabled: true
+server.ssl.certificate: /path/to/cert.pem           # 证书文件（含完整证书链）
+server.ssl.certificate-private-key: /path/to/key.pem  # 私钥文件
+```
+
+生成自签 PEM 证书（仅用于测试）：
+
+```bash
+openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -days 365 -nodes \
+  -subj "/CN=localhost"
+```
+
+---
+
+**类型二：JKS 证书**
+
+适用于已有 Java KeyStore 文件的场景。
+
+```yaml
+server.ssl.enabled: true
+server.ssl.key-store-type: JKS
+server.ssl.key-store: /path/to/keystore.jks
+server.ssl.key-store-password: yourpassword
+```
+
+生成自签 JKS 证书：
+
+```bash
+keytool -genkeypair -alias pixiv -keyalg RSA -keysize 4096 -validity 365 \
+  -keystore keystore.jks -storepass yourpassword -keypass yourpassword \
+  -dname "CN=localhost, O=, C=CN"
+```
+
+---
+
+**开启 HTTP→HTTPS 重定向示例**
+
+```yaml
+server.port: 6999
+server.ssl.enabled: true
+server.ssl.certificate: /path/to/cert.pem
+server.ssl.certificate-private-key: /path/to/key.pem
+
+ssl.http-redirect: true        # 开启 HTTP→HTTPS 重定向
+ssl.http-redirect-port: 80    # 监听 80 端口
+```
+
+启用后访问 `https://your-domain:6999`；访问 `http://your-domain` 将自动跳转到 HTTPS。
+
+> **注意：** 监听 80 端口通常需要管理员权限（Linux 需 `sudo` 或配置 `CAP_NET_BIND_SERVICE`）。若不需要重定向，仅配置 `server.ssl.*` 即可，此时只有 HTTPS 端口可用。
 
 ---
 

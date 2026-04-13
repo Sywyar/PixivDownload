@@ -65,6 +65,22 @@ public class AppConfigGenerator {
             # ---- 登录安全配置 ----
 
             setup.login-rate-limit-minute: 10              # 每个 IP 每分钟最多允许的登录尝试次数（0 = 不限制）
+
+            # ---- HTTPS / SSL 配置 ----
+
+            # ---- HTTPS / SSL 配置（两种类型二选一，若同时配置则 PEM 优先）----
+            # 类型一：PEM 证书（推荐，.pem 证书文件 + .key 私钥文件）
+            # server.ssl.enabled: true
+            # server.ssl.certificate: /path/to/cert.pem
+            # server.ssl.certificate-private-key: /path/to/key.pem
+            #
+            # 类型二：JKS 证书（.jks 文件 + 密码）
+            # server.ssl.enabled: true
+            # server.ssl.key-store-type: JKS
+            # server.ssl.key-store: /path/to/keystore.jks
+            # server.ssl.key-store-password: yourpassword
+            ssl.http-redirect: false                        # 是否在 ssl.http-redirect-port 监听 HTTP 并自动重定向到 HTTPS（需先配置 server.ssl.*）
+            ssl.http-redirect-port: 80                     # HTTP 重定向监听端口（默认 80）
             """;
 
     @PostConstruct
