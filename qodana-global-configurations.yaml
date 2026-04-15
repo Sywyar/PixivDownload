@@ -1,0 +1,5 @@
+configurations:
+  - id: pixiv-download
+    name: PixivDownload
+    description: Configurations used for PixivDownloader projects
+    qodanaYaml: qodana.yaml
