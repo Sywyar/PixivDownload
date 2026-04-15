@@ -4,6 +4,8 @@ import lombok.extern.slf4j.Slf4j;
 import top.sywyar.pixivdownload.gui.config.*;
 
 import javax.swing.*;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
 import java.awt.*;
 import java.awt.Desktop;
 import java.io.IOException;
@@ -63,6 +65,7 @@ public class ConfigPanel extends JPanel {
         for (ConfigFieldSpec spec : fields) {
             FieldRenderer.RenderedField rf = FieldRenderer.render(spec);
             renderedFields.put(spec.key(), rf);
+            attachChangeListener(rf.control());
             rf.panel().setAlignmentX(Component.LEFT_ALIGNMENT);
             rf.panel().setMaximumSize(new Dimension(Integer.MAX_VALUE, rf.panel().getPreferredSize().height + 20));
             content.add(rf.panel());
@@ -246,6 +249,26 @@ public class ConfigPanel extends JPanel {
     }
 
     // ── 工具 ─────────────────────────────────────────────────────────────────────
+
+    /**
+     * 为控件添加变更监听，任何值变化都触发一次 enabledWhen 重算。
+     * 这样 ENUM/BOOL 类控件改变后，依赖它的字段会立即启用/禁用。
+     */
+    private void attachChangeListener(JComponent control) {
+        if (control instanceof JCheckBox cb) {
+            cb.addItemListener(e -> updateEnabledStates());
+        } else if (control instanceof JComboBox<?> combo) {
+            combo.addActionListener(e -> updateEnabledStates());
+        } else if (control instanceof JSpinner sp) {
+            sp.addChangeListener(e -> updateEnabledStates());
+        } else if (control instanceof JTextField tf) {
+            tf.getDocument().addDocumentListener(new DocumentListener() {
+                public void insertUpdate(DocumentEvent e) { updateEnabledStates(); }
+                public void removeUpdate(DocumentEvent e) { updateEnabledStates(); }
+                public void changedUpdate(DocumentEvent e) { updateEnabledStates(); }
+            });
+        }
+    }
 
     private void showNotice(String msg) {
         noticeBar.setText("  " + msg);

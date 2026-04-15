@@ -117,7 +117,7 @@ jobs:
             --vendor "$APP_VENDOR" \
             --input build/input \
             --main-jar "${{ steps.vars.outputs.jar_name }}" \
-            --main-class "top.sywyar.pixivdownload.gui.GuiLauncher" \
+            --main-class "$MAIN_CLASS" \
             --runtime-image build/runtime \
             --icon src/main/resources/static/favicon.ico \
             --java-options "-Dfile.encoding=UTF-8" \
@@ -139,7 +139,7 @@ jobs:
             --vendor "$APP_VENDOR" \
             --input build/input \
             --main-jar "${{ steps.vars.outputs.jar_name }}" \
-            --main-class "top.sywyar.pixivdownload.gui.GuiLauncher" \
+            --main-class "$MAIN_CLASS" \
             --runtime-image build/runtime \
             --icon src/main/resources/static/favicon.ico \
             --java-options "-Dfile.encoding=UTF-8" \

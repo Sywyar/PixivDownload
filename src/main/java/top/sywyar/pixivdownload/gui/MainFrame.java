@@ -9,6 +9,7 @@ import java.awt.*;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.nio.file.Path;
+import java.util.List;
 
 /**
  * GUI 主窗口（800×600，可调整大小）。
@@ -34,13 +35,17 @@ public class MainFrame extends JFrame {
             }
         });
 
-        // 应用图标
-        try {
-            var stream = MainFrame.class.getResourceAsStream("/static/favicon.ico");
-            if (stream != null) {
-                setIconImage(Toolkit.getDefaultToolkit().createImage(stream.readAllBytes()));
-            }
-        } catch (Exception ignored) {}
+        // 应用图标：需使用 MediaTracker 等待图像解码完成，否则 Swing 会拒绝未就绪的图像
+        Image appIcon = loadAppIcon();
+        if (appIcon != null) {
+            setIconImages(List.of(
+                    scaled(appIcon, 16),
+                    scaled(appIcon, 24),
+                    scaled(appIcon, 32),
+                    scaled(appIcon, 48),
+                    scaled(appIcon, 64)
+            ));
+        }
 
         // 标签页
         JTabbedPane tabs = new JTabbedPane();
@@ -57,5 +62,26 @@ public class MainFrame extends JFrame {
     public void dispose() {
         statusPanel.dispose();
         super.dispose();
+    }
+
+    private static Image loadAppIcon() {
+        try {
+            var stream = MainFrame.class.getResourceAsStream("/static/favicon.ico");
+            if (stream != null) {
+                byte[] bytes = stream.readAllBytes();
+                Image img = Toolkit.getDefaultToolkit().createImage(bytes);
+                MediaTracker tracker = new MediaTracker(new Canvas());
+                tracker.addImage(img, 0);
+                tracker.waitForAll();
+                if (!tracker.isErrorAny()) {
+                    return img;
+                }
+            }
+        } catch (Exception ignored) {}
+        return null;
+    }
+
+    private static Image scaled(Image src, int size) {
+        return src.getScaledInstance(size, size, Image.SCALE_SMOOTH);
     }
 }

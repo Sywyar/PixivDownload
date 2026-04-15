@@ -42,7 +42,7 @@ public final class FieldRenderer {
         cb.setSelected("true".equalsIgnoreCase(spec.defaultValue()));
         JPanel p = fieldPanel(spec, cb);
         return new RenderedField(p,
-                () -> cb.isSelected() ? "true" : "false",
+                () -> Boolean.toString(cb.isSelected()),
                 v -> cb.setSelected("true".equalsIgnoreCase(v)),
                 cb);
     }
@@ -51,6 +51,9 @@ public final class FieldRenderer {
         int def = parseIntSafe(spec.defaultValue(), min);
         JSpinner sp = new JSpinner(new SpinnerNumberModel(def, min, max, 1));
         sp.setPreferredSize(new Dimension(120, sp.getPreferredSize().height));
+        if (sp.getEditor() instanceof JSpinner.DefaultEditor de) {
+            de.getTextField().setHorizontalAlignment(JTextField.LEFT);
+        }
         JPanel p = fieldPanel(spec, sp);
         return new RenderedField(p,
                 () -> String.valueOf(((Number) sp.getValue()).intValue()),
