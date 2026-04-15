@@ -10,8 +10,6 @@
 version: "1.0"
 
 #Specify inspection profile for code analysis
-profile:
-  name: qodana.starter
 
 #Enable inspections
 #include:
@@ -46,4 +44,13 @@ projectJDK: "17" #(Applied in CI/CD pipeline)
   
 #Qodana supports other languages, for example, Python, JavaScript, TypeScript, Go, C#, PHP
 #For all supported languages see https://www.jetbrains.com/help/qodana/linters.html
-linter: jetbrains/qodana-jvm-community:2026.1
+
+####################################################################################################################
+# WARNING: Do not store sensitive information in this file, as its contents will be included in the Qodana report. #
+####################################################################################################################
+
+linter: jetbrains/qodana-jvm:2025.3
+profile:
+  name: qodana.recommended
+include:
+  - name: CheckDependencyLicenses
