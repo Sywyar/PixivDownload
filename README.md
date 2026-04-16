@@ -4,494 +4,140 @@
 
 本地 Pixiv 图片批量下载工具，由 **Spring Boot 后端** + **Tampermonkey 油猴脚本** 组成。
 
-**功能：** 单作品下载 / 用户主页批量下载 / N-Tab 书签批量下载 / **页面批量下载（搜索页/关注动态/排行榜等）** / 关键词搜索下载 / 动图自动转 WebP / 下载历史管理 / 图片分类工具 / 多人模式速率限制
-
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
 
----
+## 简介
 
-## 目录
+PixivDownload 是一款本地 Pixiv 图片批量下载工具，支持多种下载方式和便捷的管理功能。
 
-- [环境要求](#环境要求)
-- [安装](#安装)
-  - [1. 运行后端](#1-运行后端)
-  - [2. 首次配置](#2-首次配置)
-  - [3. 安装油猴脚本](#3-安装油猴脚本)
-  - [4. 配置代理](#4-配置代理)
-  - [5. 安装 ffmpeg（可选，仅动图需要）](#5-安装-ffmpeg可选仅动图需要)
-- [使用](#使用)
-  - [单作品下载](#单作品下载)
-  - [用户主页批量下载](#用户主页批量下载)
-  - [N-Tab 书签批量下载](#n-tab-书签批量下载)
-  - [页面批量下载](#页面批量下载)
-  - [Web 批量下载页面](#web-批量下载页面)
-    - [Search 搜索模式](#search-搜索模式)
-  - [下载监控页面](#下载监控页面)
-  - [产品介绍页](#产品介绍页)
-- [工具](#工具)
-  - [图片分类工具](#图片分类工具)
-  - [R18 补全工具](#R18-补全工具)
-  - [文件夹路径检查工具](#文件夹路径检查工具)
-  - [旧版数据迁移工具](#旧版数据迁移工具)
-- [配置说明](#配置说明)
-  - [HTTPS 配置说明](#https-配置说明)
-- [免责声明](#免责声明)
+### 功能特点
 
----
+- Pixiv-batch.html [一站式下载](#网页端批量下载)，N-Tab批量下载，用户作品批量下载，搜索作品批量下载，搭配页面批量下载脚本即可无需其他脚本
+- 页面批量下载 — 抓取搜索页、关注动态、排行榜等页面中的所有作品
+- monitor.html 一站式管理页面，多维度筛选/排序作品
+- 单作品下载 — 作品页一键下载
+- 用户主页批量下载 — 批量下载指定用户的所有作品
+- N-Tab 书签批量下载 — 导入 N-Tab 书签导出文件批量下载
+- 关键词搜索下载 — 通过网页端搜索 Pixiv 作品并下载
+- 动图自动转 WebP — 自动将 Ugoira 动图合成为带延迟的 WebP
+- 下载历史管理 — 记录已下载作品，支持断点续传
+- 图片分类工具 — 独立的桌面工具，用于整理已下载的图片
+- 多人模式速率限制 — 为多用户场景提供配额和限流功能
 
-## 环境要求
+### 使用截图
 
-| 依赖           | 说明                                             |
-|--------------|------------------------------------------------|
-| Java 17+     | 运行后端                                           |
-| 代理软件         | Clash、v2rayN 等，用于访问 Pixiv（默认 `127.0.0.1:7890`） |
-| Tampermonkey | 浏览器扩展，用于安装油猴脚本                                 |
-| ffmpeg（可选）   | 仅下载动图（Ugoira）时需要，需加入系统 PATH                    |
-
----
+![](./image/1.png)
+![](./image/2.png)
+![](./image/3.png)
+![](./image/4.png)
+![](./image/5.png)
+![](./image/6.png)
+![](./image/7.png)
 
 ## 安装
 
-### 1. 运行后端
+### 1. 下载与运行
 
-从 [Releases](../../releases) 下载最新的 `PixivDownload-vX.X.X.jar`，在任意目录执行：
+从 [Releases](../../releases) 下载最新版：
+
+| 类型                                      | 说明                  |
+|-----------------------------------------|---------------------|
+| `PixivDownload-vX.X.X.jar`              | 通用 JAR，需安装 Java 17+ |
+| `PixivDownload-*.zip`                   | Windows 便携版（推荐）     |
+| `PixivDownload-*-win-x64-multilang.msi` | Windows 安装包，已内嵌 JRE |
 
 ```bash
+# JAR 启动
 java -jar PixivDownload-vX.X.X.jar
+
+# Windows exe 启动
+PixivDownload.exe
+
+# 可选参数
+--no-gui    # 禁用 GUI，纯命令行运行（适合服务器/Docker）
+--intro     # 启动时打开产品介绍页
 ```
 
-后端默认监听 `http://localhost:6999`，下载文件保存在运行目录下的 `pixiv-download/` 文件夹。
-
-**可选启动参数：**
-
-| 参数 | 说明 |
-|------|------|
-| `--no-gui` | 禁用 Swing GUI，以纯命令行/无头模式运行（适用于服务器/Docker） |
-| `--intro` | 启动时将首页重定向到产品介绍页（`/intro.html` 或 `/intro-canary.html`）而非主界面 |
-
-Windows 可执行文件（`.exe` / `.msi`）同样支持以上参数，例如：`PixivDownload.exe --no-gui`。
-
-> **Windows 安装包（MSI）**：从 Releases 下载 `PixivDownload-*-win-x64-multilang.msi`，已内嵌精简 JRE，无需单独安装 Java。安装向导支持**简体中文 / English**，跟随系统语言自动切换，无需手动选择。
-
-首次启动会自动打开浏览器进入配置向导，**请先完成[首次配置](#2-首次配置)再使用其他功能**。
+> 首次启动会自动打开浏览器进入配置向导，完成配置前无法使用其他功能。
 
 ### 2. 首次配置
 
-首次启动后浏览器会自动打开 `http://localhost:6999/setup.html`，按以下步骤完成配置：
+首次启动后浏览器自动打开 `http://localhost:6999/setup.html` ，填写用户名密码（至少 6 位）并选择使用模式：
 
-**① 设置管理员账号**
+| 模式   | 适用场景                       |
+|------|----------------------------|
+| 自用模式 | 个人使用，多设备共享状态，需登录           |
+| 多人模式 | 多人共享服务器，各访客配置独立保存在浏览器，无需登录 |
 
-填写用户名和密码（密码至少 6 位），用于后续登录。
+配置写入 `pixiv-download/setup_config.json` 后不再显示。删除该文件并重启可重新初始化。
 
-**② 选择使用模式**
+### 3. 配置代理
 
-| 模式   | 适用场景    | 说明                                             |
-|------|---------|------------------------------------------------|
-| 自用模式 | 个人使用    | 访问任意页面均需登录。Cookie、设置、下载队列保存在服务器端，多设备共享状态。      |
-| 多人模式 | 多人共享服务器 | 无需登录。每个访客的配置独立保存在各自浏览器的 `localStorage` 中，互不干扰。 |
-
-**③ 点击「完成配置」**
-
-配置写入 `pixiv-download/setup_config.json` 后不再显示此页面。如需重新初始化，删除该文件并重启服务即可。
-
-> **自用模式登录：** 访问任意页面会自动跳转到 `/login.html`，输入账号密码后勾选「保持登录状态」可记住 30 天登录，否则关闭浏览器后 Session 2 小时过期。
-
-### 3. 安装油猴脚本
-
-确保浏览器已安装 [Tampermonkey](https://www.tampermonkey.net/) 扩展。有两种安装方式：
-
-**方式一：通过管理页一键安装（推荐）**
-
-后端启动并完成首次配置后，登录并打开 `http://localhost:6999/pixiv-batch.html`，点击页面顶部的「🧩 油猴脚本」卡片展开，点击对应脚本的「⬇ 安装」按钮，Tampermonkey 将自动弹出安装确认页。  
-部署在非 `localhost` 服务器时，安装链接中的 `@connect` 会自动替换为实际服务器地址，无需手动编辑脚本。
-
-**方式二：从 Releases 手动下载**
-
-从 [Releases](../../releases) 下载对应脚本，**拖入 Tampermonkey 管理面板**即可安装：
-
-| 脚本文件                            | 适用场景                         |
-|---------------------------------|------------------------------|
-| `Pixiv作品图片下载器(Java后端版).user.js` | 在单个作品页一键下载                   |
-| `Pixiv User 批量下载器.user.js`      | 在用户主页批量下载该用户所有作品             |
-| `Pixiv N-Tab 批量下载器.user.js`     | 导入 N-Tab 书签 JSON 批量下载收藏      |
-| `Pixiv 页面批量下载器.user.js`         | 抓取当前页面（搜索、关注动态、排行榜等）所有作品批量下载 |
-
-**修改服务器地址：** 四个脚本默认连接 `http://localhost:6999`，共享同一地址设置。
-
-- **用户批量 / N-Tab / 页面批量脚本**：悬浮面板底部的「服务器地址」输入框，失去焦点后自动保存。
-- **单作品脚本**：点击浏览器地址栏右侧的 Tampermonkey 图标 → 菜单中选择「⚙️ 设置服务器地址」。
-
-> **首次启动提示 / 使用外部服务器时的额外步骤**
->
-> 四个脚本**首次运行时**均会弹出一次性提示，说明以下注意事项：
->
-> Tampermonkey 的 `GM_xmlhttpRequest` 受 `@connect` 白名单限制，脚本默认只允许连接 `localhost`。**若后端部署在其他机器**（如局域网 IP `192.168.1.100` 或域名），需要手动修改每个脚本的 `@connect` 声明：
->
-> 1. 打开 Tampermonkey 管理面板 → 找到对应脚本 → 点击编辑
-> 2. 将脚本头部的 `// @connect      YOUR_SERVER_HOST` 替换为实际地址，例如：
->    ```
->    // @connect      192.168.1.100
->    ```
-> 3. 保存脚本（Ctrl+S），四个脚本均需执行此操作
->
-> 若不想使用油猴脚本，也可以直接在浏览器访问 `http://<服务器地址>/login.html` 登录后通过网页端下载作品。
-
-### 4. 配置代理
-
-后端通过 HTTP 代理访问 Pixiv CDN，启动后会在运行目录自动生成 `config.yaml`，编辑其中的代理配置后**重启服务**生效：
+后端通过 HTTP 代理访问 Pixiv CDN。启动后在运行目录生成 `config.yaml`，编辑代理配置后**重启服务**生效：
 
 ```yaml
 proxy.enabled: true
 proxy.host: 127.0.0.1
-proxy.port: 7890   # 修改为你的代理软件实际监听端口
+proxy.port: 7890   # 修改为你的代理实际端口
 ```
 
-请确保代理软件（Clash、v2rayN 等）已正确配置可访问 Pixiv 的节点，且本地 HTTP 代理端口与此处一致。
+### 4. 安装油猴脚本（可选）
 
-### 5. 安装 ffmpeg（可选，仅动图需要）
+除了油猴脚本，也可以在网页端完成所有操作。如需安装：
 
-不安装 ffmpeg 不影响普通图片下载，仅动图（illustType=2）下载时需要。
+<details>
+<summary><strong>通过下载发布文件安装油猴插件需要此步骤（展开）</strong></summary>
 
-**Windows 安装步骤：**
+Tampermonkey 的 `GM_xmlhttpRequest` 受 `@connect` 白名单限制，脚本默认只允许连接 `localhost`。若后端部署在其他机器，需要手动修改每个脚本的 `@connect` 声明：
 
-1. 前往 [ffmpeg 官网](https://ffmpeg.org/download.html) 下载 Windows 预编译版本（推荐 gyan.dev 构建）
-2. 解压到任意目录，例如 `C:\ffmpeg`
-3. 将 `C:\ffmpeg\bin` 添加到系统环境变量 `PATH`
-4. 打开**新的**命令行窗口，执行以下命令验证：
-   ```bash
-   ffmpeg -version
-   ```
+1. 打开 Tampermonkey 管理面板 → 找到对应脚本 → 点击编辑
+2. 将脚本头部的 `// @connect      YOUR_SERVER_HOST` 替换为实际地址
+3. 保存脚本（Ctrl+S）
 
----
+</details>
+
+**方式一：通过网页管理页一键安装（推荐）**
+
+登录后打开 `http://localhost:6999/pixiv-batch.html`，点击页面顶部的「🧩 油猴脚本」卡片展开，点击对应脚本的「⬇ 安装」按钮。部署在非 localhost 服务器时，`@connect` 会自动替换为实际地址。
+
+**方式二：从 Releases 手动下载**
+
+从 [Releases](../../releases) 下载脚本，拖入 Tampermonkey 管理面板安装：
+
+| 脚本文件                            | 适用场景                  |
+|---------------------------------|-----------------------|
+| `Pixiv作品图片下载器(Java后端版).user.js` | 单作品页下载                |
+| `Pixiv User 批量下载器.user.js`      | 用户主页批量下载              |
+| `Pixiv N-Tab 批量下载器.user.js`     | N-Tab 书签导入批量下载        |
+| `Pixiv 页面批量下载器.user.js`         | 页面 DOM 抓取（搜索/关注/排行榜等） |
+
+> **推荐优先使用网页端**：`http://localhost:6999/pixiv-batch.html` 支持 N-Tab 模式、User 模式、Search 模式，无需安装油猴脚本即可完成批量下载。
 
 ## 使用
 
-### 单作品下载
+### 获取 Cookie（使用 Search 模式，限制级相关作品，自动收藏需要）
 
-1. 打开任意 Pixiv 作品页（`https://www.pixiv.net/artworks/{id}`）
-2. 页面加载完成后，脚本会在图片旁显示下载按钮
-3. 点击按钮，脚本自动提取图片 URL 并发送给后端开始下载
-4. 动图（Ugoira）会自动识别并通过 ffmpeg 合成为带延迟的 WebP
+1. 安装 [Cookie-Editor](https://chromewebstore.google.com/detail/cookie-editor/hlkenndednhfkekhgcdicdfddnkalmdm) 扩展
+2. 登录 Pixiv 后，点击扩展图标 → 右下角 **Export** → 选择 **Netscape** 格式复制
+3. 在页面上方切换格式为 **Netscape**，粘贴并保存
 
-### 用户主页批量下载
+### 网页端批量下载
 
-1. 打开任意 Pixiv 用户主页（`https://www.pixiv.net/users/{userId}`）
-2. 页面角落会出现悬浮控制面板，包含以下选项：
+访问 `http://localhost:6999/pixiv-batch.html` （自用模式需先登录）：
 
-| 选项      | 说明                           |
-|---------|------------------------------|
-| 开始 / 暂停 | 控制批量任务                       |
-| 跳过已下载   | 自动跳过数据库中已存在的作品，断点续传          |
-| 仅 R18   | 只下载 R18 作品                   |
-| 下载间隔    | 每个作品之间的等待秒数（默认 2 秒，建议不要设置过短） |
-| 并发数     | 同时进行的下载任务数（默认 1）             |
-| 下载后自动收藏 | 下载完成后使用提供的 Cookie 自动将作品加入 Pixiv 收藏（失败不影响下载） |
+| 模式           | 说明                          |
+|--------------|-----------------------------|
+| 🎨 N-Tab 模式  | 粘贴 N-Tab 导出的作品链接批量下载        |
+| 👤 User 模式   | 输入用户 ID 批量下载该用户所有作品         |
+| 🔍 Search 模式 | 关键词搜索并预览缩略图后加入队列（需要 Cookie） |
 
-3. 普通作品保存在 `pixiv-download/{username}/{artworkId}/`，R18 作品保存在 `pixiv-download/{username}/R18/{artworkId}/`
-4. 下载进度通过 SSE 实时获取，断联时自动轮询兜底，同一作品不会被重复提交
+### 下载监控
 
-### [N-Tab](https://github.com/scoful/N-Tab/) 书签批量下载
-
-1. 将一个或多个标签页发送成一组或多组标签
-2. 点击导航栏的「其他功能 - 导出」
-3. 点击「导出」后将导出的链接复制到输入框中
-4. 悬浮控制面板出现后，点击「开始」
-5. 支持跳过已下载、R18 过滤等选项，操作同[用户主页批量下载](#用户主页批量下载)
-
-### 页面批量下载
-
-适用于**搜索结果页、关注动态页、排行榜、主页推荐、用户收藏页**等任何展示作品列表的 Pixiv 页面（用户作品主页由「User 批量下载器」处理，不显示此面板）。
-
-1. 打开目标页面（如 `https://www.pixiv.net/tags/{关键词}/artworks` 搜索结果或 `https://www.pixiv.net/bookmark_new_illust.php` 关注动态）
-2. 页面角落会出现青色边框的悬浮控制面板
-3. 滚动页面加载所需的作品后，点击「📷 抓取当前页面作品」，脚本自动扫描页面中所有作品链接并加入队列
-4. 可重复点击「抓取」（已在队列中的作品不会重复添加），继续下拉加载更多作品后再次抓取
-5. 点击「🚀 开始批量下载」开始下载
-
-| 选项          | 说明                                     |
-|-------------|----------------------------------------|
-| 抓取当前页面作品    | 扫描页面 DOM 中所有 `/artworks/{id}` 链接加入队列   |
-| 跳过历史下载      | 跳过数据库中已存在的作品                           |
-| 仅 R18      | 只下载 R18 作品                             |
-| 下载后自动收藏     | 下载完成后使用 Cookie 自动收藏                    |
-| 导出下载列表      | 导出全部队列为 TXT                            |
-| 导出未下载列表     | 导出未完成的作品链接                             |
-
-> **提示：** 对于无限滚动的页面（搜索结果、关注动态等），请先滚动到底部加载所有作品，再点击「抓取」以获取完整列表。
-
-### Web 批量下载页面
-
-访问 `http://localhost:6999/pixiv-batch.html` 自用模式需先登录
-
-在网页端直接触发批量下载，无需油猴脚本。页面包含三种模式：
-
-| 模式 | 说明 |
-|---|---|
-| 🎨 N-Tab 模式 | 粘贴 N-Tab 导出的作品链接，批量加入下载队列 |
-| 👤 User 模式 | 输入 Pixiv 用户 ID，批量获取该用户所有作品 |
-| 🔍 Search 模式 | 关键词搜索 Pixiv 作品，预览缩略图后加入队列（需要 Cookie） |
-
-**获取 Cookie 的方法（推荐使用 Cookie-Editor）：**
-
-1. 安装 [Cookie-Editor](https://chromewebstore.google.com/detail/cookie-editor/hlkenndednhfkekhgcdicdfddnkalmdm) 浏览器扩展
-2. 浏览器登录 Pixiv，打开任意 Pixiv 页面
-3. 点击 Cookie-Editor 图标 → 右下角 **Export** → 选择 **Netscape** 格式复制
-4. 在页面 Cookie 输入框上方切换格式为 **Netscape**，粘贴并保存
-
-> 自用模式下 Cookie 保存在服务器端（`batch_state.json`），多设备共享；多人模式下保存在浏览器 `localStorage`，各访客独立。
-
-#### Search 搜索模式
-
-在 Search 模式标签页中搜索 Pixiv 作品并预览，**需要先保存 Pixiv Cookie**：
-
-| 功能 | 说明 |
-|---|---|
-| 关键词搜索 | 在输入框输入关键词，按 Enter 或点击「搜索」 |
-| 内容过滤 | 全部 / 全年龄 / R18 三选一（R18 需要已登录的 Cookie） |
-| 排序方式 | 最新 / 最旧 / 热门（热门排序需要 Pixiv 高级会员 Premium） |
-| 缩略图预览 | 搜索结果以 60 个/页的缩略图网格展示，与 Pixiv 网站分页一致 |
-| R18 模糊 | 可开启 R18 封面模糊处理，悬停查看原图 |
-| 加入队列 | 点击单个缩略图或「全部加入队列」将结果加入下载队列 |
-| 分页导航 | 支持首页/末页/前后页/页码直达 |
-
-### 下载监控页面
-
-访问 `http://localhost:6999/monitor.html`
-
-- 实时显示当前下载任务进度
-- 分页浏览全部下载历史，支持点击作品预览图片
-- 显示统计信息（总作品数、总图片数、已移动数）
+访问 `http://localhost:6999/monitor.html` 查看实时下载进度和历史记录。
 
 ### 产品介绍页
 
-访问 `http://localhost:6999/intro.html`（**无需登录，公开访问**）
-
-吸附式分屏介绍页，适合向他人展示本项目。页面包含六屏内容：功能概览、痛点对比、Monitor 实时监控演示、Batch 批量下载演示、特性亮点、快速上手步骤。
-
-- 鼠标滚轮 / 方向键 / Page Down 可在各屏之间平滑切换
-- Monitor 与 Batch 迷你窗口内含示例数据，鼠标悬浮元素可查看中文功能说明
-
-Chrome Canary 用户可访问 `http://localhost:6999/intro-canary.html`（需开启 `chrome://flags/#canvas-draw-element`），Hero 区的缩略图卡片将通过 WICG html-in-canvas 提案的 `drawElementImage` API 在 canvas 内真实渲染与浮动。
-
----
-
-## 工具
-
-### 图片分类工具
-
-`ImageClassifier` 是独立的 Java Swing 桌面程序，**不通过浏览器访问**，需单独运行：
-
-```bash
-java -cp PixivDownload-vX.X.X.jar top.sywyar.pixivdownload.imageclassifier.ImageClassifier
-```
-
-首次运行时会在当前目录生成 `image_classifier.properties` 配置文件。
-
-**基本工作流：**
-
-1. 在顶部路径框输入父目录路径，或点击「浏览」选择目录，然后按 Enter 或点击「打开」
-2. 程序自动加载所有子文件夹，并显示当前文件夹的缩略图（每组 10 张，点击 `<` / `>` 翻页）
-3. 在右侧编号框输入目标分类编号（旁边实时显示分类名称），点击「分类整个文件夹」执行移动
-4. 移动完成后自动进入下一个文件夹；点击「跳过」跳过当前文件夹
-
-**配置设置（菜单栏「设置」）：**
-
-| 标签页   | 内容                        |
-|-------|---------------------------|
-| 基本设置  | 配置后端服务器地址（用于上报移动路径）       |
-| 目标文件夹 | 新增/编辑/删除分类目录，格式：路径 + 备注名称 |
-
-> 后端服务在线时，分类操作会自动向后端上报新路径；后端离线时仅本地移动文件。
-
-### R18 补全工具
-
-`R18Backfill` 是命令行工具，用于批量补全数据库中 `R18` 字段为 NULL 的作品记录。它通过 Pixiv AJAX 接口（无需登录）查询每个作品的限制级别，自动写入数据库。
-
-**启动方式：**
-
-```bash
-java -cp PixivDownload-vX.X.X.jar top.sywyar.pixivdownload.tools.R18Backfill [选项]
-```
-
-**可用选项：**
-
-| 选项                    | 默认值                                | 说明           |
-|-----------------------|------------------------------------|--------------|
-| `--db <path>`         | `pixiv-download/pixiv_download.db` | 数据库文件路径      |
-| `--proxy <host:port>` | `127.0.0.1:7890`                   | HTTP 代理地址    |
-| `--no-proxy`          | —                                  | 不使用代理        |
-| `--delay <ms>`        | `800`                              | 每次请求间隔（毫秒）   |
-| `--dry-run`           | —                                  | 只打印结果，不写入数据库 |
-
-**示例：**
-
-```bash
-# 使用默认配置运行
-java -cp PixivDownload-vX.X.X.jar top.sywyar.pixivdownload.tools.R18Backfill
-
-# 试运行（不写入数据库）
-java -cp PixivDownload-vX.X.X.jar top.sywyar.pixivdownload.tools.R18Backfill --dry-run
-
-# 指定数据库路径，不使用代理
-java -cp PixivDownload-vX.X.X.jar top.sywyar.pixivdownload.tools.R18Backfill --db D:/data/pixiv_download.db --no-proxy
-```
-
-> 遇到 HTTP 429（触发限流）时工具会自动停止，已处理的结果已写入数据库，重新运行会从未补全的记录继续。
-
----
-
-### 文件夹路径检查工具
-
-`FolderChecker` 是 Java Swing 桌面工具，用于检查数据库中记录的作品文件夹路径是否仍可访问。当手动移动过文件夹导致数据库路径失效时，可用此工具批量发现并修复。
-
-**启动方式：**
-
-```bash
-java -cp PixivDownload-vX.X.X.jar top.sywyar.pixivdownload.tools.FolderChecker
-```
-
-**使用步骤：**
-
-1. 在顶部 **Database** 输入框填写数据库路径，或点击 **Browse...** 选择 `pixiv_download.db` 文件
-2. 点击 **Check Folders**，工具扫描所有作品记录并列出路径不可访问的条目（状态栏显示异常数量）
-3. 点击列表中的某一行选中，底部 **New Path** 输入框会自动填入当前路径
-4. 修改为正确路径（或点击 **Browse...** 选择目录），点击 **Update DB** 写入数据库
-5. 更新后列表自动刷新
-
-> 已移动的作品检查 `move_folder` 字段；未移动的作品检查 `folder` 字段。每行的 **Copy ID** 按钮可将作品 ID 复制到剪贴板。
-
----
-
-### 旧版数据迁移工具
-
-如果之前使用过旧版（基于 JSON 文件：`download_history.json`、`statistics.json`），可通过以下命令将数据迁移至 SQLite 数据库：
-
-**实时进度模式（推荐数据量较大时使用）：**
-```bash
-curl -N http://localhost:6999/api/migration/json-to-sqlite/stream
-```
-
-**普通模式（返回 JSON 结果）：**
-```bash
-curl -X POST http://localhost:6999/api/migration/json-to-sqlite
-```
-
-两个接口均为幂等操作，可多次调用，不会产生重复数据。迁移完成后原 JSON 文件不会被删除，可自行备份后删除。
-
----
-
-## 配置说明
-
-首次启动自动生成 `config.yaml`，直接编辑后重启服务生效：
-
-```yaml
-server.port: 6999                              # 服务监听端口
-
-download.root-folder: pixiv-download           # 下载根目录（相对或绝对路径）
-download.user-flat-folder: false               # User 模式目录结构：false=按用户名分目录，true=与 N-Tab 相同的扁平结构
-
-# ---- 代理配置 ----
-
-proxy.enabled: true                            # 是否启用 HTTP 代理
-proxy.host: 127.0.0.1                          # 代理服务器地址
-proxy.port: 7890                               # 代理服务器端口
-
-# ---- 多人模式配置（仅 multi 模式有效）----
-
-multi-mode.quota.enabled: true                 # 是否启用下载配额限制
-multi-mode.quota.max-artworks: 50              # 每用户每周期最多下载作品数
-multi-mode.quota.reset-period-hours: 24        # 配额重置周期（小时）
-multi-mode.quota.archive-expire-minutes: 60    # 压缩包下载链接有效时间（分钟）
-multi-mode.quota.limit-image: 0                # 单作品图片数上限（0=不限制）；超出后按 ceil(图片数/limit-image) 个作品计算配额
-
-# 下载后处理模式（三选一）：
-#   pack-and-delete  打包后删除源文件（默认）
-#   never-delete     打包后保留源文件；再次下载同一作品直接返回已完成
-#   timed-delete     打包后保留源文件；超过 delete-after-hours 后自动删除
-multi-mode.post-download-mode: pack-and-delete
-
-multi-mode.delete-after-hours: 72              # timed-delete 模式：下载后多少小时自动删除
-
-multi-mode.request-limit-minute: 300           # 每用户每分钟最大请求次数（0 表示不限制）
-
-# ---- HTTPS / SSL 配置（两种类型二选一，若同时配置则 PEM 优先）----
-
-# 类型一：PEM 证书（推荐）
-# server.ssl.enabled: true
-# server.ssl.certificate: /path/to/cert.pem
-# server.ssl.certificate-private-key: /path/to/key.pem
-
-# 类型二：JKS 证书
-# server.ssl.enabled: true
-# server.ssl.key-store-type: JKS
-# server.ssl.key-store: /path/to/keystore.jks
-# server.ssl.key-store-password: yourpassword
-
-ssl.http-redirect: false                        # 是否在 ssl.http-redirect-port 监听 HTTP 并自动重定向到 HTTPS（需先配置 server.ssl.*）
-ssl.http-redirect-port: 80                     # HTTP 重定向监听端口（默认 80）
-```
-
-### HTTPS 配置说明
-
-支持两种证书类型，**若同时配置则 PEM 优先**（Spring Boot 内部行为一致）。
-
----
-
-**类型一：PEM 证书（推荐）**
-
-适用于 Let's Encrypt、acme.sh 等工具签发的证书，直接使用 `.pem` / `.crt` + `.key` 文件，无需额外转换。
-
-```yaml
-server.ssl.enabled: true
-server.ssl.certificate: /path/to/cert.pem           # 证书文件（含完整证书链）
-server.ssl.certificate-private-key: /path/to/key.pem  # 私钥文件
-```
-
-生成自签 PEM 证书（仅用于测试）：
-
-```bash
-openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -days 365 -nodes \
-  -subj "/CN=localhost"
-```
-
----
-
-**类型二：JKS 证书**
-
-适用于已有 Java KeyStore 文件的场景。
-
-```yaml
-server.ssl.enabled: true
-server.ssl.key-store-type: JKS
-server.ssl.key-store: /path/to/keystore.jks
-server.ssl.key-store-password: yourpassword
-```
-
-生成自签 JKS 证书：
-
-```bash
-keytool -genkeypair -alias pixiv -keyalg RSA -keysize 4096 -validity 365 \
-  -keystore keystore.jks -storepass yourpassword -keypass yourpassword \
-  -dname "CN=localhost, O=, C=CN"
-```
-
----
-
-**开启 HTTP→HTTPS 重定向示例**
-
-```yaml
-server.port: 6999
-server.ssl.enabled: true
-server.ssl.certificate: /path/to/cert.pem
-server.ssl.certificate-private-key: /path/to/key.pem
-
-ssl.http-redirect: true        # 开启 HTTP→HTTPS 重定向
-ssl.http-redirect-port: 80    # 监听 80 端口
-```
-
-启用后访问 `https://your-domain:6999`；访问 `http://your-domain` 将自动跳转到 HTTPS。
-
-> **注意：** 监听 80 端口通常需要管理员权限（Linux 需 `sudo` 或配置 `CAP_NET_BIND_SERVICE`）。若不需要重定向，仅配置 `server.ssl.*` 即可，此时只有 HTTPS 端口可用。
+访问 `http://localhost:6999/intro.html` （无需登录，公开访问）查看项目介绍。
 
 ---
 
@@ -508,3 +154,14 @@ ssl.http-redirect-port: 80    # 监听 80 端口
 ## 闲言碎语
 
 说真的我其实并不推荐这个工具的多人模式，因为所有的请求走的都是服务器网络的IP，就算cookie不一样请求量大也有可能封IP，我也在考虑在多人模式下添加一个登录机制，但与项目方便的初衷背道而驰，目前只会继续打磨这个项目
+
+## 友情链接
+
+**[![](https://raw.githubusercontent.com/xuejianxianzun/PixivBatchDownloader/master/static/icon/logo48.png)PixivBatchDownloader](//github.com/xuejianxianzun/PixivBatchDownloader)**  
+如果您喜欢简约，不想依赖后端程序可以试试这个脚本
+
+功能介绍：
+- 超多筛选支持 `(我也想实现！)`
+- 有一些辅助功能，如去除广告、快速收藏、看图模式等 `(可以当作一个 Pixiv 的辅助插件？)`
+- 下载不依赖第三方工具 `(与本项目最大的区别！安装十分方便！我也在努力将我的项目的使用变得简洁)`
+- 支持多语言 `(完蛋了...从一开始我就没有想到适配多语言!)`

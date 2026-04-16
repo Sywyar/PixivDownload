@@ -107,6 +107,24 @@ jobs:
             --compress=2 \
             --output build/runtime
 
+      - name: Download FFmpeg
+        shell: bash
+        run: |
+          FFmpeg 版本：ffmpeg-master-latest-win64-lgpl
+          curl -fsSL "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-lgpl.zip" -o build/ffmpeg.zip
+          unzip -q build/ffmpeg.zip -d build/
+          # 静态构建只需要单个 exe
+          mkdir -p build/resources
+          cp build/ffmpeg-*-win64-lgpl/bin/ffmpeg.exe build/resources/
+          cp build/ffmpeg-*-win64-lgpl/bin/ffprobe.exe build/resources/
+          # LGPL 许可声明
+          cat > build/resources/ffmpeg-LGPL.txt << 'LGPL_EOF'
+          FFmpeg is licensed under the LGPL v2.1.
+          Source code: https://ffmpeg.org
+          Build: BtbN FFmpeg Builds (https://github.com/BtbN/FFmpeg-Builds)
+          LGPL License: https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html
+          LGPL_EOF
+
       - name: Build portable app-image
         shell: bash
         run: |
@@ -119,9 +137,25 @@ jobs:
             --main-jar "PixivDownload-${{ steps.vars.outputs.version }}.jar" \
             --main-class "$MAIN_CLASS" \
             --runtime-image build/runtime \
+            --resource-dir build/resources \
             --icon src/main/resources/static/favicon.ico \
             --java-options "-Dfile.encoding=UTF-8" \
             --dest build/out
+
+      - name: Copy FFmpeg to app-image
+        shell: bash
+        run: |
+          # jpackage 不会自动包含 input 目录中的 exe，需要手动复制
+          cp build/input/ffmpeg.exe build/out/PixivDownload/
+          cp build/input/ffprobe.exe build/out/PixivDownload/
+          # LGPL 许可声明
+          mkdir -p build/out/PixivDownload/licenses
+          cat > build/out/PixivDownload/licenses/ffmpeg-LGPL.txt << 'LGPL_EOF'
+          FFmpeg is licensed under the LGPL v2.1.
+          Source code: https://ffmpeg.org
+          Build: BtbN FFmpeg Builds (https://github.com/BtbN/FFmpeg-Builds)
+          LGPL License: https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html
+          LGPL_EOF
 
       - name: Zip portable app-image
         shell: pwsh
@@ -141,6 +175,7 @@ jobs:
             --main-jar "PixivDownload-${{ steps.vars.outputs.version }}.jar" \
             --main-class "$MAIN_CLASS" \
             --runtime-image build/runtime \
+            --resource-dir build/resources \
             --icon src/main/resources/static/favicon.ico \
             --java-options "-Dfile.encoding=UTF-8" \
             --win-dir-chooser \

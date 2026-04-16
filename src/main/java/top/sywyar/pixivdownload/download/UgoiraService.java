@@ -1,5 +1,6 @@
 package top.sywyar.pixivdownload.download;
 
+import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpMethod;
@@ -125,6 +126,51 @@ public class UgoiraService {
         return delays;
     }
 
+    private String ffmpegCommand;
+
+    @PostConstruct
+    public void init() {
+        this.ffmpegCommand = detectFfmpegCommand();
+    }
+
+    /**
+     * 自动检测 ffmpeg 路径：优先 PATH，其次应用根目录（jpackage 打包场景）。
+     */
+    private String detectFfmpegCommand() {
+        // 1. 尝试从 PATH 查找
+        String[] searchCommands = System.getProperty("os.name", "").contains("Win")
+                ? new String[]{"where", "ffmpeg.exe"}
+                : new String[]{"which", "ffmpeg"};
+        try {
+            ProcessBuilder pb = new ProcessBuilder(searchCommands);
+            pb.redirectErrorStream(true);
+            Process p = pb.start();
+            String result = new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
+            if (p.waitFor() == 0 && !result.isEmpty()) {
+                String ffmpegPath = result.lines().findFirst().orElse("").trim();
+                if (!ffmpegPath.isEmpty()) {
+                    log.info("检测到系统 FFmpeg：{}", ffmpegPath);
+                    return ffmpegPath;
+                }
+            }
+        } catch (Exception e) {
+            log.debug("PATH 中未找到 ffmpeg，尝试应用目录：{}", e.getMessage());
+        }
+
+        // 2. 尝试应用根目录（jpackage 打包后的目录）
+        //    exe 所在目录可通过 user.dir 获取（jpackage 运行时的工作目录即 exe 所在目录）
+        String userDir = System.getProperty("user.dir", "");
+        String appFfmpeg = userDir + File.separator + "ffmpeg.exe";
+        if (Files.exists(Path.of(appFfmpeg))) {
+            log.info("使用打包的 FFmpeg：{}", appFfmpeg);
+            return appFfmpeg;
+        }
+
+        // 3. 最后降级到 "ffmpeg"（期望在 PATH 中）
+        log.warn("未检测到 FFmpeg，将尝试直接调用 'ffmpeg'，请确保已安装或配置 ffmpeg.path");
+        return "ffmpeg";
+    }
+
     private boolean runFfmpeg(Long artworkId, List<Map.Entry<String, Path>> orderedFrames,
                               List<Integer> delays, Path tempDir, Path downloadPath) throws Exception {
         Path listFile = tempDir.resolve("frames.txt");
@@ -144,7 +190,7 @@ public class UgoiraService {
 
         Path webpPath = downloadPath.resolve(artworkId + "_p0.webp");
         ProcessBuilder pb = new ProcessBuilder(
-                "ffmpeg", "-y",
+                ffmpegCommand, "-y",
                 "-f", "concat", "-safe", "0",
                 "-i", listFile.toAbsolutePath().toString(),
                 "-vcodec", "libwebp",
