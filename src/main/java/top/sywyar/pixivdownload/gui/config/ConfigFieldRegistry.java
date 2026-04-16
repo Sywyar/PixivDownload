@@ -121,54 +121,64 @@ public final class ConfigFieldRegistry {
             // ── HTTPS ──────────────────────────────────────────────────────────
             ConfigFieldSpec.builder("server.ssl.enabled", "启用 HTTPS", BOOL, "HTTPS")
                     .defaultValue("false")
-                    .help("启用 HTTPS，需同时配置证书（PEM 或 JKS 二选一）")
+                    .help("启用 HTTPS，需同时选择证书类型并填写对应路径")
                     .build(),
 
+            ConfigFieldSpec.builder("ssl.type", "证书类型", ENUM, "HTTPS")
+                    .defaultValue("pem")
+                    .enumValues("pem", "jks")
+                    .help("pem：PEM 证书（推荐，.pem + .key）；jks：JKS/PKCS12 证书库（.jks / .p12）")
+                    .enabledWhen(snap -> snap.isTrue("server.ssl.enabled"))
+                    .build(),
+
+            // PEM 字段：仅当 ssl.type=pem 时显示
             ConfigFieldSpec.builder("server.ssl.certificate", "PEM 证书路径", PATH_FILE, "HTTPS")
                     .defaultValue("")
-                    .help("PEM 格式证书文件（.pem），与 JKS 互斥，PEM 优先")
-                    .enabledWhen(snap -> snap.isTrue("server.ssl.enabled"))
+                    .help("PEM 格式证书文件（.pem）")
+                    .visibleWhen(snap -> snap.equals("ssl.type", "pem"))
+                    .enabledWhen(snap -> snap.isTrue("server.ssl.enabled") && snap.equals("ssl.type", "pem"))
                     .build(),
 
             ConfigFieldSpec.builder("server.ssl.certificate-private-key", "PEM 私钥路径", PATH_FILE, "HTTPS")
                     .defaultValue("")
                     .help("PEM 格式私钥文件（.key 或 .pem）")
-                    .enabledWhen(snap -> snap.isTrue("server.ssl.enabled")
-                            && snap.notBlank("server.ssl.certificate"))
+                    .visibleWhen(snap -> snap.equals("ssl.type", "pem"))
+                    .enabledWhen(snap -> snap.isTrue("server.ssl.enabled") && snap.equals("ssl.type", "pem"))
                     .build(),
 
+            // JKS 字段：仅当 ssl.type=jks 时显示
             ConfigFieldSpec.builder("server.ssl.key-store-type", "JKS 证书类型", ENUM, "HTTPS")
                     .defaultValue("JKS")
                     .enumValues("JKS", "PKCS12")
-                    .help("JKS 证书库类型")
-                    .enabledWhen(snap -> snap.isTrue("server.ssl.enabled")
-                            && snap.get("server.ssl.certificate").isBlank())
+                    .help("JKS 证书库格式")
+                    .visibleWhen(snap -> snap.equals("ssl.type", "jks"))
+                    .enabledWhen(snap -> snap.isTrue("server.ssl.enabled") && snap.equals("ssl.type", "jks"))
                     .build(),
 
             ConfigFieldSpec.builder("server.ssl.key-store", "JKS 证书库路径", PATH_FILE, "HTTPS")
                     .defaultValue("")
-                    .help("JKS 格式证书库文件（.jks），与 PEM 互斥")
-                    .enabledWhen(snap -> snap.isTrue("server.ssl.enabled")
-                            && snap.get("server.ssl.certificate").isBlank())
+                    .help("JKS/PKCS12 证书库文件（.jks 或 .p12）")
+                    .visibleWhen(snap -> snap.equals("ssl.type", "jks"))
+                    .enabledWhen(snap -> snap.isTrue("server.ssl.enabled") && snap.equals("ssl.type", "jks"))
                     .build(),
 
             ConfigFieldSpec.builder("server.ssl.key-store-password", "JKS 证书库密码", PASSWORD, "HTTPS")
                     .defaultValue("")
                     .help("JKS 证书库的访问密码")
-                    .enabledWhen(snap -> snap.isTrue("server.ssl.enabled")
-                            && snap.get("server.ssl.certificate").isBlank()
-                            && snap.notBlank("server.ssl.key-store"))
+                    .visibleWhen(snap -> snap.equals("ssl.type", "jks"))
+                    .enabledWhen(snap -> snap.isTrue("server.ssl.enabled") && snap.equals("ssl.type", "jks"))
                     .build(),
 
             ConfigFieldSpec.builder("ssl.http-redirect", "HTTP 自动重定向到 HTTPS", BOOL, "HTTPS")
                     .defaultValue("false")
-                    .help("在 http-redirect-port 监听 HTTP 并 301 重定向到 HTTPS（需先配置 SSL）")
+                    .help("在 http-redirect-port 监听 HTTP 并 301 重定向到 HTTPS（需先启用 HTTPS）")
+                    .enabledWhen(snap -> snap.isTrue("server.ssl.enabled"))
                     .build(),
 
             ConfigFieldSpec.builder("ssl.http-redirect-port", "HTTP 重定向监听端口", PORT, "HTTPS")
                     .defaultValue("80")
                     .help("HTTP 重定向使用的端口（默认 80）")
-                    .enabledWhen(snap -> snap.isTrue("ssl.http-redirect"))
+                    .enabledWhen(snap -> snap.isTrue("server.ssl.enabled") && snap.isTrue("ssl.http-redirect"))
                     .build()
     );
 

@@ -36,3 +36,4 @@ build/
 /image_classifier.properties
 /test/
 /config.yaml
+/log/

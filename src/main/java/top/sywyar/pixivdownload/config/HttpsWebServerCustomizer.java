@@ -15,12 +15,11 @@ import org.springframework.stereotype.Component;
  * 在 {@code ssl.http-redirect-port}（默认 80）额外开启一个 HTTP 连接器，
  * 所有 HTTP 请求将被 Tomcat 自动 301 重定向到 HTTPS 端口。
  *
- * <p>支持两种证书类型（与 Spring Boot 优先级一致）：
- * <ol>
- *   <li><b>PEM</b>：{@code server.ssl.certificate} + {@code server.ssl.certificate-private-key}
- *   <li><b>JKS</b>：{@code server.ssl.key-store} + {@code server.ssl.key-store-password}
- * </ol>
- * 若两种配置同时存在，PEM 优先（Spring Boot {@code WebServerSslBundle} 行为一致）。
+ * <p>通过 {@code ssl.type} 选择证书类型：
+ * <ul>
+ *   <li>{@code pem}（默认）：{@code server.ssl.certificate} + {@code server.ssl.certificate-private-key}
+ *   <li>{@code jks}：{@code server.ssl.key-store}（JKS/PKCS12）
+ * </ul>
  */
 @Slf4j
 @Component
@@ -36,7 +35,8 @@ public class HttpsWebServerCustomizer implements WebServerFactoryCustomizer<Tomc
             return;
         }
         if (!isSslConfigured()) {
-            log.warn("ssl.http-redirect=true 但未检测到 HTTPS 证书配置（PEM: server.ssl.certificate + server.ssl.certificate-private-key，或 JKS: server.ssl.key-store），跳过 HTTP 重定向");
+            log.warn("ssl.http-redirect=true 但未检测到有效的 HTTPS 证书配置（ssl.type={}），跳过 HTTP 重定向",
+                    sslConfig.getType());
             return;
         }
 
@@ -57,13 +57,16 @@ public class HttpsWebServerCustomizer implements WebServerFactoryCustomizer<Tomc
     }
 
     private boolean isSslConfigured() {
-        boolean hasPem = environment.containsProperty("server.ssl.certificate")
-                && environment.containsProperty("server.ssl.certificate-private-key");
-        boolean hasJks = environment.containsProperty("server.ssl.key-store");
-        if (hasPem && hasJks) {
-            log.warn("同时检测到 PEM 证书（server.ssl.certificate）和 JKS 证书（server.ssl.key-store）配置，将优先使用 PEM 证书");
+        String type = sslConfig.getType();
+        if ("jks".equalsIgnoreCase(type)) {
+            String keyStore = environment.getProperty("server.ssl.key-store", "");
+            return !keyStore.isBlank();
+        } else {
+            // pem（默认）
+            String cert = environment.getProperty("server.ssl.certificate", "");
+            String certKey = environment.getProperty("server.ssl.certificate-private-key", "");
+            return !cert.isBlank() && !certKey.isBlank();
         }
-        return hasPem || hasJks;
     }
 
     private Connector createHttpConnector(int httpPort, int httpsPort) {

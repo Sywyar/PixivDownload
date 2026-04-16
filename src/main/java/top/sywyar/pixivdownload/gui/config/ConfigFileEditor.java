@@ -23,25 +23,26 @@ public class ConfigFileEditor {
     // ── 读 ──────────────────────────────────────────────────────────────────────
 
     /**
-     * 读取指定 key 的当前值（无论该行是否被注释掉）。
-     * 若 key 不存在返回 null。
+     * 读取指定 key 的当前值，仅匹配活跃行（未注释）。
+     * 若 key 不存在或被注释掉则返回 null；调用方应自行回退到字段默认值。
      */
     public String read(String key) throws IOException {
         for (String line : Files.readAllLines(configPath, StandardCharsets.UTF_8)) {
-            if (matchesKey(line.trim(), key)) {
-                return extractValue(line.trim());
+            String trimmed = line.trim();
+            if (matchesActiveKey(trimmed, key)) {
+                return extractValue(trimmed);
             }
         }
         return null;
     }
 
-    /** 批量读取，返回 key→value 的 Map（不存在的 key 不包含在结果中）。 */
+    /** 批量读取，仅匹配活跃行（未注释），返回 key→value 的 Map（不存在的 key 不包含在结果中）。 */
     public Map<String, String> readAll(Collection<String> keys) throws IOException {
         Map<String, String> result = new LinkedHashMap<>();
         for (String line : Files.readAllLines(configPath, StandardCharsets.UTF_8)) {
             String trimmed = line.trim();
             for (String key : keys) {
-                if (!result.containsKey(key) && matchesKey(trimmed, key)) {
+                if (!result.containsKey(key) && matchesActiveKey(trimmed, key)) {
                     result.put(key, extractValue(trimmed));
                 }
             }
@@ -113,7 +114,16 @@ public class ConfigFileEditor {
     // ── 私有工具方法 ──────────────────────────────────────────────────────────────
 
     /**
+     * 判断某行（已 trim）是否与 key 匹配——仅匹配活跃行（未注释）。
+     * 供 read()/readAll() 使用，避免读取注释中的示例值。
+     */
+    private boolean matchesActiveKey(String trimmed, String key) {
+        return startsWithKey(trimmed, key);
+    }
+
+    /**
      * 判断某行（已 trim）是否与 key 匹配（活跃行或注释行均算）。
+     * 供 write()/writeAll() 使用，以便定位并更新/取消注释已有行。
      */
     private boolean matchesKey(String trimmed, String key) {
         // 活跃行："key: ..." 或 "key :"

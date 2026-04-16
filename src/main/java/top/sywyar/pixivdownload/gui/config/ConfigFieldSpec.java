@@ -16,6 +16,7 @@ public record ConfigFieldSpec(
         Validator validator,
         List<String> enumValues,
         Predicate<ConfigSnapshot> enabledWhen,
+        Predicate<ConfigSnapshot> visibleWhen,
         boolean requiresRestart
 ) {
 
@@ -40,6 +41,7 @@ public record ConfigFieldSpec(
         private Validator validator = v -> null;
         private List<String> enumValues = List.of();
         private Predicate<ConfigSnapshot> enabledWhen = snap -> true;
+        private Predicate<ConfigSnapshot> visibleWhen = snap -> true;
         private boolean requiresRestart = true;
 
         private Builder(String key, String label, FieldType type, String group) {
@@ -74,9 +76,14 @@ public record ConfigFieldSpec(
             return this;
         }
 
+        public Builder visibleWhen(Predicate<ConfigSnapshot> pred) {
+            this.visibleWhen = pred;
+            return this;
+        }
+
         public ConfigFieldSpec build() {
             return new ConfigFieldSpec(key, label, type, group, helpText, defaultValue,
-                    validator, enumValues, enabledWhen, requiresRestart);
+                    validator, enumValues, enabledWhen, visibleWhen, requiresRestart);
         }
     }
 }

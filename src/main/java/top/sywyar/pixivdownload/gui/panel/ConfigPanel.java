@@ -110,16 +110,17 @@ public class ConfigPanel extends JPanel {
 
     // ── 数据加载 ──────────────────────────────────────────────────────────────────
 
-    /** 从 config.yaml 加载当前值并填充控件。 */
+    /** 从 config.yaml 加载当前值并填充控件；key 不存在或被注释时回退到字段默认值。 */
     private void loadCurrentValues() {
         if (!configPath.toFile().exists()) return;
         try {
             Map<String, String> values = editor.readAll(renderedFields.keySet());
-            for (Map.Entry<String, FieldRenderer.RenderedField> entry : renderedFields.entrySet()) {
-                String v = values.get(entry.getKey());
-                if (v != null) {
-                    entry.getValue().setValue().accept(v);
-                }
+            for (ConfigFieldSpec spec : ConfigFieldRegistry.ALL_FIELDS) {
+                FieldRenderer.RenderedField rf = renderedFields.get(spec.key());
+                if (rf == null) continue;
+                // key 不存在或被注释掉时，显式回退到字段默认值
+                String v = values.getOrDefault(spec.key(), spec.defaultValue());
+                rf.setValue().accept(v);
             }
             updateEnabledStates();
         } catch (IOException e) {
@@ -130,17 +131,27 @@ public class ConfigPanel extends JPanel {
     }
 
     /**
-     * 根据 enabledWhen 谓词启用/禁用控件。
+     * 根据 visibleWhen / enabledWhen 谓词显示/隐藏、启用/禁用控件。
      * 在每次值变更时触发，以反映字段间依赖。
      */
     private void updateEnabledStates() {
         ConfigSnapshot snap = buildSnapshot();
+        boolean layoutChanged = false;
         for (ConfigFieldSpec spec : ConfigFieldRegistry.ALL_FIELDS) {
             FieldRenderer.RenderedField rf = renderedFields.get(spec.key());
-            if (rf != null) {
-                boolean enabled = spec.enabledWhen().test(snap);
-                setControlEnabled(rf.panel(), enabled);
+            if (rf == null) continue;
+            boolean visible = spec.visibleWhen().test(snap);
+            if (rf.panel().isVisible() != visible) {
+                rf.panel().setVisible(visible);
+                layoutChanged = true;
             }
+            if (visible) {
+                setControlEnabled(rf.panel(), spec.enabledWhen().test(snap));
+            }
+        }
+        if (layoutChanged) {
+            revalidate();
+            repaint();
         }
     }
 
@@ -164,11 +175,11 @@ public class ConfigPanel extends JPanel {
     // ── 保存 ─────────────────────────────────────────────────────────────────────
 
     private void saveConfig() {
-        // 验证
+        // 验证（仅验证可见且已启用的字段）
         List<String> errors = new ArrayList<>();
         for (ConfigFieldSpec spec : ConfigFieldRegistry.ALL_FIELDS) {
             FieldRenderer.RenderedField rf = renderedFields.get(spec.key());
-            if (rf == null || !rf.control().isEnabled()) continue;
+            if (rf == null || !rf.panel().isVisible() || !rf.control().isEnabled()) continue;
             String val = rf.getValue().get();
             String err = spec.validator().validate(val);
             if (err != null) {
@@ -182,14 +193,20 @@ public class ConfigPanel extends JPanel {
             return;
         }
 
-        // 收集所有值
+        // 收集所有值：隐藏字段写入空值（不注释），避免 Spring Boot 误读非当前类型的证书路径
         Map<String, String> values = new LinkedHashMap<>();
         Map<String, Boolean> cweMap = new LinkedHashMap<>();
         for (ConfigFieldSpec spec : ConfigFieldRegistry.ALL_FIELDS) {
             FieldRenderer.RenderedField rf = renderedFields.get(spec.key());
             if (rf == null) continue;
-            values.put(spec.key(), rf.getValue().get());
-            cweMap.put(spec.key(), spec.type().commentWhenEmpty);
+            if (rf.panel().isVisible()) {
+                values.put(spec.key(), rf.getValue().get());
+                cweMap.put(spec.key(), spec.type().commentWhenEmpty);
+            } else {
+                // 隐藏字段：写入空字符串且不注释，Spring Boot 对空值不加载对应证书
+                values.put(spec.key(), "");
+                cweMap.put(spec.key(), false);
+            }
         }
 
         try {

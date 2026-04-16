@@ -68,18 +68,14 @@ public class AppConfigGenerator {
 
             # ---- HTTPS / SSL 配置 ----
 
-            # ---- HTTPS / SSL 配置（两种类型二选一，若同时配置则 PEM 优先）----
-            # 类型一：PEM 证书（推荐，.pem 证书文件 + .key 私钥文件）
-            # server.ssl.enabled: true
-            # server.ssl.certificate: /path/to/cert.pem
-            # server.ssl.certificate-private-key: /path/to/key.pem
-            #
-            # 类型二：JKS 证书（.jks 文件 + 密码）
-            # server.ssl.enabled: true
-            # server.ssl.key-store-type: JKS
-            # server.ssl.key-store: /path/to/keystore.jks
-            # server.ssl.key-store-password: yourpassword
-            ssl.http-redirect: false                        # 是否在 ssl.http-redirect-port 监听 HTTP 并自动重定向到 HTTPS（需先配置 server.ssl.*）
+            ssl.type: pem                                  # 证书类型：pem（推荐，.pem + .key）或 jks（JKS/PKCS12 证书库）
+            server.ssl.enabled: false                      # 是否启用 HTTPS（true/false）
+            server.ssl.certificate:                        # PEM 证书文件路径（ssl.type=pem 时有效）
+            server.ssl.certificate-private-key:            # PEM 私钥文件路径（ssl.type=pem 时有效）
+            server.ssl.key-store-type: JKS                 # JKS 证书类型：JKS 或 PKCS12（ssl.type=jks 时有效）
+            server.ssl.key-store:                          # JKS/PKCS12 证书库路径（ssl.type=jks 时有效）
+            server.ssl.key-store-password:                 # JKS 证书库密码（ssl.type=jks 时有效）
+            ssl.http-redirect: false                       # 是否在 ssl.http-redirect-port 监听 HTTP 并自动重定向到 HTTPS
             ssl.http-redirect-port: 80                     # HTTP 重定向监听端口（默认 80）
             """;
 

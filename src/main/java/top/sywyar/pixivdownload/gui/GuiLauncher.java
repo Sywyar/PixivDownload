@@ -1,14 +1,27 @@
 package top.sywyar.pixivdownload.gui;
 
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import top.sywyar.pixivdownload.PixivDownloadApplication;
 import top.sywyar.pixivdownload.gui.config.ConfigFileEditor;
 import top.sywyar.pixivdownload.gui.theme.FlatLafSetup;
 
 import javax.swing.*;
 import java.awt.*;
+import java.io.FileNotFoundException;
+import java.net.BindException;
+import java.nio.file.AccessDeniedException;
+import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
+import java.util.Comparator;
+import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 /**
  * GUI 模式入口点。
@@ -18,22 +31,60 @@ import java.util.Arrays;
  *   <li>无显示设备（{@code GraphicsEnvironment.isHeadless()}）：自动降级为命令行</li>
  * </ul>
  * Spring Boot fat-jar 的 {@code Start-Class} 指向此类（pom.xml 已配置）。
+ *
+ * <h3>日志文件策略</h3>
+ * <p>每次启动在 {@code log/} 目录生成两份内容相同的日志：
+ * <ul>
+ *   <li>{@code log/latest.log} — 始终代表本次运行</li>
+ *   <li>{@code log/pixiv-download_YYYY-MM-DD_HHmmss.log} — 带时间戳的会话存档</li>
+ * </ul>
+ * 仅保留最近 {@value #LOG_HISTORY_COUNT} 份时间戳文件，多余的在启动时自动删除。
+ *
+ * <h3>实现关键</h3>
+ * <p>logback 在第一次 {@code getLogger()} 调用时完成初始化并读取 {@code logback.xml}。
+ * 为确保 {@code logback.xml} 中的 {@code ${LOG_TIMESTAMP}} 占位符可以正确解析，
+ * 本类故意不使用 {@code @Slf4j}，而是在 {@code main()} 方法体内、完成系统属性写入后
+ * 再获取 logger，让 logback 的初始化晚于 {@code System.setProperty()} 调用。
+ * Spring Boot 重新初始化 logback 时读取的是同一系统属性，因此两个阶段的日志都写入
+ * 同一个时间戳文件，不会被截断。
  */
-@Slf4j
 public class GuiLauncher {
 
+    // logger 故意不声明为 static final 字段，避免类加载时触发 logback 提前初始化
+    private static Logger log;
+
     private static final String CONFIG_FILE = "config.yaml";
+    private static final String LOG_DIR = "log";
+    private static final String LOG_HTML_DIR = LOG_DIR + "/html";
+    private static final String LOG_LATEST = LOG_DIR + "/latest.log";
+    private static final String LOG_HTML_LATEST = LOG_HTML_DIR + "/latest.html";
+    private static final String LOG_SESSION_PREFIX = "pixiv-download_";
+    /** 保留最近的会话日志数量（不含 latest.log / latest.html） */
+    private static final int LOG_HISTORY_COUNT = 5;
     private static final int DEFAULT_PORT = 6999;
     private static final String DEFAULT_ROOT = "pixiv-download";
 
     public static void main(String[] args) throws Exception {
+        // ── 0. 在 logback 初始化前完成日志目录/属性准备 ──────────────────────────
+        //    顺序不可颠倒：必须先于任何 getLogger() / log.xxx() 调用
+        prepareLogging();
+
+        // ── 触发 logback 初始化（此时 LOG_TIMESTAMP 已就绪）─────────────────────
+        log = LoggerFactory.getLogger(GuiLauncher.class);
+        log.info("PixivDownload 启动中，args={}", Arrays.toString(args));
+
         // ── 1. 判断是否需要 GUI ─────────────────────────────────────────────────
         boolean noGui = Arrays.asList(args).contains("--no-gui")
                 || GraphicsEnvironment.isHeadless();
 
         if (noGui) {
             log.info("无头/命令行模式启动（GUI 已禁用）");
-            PixivDownloadApplication.main(args);
+            try {
+                PixivDownloadApplication.main(args);
+            } catch (Throwable t) {
+                logStartupFailure(t);
+                throw t;
+            }
             return;
         }
 
@@ -73,16 +124,199 @@ public class GuiLauncher {
         Thread springThread = new Thread(() -> {
             try {
                 PixivDownloadApplication.main(filterArgs(args));
-            } catch (Exception e) {
-                log.error("Spring Boot 启动失败: {}", e.getMessage(), e);
+            } catch (Throwable t) {
+                String diag = diagnoseStartupError(t);
+                String userMsg = (diag != null) ? diag : ("后端服务启动失败：" + safeMessage(t));
+                logStartupFailure(t);
                 SwingUtilities.invokeLater(() ->
                         JOptionPane.showMessageDialog(null,
-                                "后端服务启动失败：\n" + e.getMessage(),
+                                userMsg + "\n\n详细日志见：" + Path.of(LOG_LATEST).toAbsolutePath(),
                                 "启动错误", JOptionPane.ERROR_MESSAGE));
             }
         }, "spring-main");
         springThread.setDaemon(false);
         springThread.start();
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
+    // 日志目录准备（必须在 logback 初始化前执行）
+    // ────────────────────────────────────────────────────────────────────────
+
+    /**
+     * 在 logback 读取 {@code logback.xml} 之前完成以下操作：
+     * <ol>
+     *   <li>创建 {@code log/} 目录</li>
+     *   <li>删除上次遗留的 {@code latest.log}，使本次运行重新创建</li>
+     *   <li>清理多余的历史时间戳文件，只保留最近 {@value #LOG_HISTORY_COUNT} - 1 份，
+     *       为本次新文件留出位置</li>
+     *   <li>将 {@code LOG_TIMESTAMP} 写入系统属性，供 {@code logback.xml} 中的
+     *       {@code ${LOG_TIMESTAMP}} 占位符使用</li>
+     * </ol>
+     */
+    private static void prepareLogging() {
+        try {
+            // 创建目录
+            Files.createDirectories(Path.of(LOG_DIR));
+            Files.createDirectories(Path.of(LOG_HTML_DIR));
+
+            // 删除旧 latest 文件，使 logback 以 append=true 创建新文件（等效覆盖）
+            Files.deleteIfExists(Path.of(LOG_LATEST));
+            // HTML latest 使用 append=false，logback 会自行覆盖；
+            // 此处同步删除以保证目录整洁（防止空文件遗留等边界情况）
+            Files.deleteIfExists(Path.of(LOG_HTML_LATEST));
+
+            // 清理超量的历史会话文件
+            cleanOldSessionLogs(Path.of(LOG_DIR), ".log");
+            cleanOldSessionLogs(Path.of(LOG_HTML_DIR), ".html");
+
+            String timestamp = LocalDateTime.now()
+                    .format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HHmmss"));
+            System.setProperty("LOG_TIMESTAMP", timestamp);
+        } catch (Exception e) {
+            System.err.println("日志目录准备失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 删除指定目录下最旧的时间戳会话日志，使现有文件数不超过
+     * {@value #LOG_HISTORY_COUNT} - 1，从而在新会话文件创建后恰好保持 {@value #LOG_HISTORY_COUNT} 份。
+     *
+     * @param logDir    目标目录（{@code log/} 或 {@code log/html/}）
+     * @param extension 文件扩展名（{@code ".log"} 或 {@code ".html"}）
+     */
+    private static void cleanOldSessionLogs(Path logDir, String extension) {
+        try {
+            List<Path> sessions = Files.list(logDir)
+                    .filter(p -> {
+                        String name = p.getFileName().toString();
+                        return name.startsWith(LOG_SESSION_PREFIX) && name.endsWith(extension);
+                    })
+                    .sorted(Comparator.naturalOrder()) // 文件名含时间戳，自然序即时间序
+                    .collect(Collectors.toList());
+
+            int toDelete = sessions.size() - (LOG_HISTORY_COUNT - 1);
+            for (int i = 0; i < toDelete; i++) {
+                Files.deleteIfExists(sessions.get(i));
+            }
+        } catch (Exception e) {
+            System.err.println("清理旧日志失败（" + logDir + extension + "）: " + e.getMessage());
+        }
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
+    // 启动错误诊断
+    // ────────────────────────────────────────────────────────────────────────
+
+    private static void logStartupFailure(Throwable t) {
+        String diag = diagnoseStartupError(t);
+        if (diag != null) {
+            log.error("启动失败：\n{}", diag, t);
+        } else {
+            log.error("启动失败：{}", safeMessage(t), t);
+        }
+    }
+
+    /**
+     * 沿异常链识别常见启动失败原因，返回面向用户的提示文本。
+     * 未识别的异常返回 null，由调用方按通用错误处理。
+     */
+    private static String diagnoseStartupError(Throwable error) {
+        for (Throwable cause = error; cause != null; cause = cause.getCause()) {
+            String name = cause.getClass().getName();
+            String msg = cause.getMessage() == null ? "" : cause.getMessage();
+            String low = msg.toLowerCase();
+
+            // 端口被占用
+            if (cause instanceof BindException
+                    || name.endsWith("PortInUseException")
+                    || low.contains("address already in use")
+                    || low.contains("failed to bind")) {
+                String port = extractPort(msg);
+                String portHint = (port == null) ? "<端口>" : port;
+                return "[端口被占用] " + (port == null ? "" : "端口 " + port + " ")
+                        + "已被其他程序占用。\n"
+                        + "请检查 config.yaml 中的 server.port 或 ssl.http-redirect-port，"
+                        + "或释放该端口后重启。\n"
+                        + "Windows 排查命令：netstat -ano | findstr :" + portHint + "\n"
+                        + "原始信息：" + msg;
+            }
+
+            // SSL 证书 / 密钥库文件不存在
+            if ((cause instanceof NoSuchFileException
+                    || cause instanceof FileNotFoundException
+                    || low.contains("nosuchfileexception"))
+                    && hasAny(low, "ssl", "cert", "key", "pem", "jks", "store", "p12", "pkcs12")) {
+                return "[SSL 证书文件未找到] " + msg + "\n"
+                        + "请检查 config.yaml 中以下路径是否存在且可读：\n"
+                        + "  - server.ssl.certificate / server.ssl.certificate-private-key（PEM）\n"
+                        + "  - server.ssl.key-store（JKS / PKCS12）\n"
+                        + "建议使用绝对路径，避免相对路径在不同工作目录下解析出错。";
+            }
+
+            // 密钥库 / 私钥密码错误
+            if (name.endsWith("UnrecoverableKeyException")
+                    || low.contains("keystore password was incorrect")
+                    || low.contains("password was incorrect")
+                    || low.contains("wrong password")
+                    || low.contains("given final block not properly padded")) {
+                return "[SSL 密码错误] " + msg + "\n"
+                        + "请检查 config.yaml 中 server.ssl.key-store-password / "
+                        + "server.ssl.key-password 是否正确。";
+            }
+
+            // SSL 证书 / 私钥格式无效
+            if (name.endsWith("CertificateException")
+                    || name.endsWith("SSLException")
+                    || low.contains("derinputstream")
+                    || low.contains("could not load store")
+                    || low.contains("unable to read")
+                    || (low.contains("keystore") && low.contains("not"))
+                    || low.contains("invalid keystore format")) {
+                return "[SSL 证书格式无效或无法解析] " + msg + "\n"
+                        + "请确认：\n"
+                        + "  - PEM 与 JKS 配置不要混用（同时配置时 PEM 优先）；\n"
+                        + "  - 证书文件与私钥文件成对、未损坏；\n"
+                        + "  - JKS 类型与 server.ssl.key-store-type 匹配（默认 JKS，PKCS12 需显式指定）。";
+            }
+
+            // YAML 配置解析错误
+            if (name.contains("yaml") || name.contains("Yaml")
+                    || msg.contains("YAML") || msg.contains("ScannerException")
+                    || msg.contains("ParserException") || msg.contains("mapping values")) {
+                return "[config.yaml 格式错误] " + msg + "\n"
+                        + "请检查缩进（仅空格、不要 Tab）、冒号后空格、引号是否成对。";
+            }
+
+            // 权限不足（低端口需管理员、目录不可写等）
+            if (cause instanceof AccessDeniedException
+                    || low.contains("permission denied")
+                    || msg.contains("拒绝访问")) {
+                return "[权限不足] " + msg + "\n"
+                        + "可能原因：下载目录无写权限，或监听端口 < 1024 需要管理员权限。";
+            }
+        }
+        return null;
+    }
+
+    /** 从 "Port 6999 was already in use" / ":6999" 等消息中提取端口号。 */
+    private static String extractPort(String msg) {
+        if (msg == null) return null;
+        Matcher m = Pattern.compile("(?i)port[^0-9]{0,10}(\\d{2,5})").matcher(msg);
+        if (m.find()) return m.group(1);
+        m = Pattern.compile(":(\\d{2,5})\\b").matcher(msg);
+        if (m.find()) return m.group(1);
+        return null;
+    }
+
+    private static boolean hasAny(String s, String... needles) {
+        for (String n : needles) {
+            if (s.contains(n)) return true;
+        }
+        return false;
+    }
+
+    private static String safeMessage(Throwable t) {
+        return t.getMessage() == null ? t.getClass().getSimpleName() : t.getMessage();
     }
 
     /** 从参数列表中过滤掉 GUI 专用参数，避免传入 Spring。 */
