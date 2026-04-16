@@ -116,7 +116,7 @@ public class GuiLauncher {
         SwingUtilities.invokeLater(() -> {
             FlatLafSetup.apply();
             MainFrame frame = new MainFrame(port, root, configPath);
-            SystemTrayManager.install(frame, port, root);
+            SystemTrayManager.install(frame, root);
             frame.setVisible(true);
         });
 

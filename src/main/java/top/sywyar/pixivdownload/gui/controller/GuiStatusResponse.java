@@ -13,4 +13,10 @@ public class GuiStatusResponse {
     private int port;
     private String mode;
     private String startTime;
+    /** SSL 是否已配置并启用。 */
+    private boolean httpsEnabled;
+    /** 服务对外域名（来自 ssl.domain，默认 localhost）。 */
+    private String domain;
+    /** 当前生效的协议：{@code "https"} 或 {@code "http"}。 */
+    private String scheme;
 }

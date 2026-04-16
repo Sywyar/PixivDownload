@@ -57,6 +57,11 @@ public class MainFrame extends JFrame {
         setContentPane(tabs);
     }
 
+    /** 返回当前生效的 Web 控制台 URL，供托盘菜单等延迟调用。 */
+    public String getMonitorUrl() {
+        return statusPanel.getMonitorUrl();
+    }
+
     /** 释放资源（关闭轮询 Timer）。 */
     @Override
     public void dispose() {

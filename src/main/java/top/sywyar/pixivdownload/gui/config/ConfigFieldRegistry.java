@@ -119,6 +119,11 @@ public final class ConfigFieldRegistry {
                     .build(),
 
             // ── HTTPS ──────────────────────────────────────────────────────────
+            ConfigFieldSpec.builder("ssl.domain", "服务域名", STRING, "HTTPS")
+                    .defaultValue("localhost")
+                    .help("服务对外暴露的域名（本机访问填 localhost；通过域名/公网 IP 访问时必须修改为实际域名）")
+                    .build(),
+
             ConfigFieldSpec.builder("server.ssl.enabled", "启用 HTTPS", BOOL, "HTTPS")
                     .defaultValue("false")
                     .help("启用 HTTPS，需同时选择证书类型并填写对应路径")

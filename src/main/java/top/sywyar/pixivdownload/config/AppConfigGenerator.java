@@ -68,6 +68,7 @@ public class AppConfigGenerator {
 
             # ---- HTTPS / SSL 配置 ----
 
+            ssl.domain: localhost                          # 服务域名，用于构造对外 URL（本机访问保持 localhost；通过域名访问时必须修改）
             ssl.type: pem                                  # 证书类型：pem（推荐，.pem + .key）或 jks（JKS/PKCS12 证书库）
             server.ssl.enabled: false                      # 是否启用 HTTPS（true/false）
             server.ssl.certificate:                        # PEM 证书文件路径（ssl.type=pem 时有效）

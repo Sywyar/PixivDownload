@@ -23,12 +23,11 @@ public final class SystemTrayManager {
     /**
      * 在系统托盘中安装图标和菜单。
      *
-     * @param frame      主窗口（托盘操作会控制其可见性）
-     * @param serverPort 用于"打开 Web 控制台"操作
+     * @param frame      主窗口（托盘操作会控制其可见性，URL 从此处动态获取）
      * @param rootFolder 用于"打开下载目录"操作
      * @return 安装是否成功（某些 Linux 桌面环境不支持系统托盘）
      */
-    public static boolean install(MainFrame frame, int serverPort, String rootFolder) {
+    public static boolean install(MainFrame frame, String rootFolder) {
         if (!SystemTray.isSupported()) {
             log.warn("当前系统不支持系统托盘");
             return false;
@@ -39,7 +38,7 @@ public final class SystemTrayManager {
         trayIcon.setImageAutoSize(true);
 
         // Swing 弹出菜单（支持中文，无需依赖 AWT ANSI 码页）
-        JPopupMenu menu = buildPopupMenu(frame, serverPort, rootFolder, trayIcon);
+        JPopupMenu menu = buildPopupMenu(frame, rootFolder, trayIcon);
 
         // 左键双击 = 显示主窗口
         trayIcon.addActionListener(e -> showFrame(frame));
@@ -68,7 +67,7 @@ public final class SystemTrayManager {
         }
     }
 
-    private static JPopupMenu buildPopupMenu(MainFrame frame, int serverPort,
+    private static JPopupMenu buildPopupMenu(MainFrame frame,
                                              String rootFolder, TrayIcon trayIcon) {
         JPopupMenu menu = new JPopupMenu();
 
@@ -77,7 +76,8 @@ public final class SystemTrayManager {
         menu.add(showItem);
 
         JMenuItem browserItem = new JMenuItem("打开 Web 控制台");
-        browserItem.addActionListener(e -> openBrowser(serverPort));
+        // 点击时才调用 frame.getMonitorUrl()，确保读到 Spring 启动后更新的 scheme/domain
+        browserItem.addActionListener(e -> openBrowser(frame.getMonitorUrl()));
         menu.add(browserItem);
 
         JMenuItem folderItem = new JMenuItem("打开下载目录");
@@ -140,9 +140,9 @@ public final class SystemTrayManager {
         frame.toFront();
     }
 
-    private static void openBrowser(int port) {
+    private static void openBrowser(String url) {
         try {
-            Desktop.getDesktop().browse(new URI("http://localhost:" + port + "/monitor.html"));
+            Desktop.getDesktop().browse(new URI(url));
         } catch (Exception e) {
             log.warn("无法打开浏览器: {}", e.getMessage());
         }

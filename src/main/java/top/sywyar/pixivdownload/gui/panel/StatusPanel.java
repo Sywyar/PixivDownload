@@ -4,6 +4,10 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 
+import javax.net.ssl.HttpsURLConnection;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.X509TrustManager;
 import javax.swing.*;
 import java.awt.*;
 import java.io.File;
@@ -11,6 +15,7 @@ import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.URL;
+import java.security.cert.X509Certificate;
 
 /**
  * "状态" 标签页：显示服务器元信息（端口、模式、启动时间），并提供快捷操作按钮。
@@ -21,14 +26,23 @@ public class StatusPanel extends JPanel {
 
     private static final int POLL_INTERVAL_MS = 3000;
     private static final ObjectMapper MAPPER = new ObjectMapper();
+    /** 信任所有证书的 SSLContext，用于轮询本地自签名 HTTPS 接口。 */
+    private static final SSLContext TRUST_ALL_SSL = buildTrustAllSslContext();
 
     private final JLabel portLabel   = valueLabel("—");
     private final JLabel modeLabel   = valueLabel("—");
     private final JLabel uptimeLabel = valueLabel("—");
+    private final JLabel httpsLabel  = valueLabel("—");
     private final JLabel statusBadge = new JLabel("正在启动...");
 
     private final int serverPort;
     private final String rootFolder;
+    /** 上次成功连接所用的协议，初始尝试 http。 */
+    private volatile String currentScheme = "http";
+    /** 服务对外域名（来自 ssl.domain），首次轮询成功后更新。 */
+    private volatile String serverDomain = "localhost";
+    /** 对外生效协议（来自 ssl.domain + ssl.enabled），首次轮询成功后更新。 */
+    private volatile String serverScheme = "http";
     private Timer pollTimer;
 
     public StatusPanel(int serverPort, String rootFolder) {
@@ -63,6 +77,7 @@ public class StatusPanel extends JPanel {
         addRow(grid, g, row++, "运行端口：", portLabel);
         addRow(grid, g, row++, "运行模式：", modeLabel);
         addRow(grid, g, row++, "启动时间：", uptimeLabel);
+        addRow(grid, g, row++, "HTTPS：",   httpsLabel);
 
         // 提示：详细统计见 Web 控制台
         JLabel hint = new JLabel("下载队列、历史记录等详细统计请打开 Web 控制台查看。");
@@ -136,22 +151,36 @@ public class StatusPanel extends JPanel {
 
     private void fetchStatus() {
         Thread worker = new Thread(() -> {
-            try {
-                URL url = new URI("http://localhost:" + serverPort + "/api/gui/status").toURL();
-                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-                conn.setConnectTimeout(2000);
-                conn.setReadTimeout(2000);
-                conn.setRequestMethod("GET");
+            // 优先尝试上次成功的协议，失败后切换另一种（应对 SSL 启用/禁用切换）
+            String[] schemes = "https".equals(currentScheme)
+                    ? new String[]{"https", "http"}
+                    : new String[]{"http", "https"};
 
-                if (conn.getResponseCode() == 200) {
-                    try (InputStream is = conn.getInputStream()) {
-                        JsonNode node = MAPPER.readTree(is);
-                        SwingUtilities.invokeLater(() -> updateLabels(node));
+            for (String scheme : schemes) {
+                try {
+                    URL url = new URI(scheme + "://localhost:" + serverPort + "/api/gui/status").toURL();
+                    HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                    if (conn instanceof HttpsURLConnection https && TRUST_ALL_SSL != null) {
+                        https.setSSLSocketFactory(TRUST_ALL_SSL.getSocketFactory());
+                        https.setHostnameVerifier((h, s) -> true);
                     }
+                    conn.setConnectTimeout(2000);
+                    conn.setReadTimeout(2000);
+                    conn.setRequestMethod("GET");
+
+                    if (conn.getResponseCode() == 200) {
+                        currentScheme = scheme;
+                        try (InputStream is = conn.getInputStream()) {
+                            JsonNode node = MAPPER.readTree(is);
+                            SwingUtilities.invokeLater(() -> updateLabels(node));
+                        }
+                        return; // 成功，不再尝试下一种协议
+                    }
+                } catch (Exception ignored) {
+                    // 此协议不通，继续尝试另一种
                 }
-            } catch (Exception ignored) {
-                // Spring 尚未就绪，保持"正在启动..."
             }
+            // 两种协议均不通：Spring 尚未就绪，保持"正在启动..."
         }, "gui-status-poll");
         worker.setDaemon(true);
         worker.start();
@@ -164,6 +193,16 @@ public class StatusPanel extends JPanel {
         portLabel.setText(textOf(node, "port"));
         modeLabel.setText(modeName(textOf(node, "mode")));
         uptimeLabel.setText(textOf(node, "startTime"));
+
+        JsonNode httpsNode = node.get("httpsEnabled");
+        boolean https = httpsNode != null && httpsNode.asBoolean(false);
+        httpsLabel.setText(https ? "启用" : "未启用");
+        httpsLabel.setForeground(https ? new Color(0, 140, 0) : Color.GRAY);
+
+        String d = textOf(node, "domain");
+        String s = textOf(node, "scheme");
+        if (!"—".equals(d)) serverDomain = d;
+        if (!"—".equals(s)) serverScheme = s;
     }
 
     private static String textOf(JsonNode node, String field) {
@@ -183,7 +222,7 @@ public class StatusPanel extends JPanel {
 
     private void openMonitor() {
         try {
-            Desktop.getDesktop().browse(new URI("http://localhost:" + serverPort + "/monitor.html"));
+            Desktop.getDesktop().browse(new URI(serverScheme + "://" + serverDomain + ":" + serverPort + "/monitor.html"));
         } catch (Exception e) {
             JOptionPane.showMessageDialog(this, "无法打开浏览器：" + e.getMessage(),
                     "错误", JOptionPane.ERROR_MESSAGE);
@@ -213,8 +252,12 @@ public class StatusPanel extends JPanel {
 
         Thread worker = new Thread(() -> {
             try {
-                URL url = new URI("http://localhost:" + serverPort + "/api/gui/restart").toURL();
+                URL url = new URI(currentScheme + "://localhost:" + serverPort + "/api/gui/restart").toURL();
                 HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                if (conn instanceof HttpsURLConnection https && TRUST_ALL_SSL != null) {
+                    https.setSSLSocketFactory(TRUST_ALL_SSL.getSocketFactory());
+                    https.setHostnameVerifier((h, s) -> true);
+                }
                 conn.setRequestMethod("POST");
                 conn.setConnectTimeout(3000);
                 conn.setReadTimeout(3000);
@@ -231,7 +274,35 @@ public class StatusPanel extends JPanel {
         worker.start();
     }
 
+    /** 返回当前生效的 Web 控制台 URL（scheme/domain 在首次轮询成功后更新）。 */
+    public String getMonitorUrl() {
+        return serverScheme + "://" + serverDomain + ":" + serverPort + "/monitor.html";
+    }
+
     public void dispose() {
         if (pollTimer != null) pollTimer.stop();
+    }
+
+    // ── SSL 工具 ──────────────────────────────────────────────────────────────────
+
+    /**
+     * 构建一个信任所有证书的 {@link SSLContext}，仅用于轮询本机 localhost 接口。
+     * 绝对不能用于对外网络请求。
+     */
+    private static SSLContext buildTrustAllSslContext() {
+        try {
+            SSLContext ctx = SSLContext.getInstance("TLS");
+            ctx.init(null, new TrustManager[]{
+                new X509TrustManager() {
+                    public X509Certificate[] getAcceptedIssuers() { return new X509Certificate[0]; }
+                    public void checkClientTrusted(X509Certificate[] c, String t) {}
+                    public void checkServerTrusted(X509Certificate[] c, String t) {}
+                }
+            }, null);
+            return ctx;
+        } catch (Exception e) {
+            log.warn("无法创建 trust-all SSLContext，HTTPS 轮询可能失败: {}", e.getMessage());
+            return null;
+        }
     }
 }

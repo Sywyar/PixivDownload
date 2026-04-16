@@ -8,12 +8,20 @@ import org.springframework.context.annotation.Configuration;
  * SSL / HTTPS 相关配置（前缀 {@code ssl}）。
  *
  * <p>HTTPS 证书本身通过标准 {@code server.ssl.*} 属性配置；
- * 本类仅负责管理额外的重定向行为。
+ * 本类负责管理域名、证书类型以及额外的重定向行为。
  */
 @Data
 @Configuration
 @ConfigurationProperties(prefix = "ssl")
 public class SslConfig {
+
+    /**
+     * 服务对外暴露的域名，用于构造用户可访问的 URL。
+     * <p>默认值 {@code localhost} 仅适用于本机访问；若通过域名或公网 IP 访问，
+     * 必须将此值修改为对应的域名（如 {@code example.com}）。
+     * 该值是代码中构造对外 URL 的唯一来源，禁止在代码中硬编码域名或协议。
+     */
+    private String domain = "localhost";
 
     /**
      * 证书类型，对应配置文件中的 {@code ssl.type}。
