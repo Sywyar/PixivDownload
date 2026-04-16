@@ -6,23 +6,26 @@ import org.apache.catalina.connector.Connector;
 import org.apache.tomcat.util.descriptor.web.SecurityCollection;
 import org.apache.tomcat.util.descriptor.web.SecurityConstraint;
 import org.springframework.boot.web.embedded.tomcat.TomcatServletWebServerFactory;
+import org.springframework.boot.web.server.Ssl;
 import org.springframework.boot.web.server.WebServerFactoryCustomizer;
+import org.springframework.core.annotation.Order;
 import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
 
 /**
- * 当 HTTPS 已配置且 {@code ssl.http-redirect=true} 时，
- * 在 {@code ssl.http-redirect-port}（默认 80）额外开启一个 HTTP 连接器，
- * 所有 HTTP 请求将被 Tomcat 自动 301 重定向到 HTTPS 端口。
+ * 根据 {@code ssl.type} 选择性地加载 PEM 或 JKS 证书，并配置 HTTPS 连接器。
  *
- * <p>通过 {@code ssl.type} 选择证书类型：
- * <ul>
- *   <li>{@code pem}（默认）：{@code server.ssl.certificate} + {@code server.ssl.certificate-private-key}
- *   <li>{@code jks}：{@code server.ssl.key-store}（JKS/PKCS12）
- * </ul>
+ * <p>{@code @Order(1)} 确保本类在 Spring Boot 内置的
+ * {@code TomcatWebServerFactoryCustomizer}（{@code @Order(0)}）之后运行，
+ * 以干净的 {@link Ssl} 对象覆盖其配置——对象中只含 {@code ssl.type} 指定类型的证书属性，
+ * 另一类型的属性完全不读取，从根本上避免跨类型属性干扰。
+ *
+ * <p>当 {@code ssl.http-redirect=true} 时，额外在 {@code ssl.http-redirect-port}（默认 80）
+ * 开启 HTTP 连接器，将所有 HTTP 请求 301 重定向到 HTTPS 端口。
  */
 @Slf4j
 @Component
+@Order(1)
 @RequiredArgsConstructor
 public class HttpsWebServerCustomizer implements WebServerFactoryCustomizer<TomcatServletWebServerFactory> {
 
@@ -31,42 +34,66 @@ public class HttpsWebServerCustomizer implements WebServerFactoryCustomizer<Tomc
 
     @Override
     public void customize(TomcatServletWebServerFactory factory) {
-        if (!sslConfig.isHttpRedirect()) {
-            return;
+        boolean sslEnabled = environment.getProperty("server.ssl.enabled", Boolean.class, false);
+        if (!sslEnabled) return;
+
+        Ssl ssl = buildSsl();
+        if (ssl == null) return;
+
+        // 覆盖 Spring Boot 基于 server.ssl.* 自动装配的 Ssl 对象
+        factory.setSsl(ssl);
+        log.info("HTTPS 已启用（ssl.type={}）", sslConfig.getType());
+
+        if (sslConfig.isHttpRedirect()) {
+            int httpsPort = environment.getProperty("server.port", Integer.class, 6999);
+            int httpPort = sslConfig.getHttpRedirectPort();
+            log.info("HTTP→HTTPS 重定向已启用：监听 HTTP 端口 {}，重定向到 HTTPS 端口 {}", httpPort, httpsPort);
+            factory.addAdditionalTomcatConnectors(createHttpConnector(httpPort, httpsPort));
+            factory.addContextCustomizers(context -> {
+                SecurityConstraint constraint = new SecurityConstraint();
+                constraint.setUserConstraint("CONFIDENTIAL");
+                SecurityCollection collection = new SecurityCollection();
+                collection.addPattern("/*");
+                constraint.addCollection(collection);
+                context.addConstraint(constraint);
+            });
         }
-        if (!isSslConfigured()) {
-            log.warn("ssl.http-redirect=true 但未检测到有效的 HTTPS 证书配置（ssl.type={}），跳过 HTTP 重定向",
-                    sslConfig.getType());
-            return;
-        }
-
-        int httpsPort = environment.getProperty("server.port", Integer.class, 6999);
-        int httpPort = sslConfig.getHttpRedirectPort();
-
-        log.info("HTTP→HTTPS 重定向已启用：监听 HTTP 端口 {}，重定向到 HTTPS 端口 {}", httpPort, httpsPort);
-
-        factory.addAdditionalTomcatConnectors(createHttpConnector(httpPort, httpsPort));
-        factory.addContextCustomizers(context -> {
-            SecurityConstraint constraint = new SecurityConstraint();
-            constraint.setUserConstraint("CONFIDENTIAL");
-            SecurityCollection collection = new SecurityCollection();
-            collection.addPattern("/*");
-            constraint.addCollection(collection);
-            context.addConstraint(constraint);
-        });
     }
 
-    private boolean isSslConfigured() {
+    /**
+     * 根据 {@code ssl.type} 仅读取对应类型的证书属性，构建 {@link Ssl} 配置对象。
+     * 另一类型的属性不会被访问，返回 {@code null} 表示配置不足、跳过 HTTPS。
+     */
+    private Ssl buildSsl() {
         String type = sslConfig.getType();
-        if ("jks".equalsIgnoreCase(type)) {
-            String keyStore = environment.getProperty("server.ssl.key-store", "");
-            return !keyStore.isBlank();
-        } else {
-            // pem（默认）
+        Ssl ssl = new Ssl();
+
+        if ("pem".equalsIgnoreCase(type)) {
             String cert = environment.getProperty("server.ssl.certificate", "");
-            String certKey = environment.getProperty("server.ssl.certificate-private-key", "");
-            return !cert.isBlank() && !certKey.isBlank();
+            String key  = environment.getProperty("server.ssl.certificate-private-key", "");
+            if (cert.isBlank() || key.isBlank()) {
+                log.warn("ssl.type=pem：server.ssl.certificate 或 server.ssl.certificate-private-key 未配置，跳过 HTTPS 启动");
+                return null;
+            }
+            ssl.setCertificate(cert);
+            ssl.setCertificatePrivateKey(key);
+
+        } else if ("jks".equalsIgnoreCase(type)) {
+            String keyStore = environment.getProperty("server.ssl.key-store", "");
+            if (keyStore.isBlank()) {
+                log.warn("ssl.type=jks：server.ssl.key-store 未配置，跳过 HTTPS 启动");
+                return null;
+            }
+            ssl.setKeyStore(keyStore);
+            ssl.setKeyStorePassword(environment.getProperty("server.ssl.key-store-password", ""));
+            ssl.setKeyStoreType(environment.getProperty("server.ssl.key-store-type", "JKS"));
+
+        } else {
+            log.warn("ssl.type={} 不是有效值（pem / jks），跳过 HTTPS 启动", type);
+            return null;
         }
+
+        return ssl;
     }
 
     private Connector createHttpConnector(int httpPort, int httpsPort) {
