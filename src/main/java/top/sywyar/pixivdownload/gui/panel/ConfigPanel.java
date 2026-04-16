@@ -110,18 +110,39 @@ public class ConfigPanel extends JPanel {
 
     // ── 数据加载 ──────────────────────────────────────────────────────────────────
 
-    /** 从 config.yaml 加载当前值并填充控件；key 不存在或被注释时回退到字段默认值。 */
+    /**
+     * 从 config.yaml 加载当前值并填充控件；key 不存在或被注释时回退到字段默认值，
+     * 并将所有缺失的 key 连同默认值自动补全到 config.yaml（与 AppConfigGenerator 效果一致）。
+     */
     private void loadCurrentValues() {
         if (!configPath.toFile().exists()) return;
         try {
             Map<String, String> values = editor.readAll(renderedFields.keySet());
+            Map<String, String> missing = new LinkedHashMap<>();
+
             for (ConfigFieldSpec spec : ConfigFieldRegistry.ALL_FIELDS) {
                 FieldRenderer.RenderedField rf = renderedFields.get(spec.key());
                 if (rf == null) continue;
-                // key 不存在或被注释掉时，显式回退到字段默认值
-                String v = values.getOrDefault(spec.key(), spec.defaultValue());
-                rf.setValue().accept(v);
+                if (values.containsKey(spec.key())) {
+                    rf.setValue().accept(values.get(spec.key()));
+                } else {
+                    // key 不存在或被注释掉：用默认值填充控件，并记录待补全
+                    rf.setValue().accept(spec.defaultValue());
+                    missing.put(spec.key(), spec.defaultValue());
+                }
             }
+
+            // 自动将缺失的 key 补全到 config.yaml
+            if (!missing.isEmpty()) {
+                try {
+                    editor.writeAll(missing);
+                    log.info("已自动补全 {} 个缺失的配置项: {}",
+                            missing.size(), String.join(", ", missing.keySet()));
+                } catch (IOException ex) {
+                    log.warn("自动补全配置项失败: {}", ex.getMessage());
+                }
+            }
+
             updateEnabledStates();
         } catch (IOException e) {
             log.warn("读取配置文件失败: {}", e.getMessage());
@@ -193,24 +214,16 @@ public class ConfigPanel extends JPanel {
             return;
         }
 
-        // 收集所有值：隐藏字段写入空值（不注释），避免 Spring Boot 误读非当前类型的证书路径
+        // 收集所有值：隐藏字段写入空值，Spring Boot 对空值不加载对应证书
         Map<String, String> values = new LinkedHashMap<>();
-        Map<String, Boolean> cweMap = new LinkedHashMap<>();
         for (ConfigFieldSpec spec : ConfigFieldRegistry.ALL_FIELDS) {
             FieldRenderer.RenderedField rf = renderedFields.get(spec.key());
             if (rf == null) continue;
-            if (rf.panel().isVisible()) {
-                values.put(spec.key(), rf.getValue().get());
-                cweMap.put(spec.key(), spec.type().commentWhenEmpty);
-            } else {
-                // 隐藏字段：写入空字符串且不注释，Spring Boot 对空值不加载对应证书
-                values.put(spec.key(), "");
-                cweMap.put(spec.key(), false);
-            }
+            values.put(spec.key(), rf.panel().isVisible() ? rf.getValue().get() : "");
         }
 
         try {
-            editor.writeAll(values, cweMap);
+            editor.writeAll(values);
             showNotice("配置已保存，需重启服务生效");
             log.info("配置已保存到: {}", configPath);
         } catch (IOException e) {

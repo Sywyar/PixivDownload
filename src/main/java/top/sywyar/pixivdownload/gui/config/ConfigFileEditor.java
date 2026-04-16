@@ -56,34 +56,31 @@ public class ConfigFileEditor {
      * 将 key 写入（或更新）config.yaml。
      * <ul>
      *   <li>找到活跃行 → 替换 value</li>
-     *   <li>找到注释行 → 若 value 非空则取消注释并写入；若 value 为空则保持注释</li>
+     *   <li>找到注释行 → 取消注释并写入（config.yaml 中不允许注释行）</li>
      *   <li>未找到 → 追加到文件末尾</li>
      * </ul>
-     *
-     * @param commentWhenEmpty 若 true，value 为空时将该行注释掉；false 则仍写入活跃行
      */
-    public synchronized void write(String key, String value, boolean commentWhenEmpty) throws IOException {
+    public synchronized void write(String key, String value) throws IOException {
         List<String> lines = new ArrayList<>(Files.readAllLines(configPath, StandardCharsets.UTF_8));
         boolean found = false;
         for (int i = 0; i < lines.size(); i++) {
             if (matchesKey(lines.get(i).trim(), key)) {
-                lines.set(i, buildLine(lines.get(i), key, value, commentWhenEmpty));
+                lines.set(i, buildLine(lines.get(i), key, value));
                 found = true;
                 break;
             }
         }
-        if (!found && value != null && !value.isBlank()) {
-            lines.add(key + ": " + value);
+        if (!found) {
+            lines.add(key + ": " + (value != null ? value : ""));
         }
         Files.write(configPath, lines, StandardCharsets.UTF_8);
     }
 
     /**
      * 批量写入，单次 I/O。
-     * map 中 key 对应的 fieldSpec 提供 commentWhenEmpty 语义。
+     * 所有 key 均写为活跃行，值为空时写入 "key: "（不注释）。
      */
-    public synchronized void writeAll(Map<String, String> values,
-                                      Map<String, Boolean> commentWhenEmptyMap) throws IOException {
+    public synchronized void writeAll(Map<String, String> values) throws IOException {
         List<String> lines = new ArrayList<>(Files.readAllLines(configPath, StandardCharsets.UTF_8));
         Set<String> written = new HashSet<>();
 
@@ -92,19 +89,18 @@ public class ConfigFileEditor {
             for (Map.Entry<String, String> entry : values.entrySet()) {
                 String key = entry.getKey();
                 if (!written.contains(key) && matchesKey(trimmed, key)) {
-                    boolean cwe = commentWhenEmptyMap.getOrDefault(key, false);
-                    lines.set(i, buildLine(lines.get(i), key, entry.getValue(), cwe));
+                    lines.set(i, buildLine(lines.get(i), key, entry.getValue()));
                     written.add(key);
                     break;
                 }
             }
         }
 
-        // 追加文件中不存在的 key
+        // 追加文件中不存在的 key（含 value 为空的字段，均写为活跃行）
         for (Map.Entry<String, String> entry : values.entrySet()) {
-            if (!written.contains(entry.getKey())
-                    && entry.getValue() != null && !entry.getValue().isBlank()) {
-                lines.add(entry.getKey() + ": " + entry.getValue());
+            String key = entry.getKey();
+            if (!written.contains(key)) {
+                lines.add(key + ": " + (entry.getValue() != null ? entry.getValue() : ""));
             }
         }
 
@@ -123,12 +119,10 @@ public class ConfigFileEditor {
 
     /**
      * 判断某行（已 trim）是否与 key 匹配（活跃行或注释行均算）。
-     * 供 write()/writeAll() 使用，以便定位并更新/取消注释已有行。
+     * 供 write()/writeAll() 使用：若配置文件中曾有注释行，也能定位并将其改写为活跃行。
      */
     private boolean matchesKey(String trimmed, String key) {
-        // 活跃行："key: ..." 或 "key :"
         if (startsWithKey(trimmed, key)) return true;
-        // 注释行："# key: ..."
         if (trimmed.startsWith("#")) {
             String uncommented = trimmed.substring(1).trim();
             return startsWithKey(uncommented, key);
@@ -169,22 +163,13 @@ public class ConfigFileEditor {
 
     /**
      * 构建替换后的完整行，保留行首缩进和行尾注释。
+     * 始终写为活跃行（不注释），config.yaml 中不允许注释行。
      */
-    private String buildLine(String originalLine, String key, String value, boolean commentWhenEmpty) {
+    private String buildLine(String originalLine, String key, String value) {
         String ws = leadingWhitespace(originalLine);
         String inlineComment = extractInlineComment(originalLine.trim());
         String commentSuffix = inlineComment.isEmpty() ? "" : "  " + inlineComment;
-
-        boolean makeComment = commentWhenEmpty && (value == null || value.isBlank());
-
-        if (makeComment) {
-            // 保留旧 value（如果有），并注释掉整行
-            String oldValue = extractValue(originalLine.trim());
-            String displayValue = (oldValue.isBlank() ? "" : oldValue);
-            return ws + "# " + key + ": " + displayValue + commentSuffix;
-        } else {
-            String v = (value == null) ? "" : value;
-            return ws + key + ": " + v + commentSuffix;
-        }
+        String v = (value == null) ? "" : value;
+        return ws + key + ": " + v + commentSuffix;
     }
 }

@@ -205,7 +205,7 @@ jobs:
             下载 `PixivDownload-*-win-x64.msi`，双击安装。
             安装包已内嵌精简 JRE，无需单独安装 Java。
 
-            或下载 `PixivDownload-*-win-x64-portable.zip`，解压后直接运行 `PixivDownload/PixivDownload.exe`，免安装。
+            或下载 `PixivDownload-*-win-x64-portable.zip`，解压后直接运行 `PixivDownload/PixivDownload.exe`，免安装，安装新版本时直接覆盖解压即可。
 
             ### ☕ JAR 包（跨平台）
 
@@ -219,7 +219,7 @@ jobs:
 
             ### 🌐 使用外部服务器（推荐方式）
 
-            如果后端部署在非 `localhost` 的外部服务器上，**推荐直接通过网页端访问**，无需安装油猴脚本：
+            **推荐直接通过网页端访问**，无需安装油猴脚本：
 
             ```
             http://<your-server-ip>:<port>/login.html
@@ -230,6 +230,8 @@ jobs:
             ---
 
             ### 🔧 使用油猴脚本连接外部服务器
+            
+            如果你是通过 pixiv-batch 网页安装的插件，则可以忽略这一步
 
             若仍需使用油猴脚本连接外部服务器，需修改每个脚本头部的 `@connect` 指令，将 `YOUR_SERVER_HOST` 替换为实际的服务器 IP 或域名：
 

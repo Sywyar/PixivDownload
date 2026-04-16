@@ -2,21 +2,18 @@ package top.sywyar.pixivdownload.gui.config;
 
 /**
  * 配置字段的 UI 控件类型。
- * commentWhenEmpty: 值为空时是否在 config.yaml 中注释掉该行（不写入 Spring）
+ * config.yaml 中的配置项永远不注释，commentWhenEmpty 恒为 false。
  */
 public enum FieldType {
-    PATH_DIR(true),
-    PATH_FILE(true),
-    PORT(false),
-    BOOL(false),
-    INT(false),
-    STRING(false),
-    ENUM(false),
-    PASSWORD(true);
+    PATH_DIR,
+    PATH_FILE,
+    PORT,
+    BOOL,
+    INT,
+    STRING,
+    ENUM,
+    PASSWORD;
 
-    public final boolean commentWhenEmpty;
-
-    FieldType(boolean commentWhenEmpty) {
-        this.commentWhenEmpty = commentWhenEmpty;
-    }
+    /** 始终为 false：config.yaml 中不允许出现被注释的配置行。 */
+    public final boolean commentWhenEmpty = false;
 }
