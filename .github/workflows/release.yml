@@ -94,7 +94,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p build/input
-          cp "${{ steps.vars.outputs.jar }}" "build/input/${{ steps.vars.outputs.jar_name }}"
+          cp "${{ steps.vars.outputs.jar }}" "build/input/PixivDownload-${{ steps.vars.outputs.version }}.jar"
 
       - name: Build trimmed runtime with jlink
         shell: bash
@@ -116,7 +116,7 @@ jobs:
             --app-version "${{ steps.vars.outputs.version }}" \
             --vendor "$APP_VENDOR" \
             --input build/input \
-            --main-jar "${{ steps.vars.outputs.jar_name }}" \
+            --main-jar "PixivDownload-${{ steps.vars.outputs.version }}.jar" \
             --main-class "$MAIN_CLASS" \
             --runtime-image build/runtime \
             --icon src/main/resources/static/favicon.ico \
@@ -138,7 +138,7 @@ jobs:
             --app-version "${{ steps.vars.outputs.version }}" \
             --vendor "$APP_VENDOR" \
             --input build/input \
-            --main-jar "${{ steps.vars.outputs.jar_name }}" \
+            --main-jar "PixivDownload-${{ steps.vars.outputs.version }}.jar" \
             --main-class "$MAIN_CLASS" \
             --runtime-image build/runtime \
             --icon src/main/resources/static/favicon.ico \
