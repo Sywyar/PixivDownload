@@ -53,12 +53,12 @@ PixivDownload is a local Pixiv batch image download tool with multiple download 
 
 Download the latest version from [Releases](../../releases):
 
-| Type                                          | Description                                                                                                                         |
-|-----------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------|
-| `PixivDownload-vX.X.X.jar`                    | Universal JAR, requires Java 17+                                                                                                    |
-| `PixivDownload-*-win-x64-online-portable.zip` | Windows online portable build with the smallest download size; if FFmpeg is already installed, this is the only package you need    |
-| `PixivDownload-*-win-x64-portable.zip`        | Windows offline portable build with bundled JRE and FFmpeg, suitable when FFmpeg is not installed or when you need an offline setup |
-| `PixivDownload-*-win-x64-<culture>-with-ffmpeg.msi` | Windows installer, currently shipped in `zh-CN` and `en-US`; FFmpeg is bundled and installed by default, so it works out of the box at a larger download size |
+| Type                                                | Description                                                                                                                                                                         |
+|-----------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `PixivDownload-vX.X.X.jar`                          | Universal JAR, requires Java 17+                                                                                                                                                    |
+| `PixivDownload-*-win-x64-online-portable.zip`       | Windows online portable build with the smallest download size; if FFmpeg is already installed, this is the only package you need                                                    |
+| `PixivDownload-*-win-x64-portable.zip`              | Windows offline portable build with bundled JRE and FFmpeg, suitable when FFmpeg is not installed or when you need an offline setup                                                 |
+| `PixivDownload-*-win-x64-<culture>-with-ffmpeg.msi` | Windows installer, currently shipped in `zh-CN` and `en-US`; FFmpeg is bundled and installed by default, so it works out of the box at a larger download size                       |
 | `PixivDownload-*-win-x64-<culture>-no-ffmpeg.msi`   | Windows installer, currently shipped in `zh-CN` and `en-US`; FFmpeg is not bundled, so the installer is smaller and best when FFmpeg already exists or Ugoira-to-WebP is not needed |
 
 > Windows MSI packages are now split into fixed variants, so choose the package before downloading:
@@ -186,7 +186,9 @@ git checkout -b feat/your-change upstream/<default-branch>
 
 - JDK 17 (`pom.xml` currently targets Java 17, and Windows packaging also uses `jlink` and `jpackage`)
 - Maven 3.9+, or the bundled `mvnw` / `mvnw.cmd`
-- PowerShell for Windows packaging; WiX Toolset is also required for MSI builds (`heat.exe`, `candle.exe`, `light.exe`)
+- PowerShell for Windows packaging; before building MSI packages you also need to install WiX Toolset and make sure `heat.exe`, `candle.exe`, and `light.exe` are available. The current `scripts/package-local.ps1` script calls these classic WiX command-line tools directly, so install a WiX Toolset distribution that includes them.
+- Official WiX Toolset overview/docs: https://docs.firegiant.com/wix/
+- WiX Toolset v3 releases (installer and binary packages that include the tools above): https://github.com/wixtoolset/wix3/releases
 - `curl.exe` if you build the offline portable package or a `with-ffmpeg` MSI, because the packaging script downloads or reuses the FFmpeg payload under `build/ffmpeg`
 
 ### 3. Daily development and local verification
@@ -237,7 +239,7 @@ Useful options:
 - `-MsiVariants with-ffmpeg,no-ffmpeg`: choose MSI variants
 - `-RedownloadFfmpeg`: force a fresh FFmpeg download
 
-Artifacts are written to `build/out/` by default. MSI generation requires the WiX toolchain. Offline portable packages and `with-ffmpeg` MSI variants also require the FFmpeg payload, which the script prepares automatically.
+Artifacts are written to `build/out/` by default. MSI generation requires a working WiX Toolset installation (`heat.exe`, `candle.exe`, `light.exe`). Offline portable packages and `with-ffmpeg` MSI variants also require the FFmpeg payload, which the script prepares automatically.
 
 ### 5. Commit and open a PR
 
@@ -273,3 +275,8 @@ Features:
 - Useful auxiliary features like ad removal, quick bookmark, image viewer mode, etc. `(can also serve as a Pixiv helper plugin?)`
 - Download doesn't depend on third-party tools `(the biggest difference from this project! Easy installation!)`
 - Supports multiple languages
+
+## 开发计划
+
+#### View image page (conceptual diagram)
+![](./image/8.png)
