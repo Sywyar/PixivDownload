@@ -203,6 +203,16 @@ public class UserQuotaService {
         return token;
     }
 
+    public String triggerAdminArchive(List<Path> folders) {
+        String token = UUID.randomUUID().toString();
+        long expireTime = System.currentTimeMillis()
+                + (long) config.getQuota().getArchiveExpireMinutes() * 60_000;
+        ArchiveEntry entry = new ArchiveEntry(token, null, expireTime);
+        archiveMap.put(token, entry);
+        buildAdminArchiveAsync(token, folders);
+        return token;
+    }
+
     @Async
     public void buildArchiveAsync(String token, String uuid) {
         ArchiveEntry entry = archiveMap.get(token);
@@ -264,6 +274,56 @@ public class UserQuotaService {
         } catch (Exception e) {
             entry.setStatus("error");
             log.error("压缩包 {} 创建失败 (用户 {})", token, uuid, e);
+        }
+    }
+
+    @Async
+    public void buildAdminArchiveAsync(String token, List<Path> folders) {
+        ArchiveEntry entry = archiveMap.get(token);
+        if (entry == null) return;
+
+        entry.setStatus("creating");
+
+        if (folders == null || folders.isEmpty()) {
+            entry.setStatus("empty");
+            return;
+        }
+
+        try {
+            Path archiveDir = Paths.get(downloadConfig.getRootFolder(), "_archives");
+            Files.createDirectories(archiveDir);
+            Path archivePath = archiveDir.resolve(token + ".zip");
+
+            try (ZipOutputStream zos = new ZipOutputStream(
+                    new BufferedOutputStream(new FileOutputStream(archivePath.toFile()),
+                            64 * 1024))) {
+                zos.setLevel(Deflater.BEST_COMPRESSION);
+
+                for (Path folder : folders) {
+                    if (folder == null || !Files.exists(folder)) continue;
+                    String folderName = folder.getFileName().toString();
+                    try (var stream = Files.walk(folder)) {
+                        stream.filter(Files::isRegularFile).forEach(file -> {
+                            try {
+                                String entryName = folderName + "/" + file.getFileName();
+                                zos.putNextEntry(new ZipEntry(entryName));
+                                Files.copy(file, zos);
+                                zos.closeEntry();
+                            } catch (IOException e) {
+                                throw new UncheckedIOException(e);
+                            }
+                        });
+                    }
+                }
+            }
+
+            entry.setArchivePath(archivePath);
+            entry.setStatus("ready");
+            log.info("管理员压缩包 {} 创建完成: {} ({} 个文件夹，源文件保留)",
+                    token, archivePath, folders.size());
+        } catch (Exception e) {
+            entry.setStatus("error");
+            log.error("管理员压缩包 {} 创建失败", token, e);
         }
     }
 

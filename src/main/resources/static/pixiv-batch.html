@@ -562,6 +562,7 @@
             flex: 1;
         }
 
+        .app-nav-login,
         .app-nav-logout {
             font-size: 12px;
             padding: 6px 12px;
@@ -573,6 +574,7 @@
             transition: all 0.2s;
         }
 
+        .app-nav-login:hover,
         .app-nav-logout:hover {
             background: white;
             color: #28a745;
@@ -795,6 +797,8 @@
         <i class="fas fa-layer-group"></i> BATCH
     </a>
     <div class="app-nav-spacer"></div>
+    <button id="login-btn" style="display:none;" class="app-nav-login"
+            onclick="location.href='/login.html?redirect=/pixiv-batch.html'">Login</button>
     <button id="logout-btn" style="display:none;" class="app-nav-logout" onclick="doLogout()">Logout</button>
 </nav>
 
@@ -986,7 +990,11 @@
 
     <!-- Queue -->
     <div class="card" style="margin-top:14px;">
-        <div class="card-title">下载队列</div>
+        <div class="card-title" style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+            <span>下载队列</span>
+            <button id="admin-pack-btn" style="display:none;padding:6px 12px;font-size:12px;"
+                    class="btn btn-blue" onclick="triggerAdminPack()">打包队列中已完成作品</button>
+        </div>
         <div id="queue-list">
             <div class="queue-empty">队列为空</div>
         </div>
@@ -1030,7 +1038,7 @@
     /* ============================================================
        配额 & 压缩包
     ============================================================ */
-    let quotaInfo = {enabled: false, artworksUsed: 0, maxArtworks: 50, resetSeconds: 0};
+    let quotaInfo = {enabled: false, adminMode: false, artworksUsed: 0, maxArtworks: 50, resetSeconds: 0};
     let archiveCountdownTimer = null;
     let archivePollTimer = null;
     let quotaResetTimer = null;
@@ -1041,9 +1049,19 @@
             const res = await fetch(BASE + '/api/quota/init', {method: 'POST', credentials: 'same-origin'});
             if (!res.ok) return;
             const data = await res.json();
-            if (!data.enabled) return;
+            quotaInfo.adminMode = !!data.adminMode;
+            if (quotaInfo.adminMode) {
+                quotaInfo.enabled = false;
+                hideQuotaBar();
+                return;
+            }
+            if (!data.enabled) {
+                quotaInfo.enabled = false;
+                hideQuotaBar();
+                return;
+            }
             quotaInfo = {
-                enabled: true, artworksUsed: data.artworksUsed, maxArtworks: data.maxArtworks,
+                enabled: true, adminMode: false, artworksUsed: data.artworksUsed, maxArtworks: data.maxArtworks,
                 resetSeconds: data.resetSeconds
             };
             renderQuotaBar();
@@ -1056,8 +1074,17 @@
         }
     }
 
+    function hideQuotaBar() {
+        document.getElementById('quota-bar').style.display = 'none';
+        document.getElementById('qb-reset').textContent = '';
+        clearInterval(quotaResetTimer);
+    }
+
     function renderQuotaBar() {
-        if (!quotaInfo.enabled) return;
+        if (!quotaInfo.enabled) {
+            hideQuotaBar();
+            return;
+        }
         document.getElementById('quota-bar').style.display = 'block';
         document.getElementById('qb-used').textContent = quotaInfo.artworksUsed;
         document.getElementById('qb-max').textContent = quotaInfo.maxArtworks;
@@ -1185,6 +1212,66 @@
         }
     }
 
+    async function triggerAdminPack() {
+        const ids = state.queue
+            .filter(q => q.status === 'completed')
+            .map(q => Number(q.id))
+            .filter(Number.isFinite);
+
+        if (ids.length === 0) {
+            setStatus('队列中暂无已完成的作品可供打包', 'warning');
+            return;
+        }
+
+        const btn = document.getElementById('admin-pack-btn');
+        btn.disabled = true;
+
+        try {
+            const res = await fetch(BASE + '/api/archive/pack-artworks', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                credentials: 'same-origin',
+                body: JSON.stringify({artworkIds: ids})
+            });
+
+            if (res.status === 401) {
+                isAdmin = false;
+                updateAuthButtons();
+                updateAdminPackButton();
+                setStatus('登录状态已失效，请重新登录', 'error');
+                return;
+            }
+
+            if (res.status === 204) {
+                setStatus('数据库中未找到对应文件夹，可能已被移动或删除', 'warning');
+                return;
+            }
+
+            let data = null;
+            try {
+                data = await res.json();
+            } catch {
+            }
+
+            if (!res.ok) {
+                setStatus((data && data.message) ? data.message : ('打包失败：HTTP ' + res.status), 'error');
+                return;
+            }
+
+            setStatus(`已提交打包请求（${ids.length} 个作品），正在生成压缩包...`, 'info');
+            showArchiveCard(
+                data.archiveToken,
+                data.archiveExpireSeconds || 3600,
+                false,
+                `管理员打包中（${ids.length} 个作品）`
+            );
+        } catch (e) {
+            setStatus('打包请求失败：' + e.message, 'error');
+        } finally {
+            updateAdminPackButton();
+        }
+    }
+
     function formatSeconds(s) {
         s = Math.max(0, Math.round(s));
         const h = Math.floor(s / 3600);
@@ -1198,6 +1285,7 @@
        模式检测 & 存储抽象（solo=服务器，multi=localStorage）
     ============================================================ */
     let appMode = 'multi';   // 'solo' | 'multi'，init() 中确定
+    let isAdmin = false;
     let serverState = {};    // solo 模式下的状态内存镜像
 
     async function detectMode() {
@@ -1220,6 +1308,20 @@
                 serverState = data.state ?? {};
             }
         } catch {
+        }
+    }
+
+    async function detectAuthState() {
+        try {
+            const res = await fetch('/api/auth/check', {credentials: 'same-origin'});
+            if (!res.ok) {
+                isAdmin = false;
+                return;
+            }
+            const data = await res.json();
+            isAdmin = !!data.valid;
+        } catch {
+            isAdmin = false;
         }
     }
 
@@ -1266,7 +1368,7 @@
             await fetch('/api/auth/logout', {method: 'POST', credentials: 'same-origin'});
         } catch {
         }
-        window.location.href = '/login.html';
+        window.location.href = '/pixiv-batch.html';
     }
 
     /* ============================================================
@@ -2094,6 +2196,24 @@
         document.getElementById('btn-start').disabled = state.isRunning;
         document.getElementById('btn-pause').disabled = !state.isRunning;
         document.getElementById('btn-pause').textContent = state.isPaused ? '▶ 继续' : '⏸ 暂停';
+        updateAdminPackButton();
+    }
+
+    function updateAuthButtons() {
+        document.getElementById('login-btn').style.display = isAdmin ? 'none' : 'block';
+        document.getElementById('logout-btn').style.display = isAdmin ? 'block' : 'none';
+    }
+
+    function updateAdminPackButton() {
+        const btn = document.getElementById('admin-pack-btn');
+        if (!btn) return;
+        if (!isAdmin) {
+            btn.style.display = 'none';
+            btn.disabled = true;
+            return;
+        }
+        btn.style.display = 'inline-flex';
+        btn.disabled = !state.queue.some(q => q.status === 'completed');
     }
 
     function setCurrent(item) {
@@ -2114,6 +2234,7 @@
         const el = document.getElementById('queue-list');
         if (!state.queue.length) {
             el.innerHTML = '<div class="queue-empty">队列为空</div>';
+            updateAdminPackButton();
             return;
         }
         el.innerHTML = state.queue.map(q => {
@@ -2147,6 +2268,7 @@
       ${prog}
     </div>`;
         }).join('');
+        updateAdminPackButton();
     }
 
     function pct(q) {
@@ -2500,13 +2622,14 @@
     async function init() {
         // 检测使用模式，solo 模式则从服务器加载状态
         await detectMode();
+        await detectAuthState();
         // 多人模式：初始化配额状态
         if (appMode === 'multi') {
             await initQuota();
         }
+        updateAuthButtons();
         if (appMode === 'solo') {
             await loadServerState();
-            document.getElementById('logout-btn').style.display = 'block';
             document.getElementById('cookie-hint').textContent =
                 'Cookie 保存在服务器，所有设备共享同一配置。支持三种格式：Header String（直接复制浏览器请求头）、JSON（对象格式）、Netscape（EditThisCookie 等工具导出）。';
         }

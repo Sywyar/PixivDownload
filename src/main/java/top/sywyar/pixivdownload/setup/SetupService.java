@@ -3,8 +3,10 @@ package top.sywyar.pixivdownload.setup;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
+import top.sywyar.pixivdownload.common.SessionUtils;
 import top.sywyar.pixivdownload.download.config.DownloadConfig;
 
 import org.springframework.boot.ApplicationArguments;
@@ -161,6 +163,11 @@ public class SetupService {
             return false;
         }
         return true;
+    }
+
+    public boolean isAdminLoggedIn(HttpServletRequest request) {
+        String token = SessionUtils.extractToken(request);
+        return token != null && isValidSession(token);
     }
 
     public void removeSession(String token) {

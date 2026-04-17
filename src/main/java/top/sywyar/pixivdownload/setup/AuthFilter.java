@@ -24,12 +24,29 @@ import java.io.IOException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.List;
+import java.util.Set;
 
 @Component
 @Order(1)
 @Slf4j
 @RequiredArgsConstructor
 public class AuthFilter extends OncePerRequestFilter {
+
+    private static final Set<String> MONITOR_EXACT_PATHS = Set.of(
+            "/monitor.html",
+            "/api/downloaded/statistics",
+            "/api/downloaded/history",
+            "/api/downloaded/history/paged",
+            "/api/downloaded/batch",
+            "/api/downloaded/by-move-folder",
+            "/api/download/status/active"
+    );
+
+    private static final List<String> MONITOR_PREFIX_PATHS = List.of(
+            "/api/downloaded/thumbnail/",
+            "/api/downloaded/rawfile/"
+    );
 
     private final SetupService setupService;
     private final RateLimitService rateLimitService;
@@ -75,6 +92,34 @@ public class AuthFilter extends OncePerRequestFilter {
             return;
         }
 
+        // 未完成初始配置 → 跳转 setup 页面
+        if (!setupService.isSetupComplete()) {
+            if (isApi(path)) {
+                sendJsonError(res, 503, "Setup required");
+            } else {
+                res.sendRedirect("/setup.html");
+            }
+            return;
+        }
+
+        if (isMonitorProtected(path)) {
+            String token = SessionUtils.extractToken(req);
+            if (!setupService.isValidSession(token)) {
+                if (isApi(path)) {
+                    sendJsonError(res, 401, "Unauthorized");
+                } else {
+                    String redirect = URLEncoder.encode(path, StandardCharsets.UTF_8);
+                    res.sendRedirect("/login.html?redirect=" + redirect);
+                }
+                return;
+            }
+            if ("multi".equals(setupService.getMode())) {
+                ensureUserUuidCookie(req, res);
+            }
+            chain.doFilter(req, res);
+            return;
+        }
+
         // /api/downloaded/ 接口：POST /move/ 仅限本地 IP；其余接口本地 IP 直接放行，非本地走 session 校验
         if (path.startsWith("/api/downloaded/") || path.equals("/api/download/status")) {
             if ("POST".equalsIgnoreCase(method) && path.contains("/downloaded/move/")) {
@@ -92,20 +137,11 @@ public class AuthFilter extends OncePerRequestFilter {
             // 非本地 IP 继续走下方 session 校验
         }
 
-        // 未完成初始配置 → 跳转 setup 页面
-        if (!setupService.isSetupComplete()) {
-            if (isApi(path)) {
-                sendJsonError(res, 503, "Setup required");
-            } else {
-                res.sendRedirect("/setup.html");
-            }
-            return;
-        }
-
         // 多人模式：无需认证，但为用户分配 UUID cookie（用于配额追踪）
         if ("multi".equals(setupService.getMode())) {
+            boolean isAdmin = setupService.isAdminLoggedIn(req);
             // 速率限制：对所有 API 请求按 UUID 计数，超出时返回 429
-            if (isApi(path)) {
+            if (!isAdmin && isApi(path)) {
                 String uuid = UuidUtils.extractOrGenerateUuid(req);
                 if (!rateLimitService.isAllowed(uuid)) {
                     sendJsonError(res, 429, "Too Many Requests");
@@ -130,6 +166,18 @@ public class AuthFilter extends OncePerRequestFilter {
                 res.sendRedirect("/login.html?redirect=" + redirect);
             }
         }
+    }
+
+    private boolean isMonitorProtected(String path) {
+        if (MONITOR_EXACT_PATHS.contains(path)) {
+            return true;
+        }
+        for (String prefix : MONITOR_PREFIX_PATHS) {
+            if (path.startsWith(prefix)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private boolean isPublic(String path) {

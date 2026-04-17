@@ -157,6 +157,11 @@ class AuthFilterTest {
     @DisplayName("/api/downloaded/ 本地访问控制")
     class DownloadedPathTests {
 
+        @BeforeEach
+        void setupMocks() {
+            when(setupService.isSetupComplete()).thenReturn(true);
+        }
+
         @Test
         @DisplayName("POST /api/downloaded/move/ 本地 IP 应放行")
         void shouldAllowLocalMoveRequest() throws Exception {
@@ -192,6 +197,19 @@ class AuthFilterTest {
             authFilter.doFilterInternal(request, response, filterChain);
 
             verify(filterChain).doFilter(request, response);
+        }
+
+        @Test
+        @DisplayName("monitor 专用 API 即使来自本地 IP 也应要求登录")
+        void shouldRequireLoginForMonitorApiFromLocalAddress() throws Exception {
+            request.setMethod("GET");
+            request.setRequestURI("/api/downloaded/statistics");
+            request.setRemoteAddr("127.0.0.1");
+
+            authFilter.doFilterInternal(request, response, filterChain);
+
+            assertThat(response.getStatus()).isEqualTo(401);
+            verify(filterChain, never()).doFilter(request, response);
         }
 
         @ParameterizedTest
@@ -253,8 +271,8 @@ class AuthFilterTest {
         @BeforeEach
         void setupMocks() {
             when(setupService.isSetupComplete()).thenReturn(true);
-            when(setupService.getMode()).thenReturn("multi");
-            when(rateLimitService.isAllowed(any())).thenReturn(true);
+            lenient().when(setupService.getMode()).thenReturn("multi");
+            lenient().when(rateLimitService.isAllowed(any())).thenReturn(true);
         }
 
         @Test
@@ -317,6 +335,35 @@ class AuthFilterTest {
             assertThat(cookie).contains("pixiv_user_id=");
             assertThat(cookie).doesNotContain("invalid-uuid");
         }
+
+        @Test
+        @DisplayName("monitor 页面在多人模式下也应要求登录")
+        void shouldRedirectMonitorPageToLoginWhenNotLoggedIn() throws Exception {
+            request.setMethod("GET");
+            request.setRequestURI("/monitor.html");
+            request.setRemoteAddr("192.168.1.100");
+
+            authFilter.doFilterInternal(request, response, filterChain);
+
+            assertThat(response.getRedirectedUrl()).isEqualTo("/login.html?redirect=%2Fmonitor.html");
+            verify(filterChain, never()).doFilter(request, response);
+        }
+
+        @Test
+        @DisplayName("已登录管理员访问 monitor 页面应放行并补发 UUID Cookie")
+        void shouldAllowMonitorPageForLoggedInAdmin() throws Exception {
+            when(setupService.isValidSession("valid-token")).thenReturn(true);
+
+            request.setMethod("GET");
+            request.setRequestURI("/monitor.html");
+            request.setRemoteAddr("192.168.1.100");
+            request.setCookies(new Cookie("pixiv_session", "valid-token"));
+
+            authFilter.doFilterInternal(request, response, filterChain);
+
+            verify(filterChain).doFilter(request, response);
+            assertThat(response.getHeader("Set-Cookie")).contains("pixiv_user_id=");
+        }
     }
 
     // ========== 速率限制 ==========
@@ -362,11 +409,27 @@ class AuthFilterTest {
         }
 
         @Test
-        @DisplayName("非 API 路径不进行速率限制检查")
-        void shouldNotCheckRateLimitForNonApiPaths() throws Exception {
+        @DisplayName("普通页面路径不进行速率限制检查")
+        void shouldNotCheckRateLimitForNormalPage() throws Exception {
             request.setMethod("GET");
-            request.setRequestURI("/monitor.html");
+            request.setRequestURI("/pixiv-batch.html");
             request.setRemoteAddr("192.168.1.100");
+
+            authFilter.doFilterInternal(request, response, filterChain);
+
+            verify(rateLimitService, never()).isAllowed(any());
+            verify(filterChain).doFilter(request, response);
+        }
+
+        @Test
+        @DisplayName("已登录管理员在多人模式下应跳过速率限制")
+        void shouldSkipRateLimitForAdminInMultiMode() throws Exception {
+            when(setupService.isAdminLoggedIn(any())).thenReturn(true);
+
+            request.setMethod("GET");
+            request.setRequestURI("/api/download/pixiv");
+            request.setRemoteAddr("192.168.1.100");
+            request.setCookies(new Cookie("pixiv_session", "valid-token"));
 
             authFilter.doFilterInternal(request, response, filterChain);
 
@@ -384,7 +447,7 @@ class AuthFilterTest {
         @BeforeEach
         void setupMocks() {
             when(setupService.isSetupComplete()).thenReturn(true);
-            when(setupService.getMode()).thenReturn("solo");
+            lenient().when(setupService.getMode()).thenReturn("solo");
         }
 
         @Test

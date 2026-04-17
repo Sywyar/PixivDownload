@@ -60,9 +60,10 @@ public class DownloadController {
         }
 
         String userUuid = null;
+        boolean isAdmin = setupService.isAdminLoggedIn(httpRequest);
 
         // 多人模式且配额启用时，检查下载配额
-        if ("multi".equals(setupService.getMode()) && multiModeConfig.getQuota().isEnabled()) {
+        if (!isAdmin && "multi".equals(setupService.getMode()) && multiModeConfig.getQuota().isEnabled()) {
             userUuid = extractUserUuid(httpRequest);
             int imageCount = request.getOther().isUgoira() ? 1 : request.getImageUrls().size();
             UserQuotaService.QuotaCheckResult check = userQuotaService.checkAndReserve(userUuid, imageCount);

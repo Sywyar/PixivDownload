@@ -1,5 +1,6 @@
 package top.sywyar.pixivdownload.gui.panel;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import top.sywyar.pixivdownload.gui.config.*;
 
@@ -9,6 +10,7 @@ import javax.swing.event.DocumentListener;
 import java.awt.*;
 import java.awt.Desktop;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.List;
@@ -20,8 +22,14 @@ import java.util.List;
 @Slf4j
 public class ConfigPanel extends JPanel {
 
+    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final String DEFAULT_ROOT_FOLDER = "pixiv-download";
+    private static final String SOLO_MODE = "solo";
+    private static final String MULTI_MODE_GROUP = "多人模式";
+
     private final Path configPath;
     private final ConfigFileEditor editor;
+    private final String currentMode;
 
     /** key → 渲染后的字段（含取值/赋值方法） */
     private final Map<String, FieldRenderer.RenderedField> renderedFields = new LinkedHashMap<>();
@@ -32,6 +40,7 @@ public class ConfigPanel extends JPanel {
     public ConfigPanel(Path configPath) {
         this.configPath = configPath;
         this.editor = new ConfigFileEditor(configPath);
+        this.currentMode = resolveCurrentMode();
         buildUi();
         loadCurrentValues();
         checkFieldDrift();
@@ -45,6 +54,9 @@ public class ConfigPanel extends JPanel {
         // 子标签页（按 group）
         JTabbedPane tabs = new JTabbedPane(JTabbedPane.TOP);
         for (String group : ConfigFieldRegistry.GROUPS) {
+            if (shouldHideGroup(group)) {
+                continue;
+            }
             tabs.addTab(group, buildGroupPanel(group));
         }
         add(tabs, BorderLayout.CENTER);
@@ -77,6 +89,34 @@ public class ConfigPanel extends JPanel {
         sp.setBorder(null);
         sp.getVerticalScrollBar().setUnitIncrement(16);
         return sp;
+    }
+
+    private boolean shouldHideGroup(String group) {
+        return SOLO_MODE.equalsIgnoreCase(currentMode) && MULTI_MODE_GROUP.equals(group);
+    }
+
+    private String resolveCurrentMode() {
+        String rootFolder = DEFAULT_ROOT_FOLDER;
+        try {
+            String configuredRoot = editor.read("download.root-folder");
+            if (configuredRoot != null && !configuredRoot.isBlank()) {
+                rootFolder = configuredRoot.trim();
+            }
+        } catch (IOException e) {
+            log.debug("读取下载目录失败，使用默认目录推断运行模式: {}", e.getMessage());
+        }
+
+        Path setupConfigPath = Path.of(rootFolder, "setup_config.json");
+        if (!Files.isRegularFile(setupConfigPath)) {
+            return null;
+        }
+
+        try {
+            return MAPPER.readTree(setupConfigPath.toFile()).path("mode").asText(null);
+        } catch (IOException e) {
+            log.warn("读取运行模式失败: {}", e.getMessage());
+            return null;
+        }
     }
 
     private JPanel buildBottomPanel() {

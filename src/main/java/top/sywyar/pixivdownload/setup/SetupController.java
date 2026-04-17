@@ -92,7 +92,7 @@ public class SetupController {
 
     @GetMapping("/api/auth/check")
     public AuthCheckResponse check(HttpServletRequest request) {
-        return new AuthCheckResponse(setupService.isValidSession(SessionUtils.extractToken(request)));
+        return new AuthCheckResponse(setupService.isAdminLoggedIn(request));
     }
 
     private String getClientIp(HttpServletRequest request) {

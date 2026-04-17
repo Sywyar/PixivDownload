@@ -1,9 +1,11 @@
 package top.sywyar.pixivdownload.setup;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.boot.ApplicationArguments;
+import org.springframework.mock.web.MockHttpServletRequest;
 import top.sywyar.pixivdownload.download.config.DownloadConfig;
 
 import java.io.IOException;
@@ -249,6 +251,35 @@ class SetupServiceTest {
             setupService.removeSession(token1);
             assertThat(setupService.isValidSession(token1)).isFalse();
             assertThat(setupService.isValidSession(token2)).isTrue();
+        }
+    }
+
+    @Nested
+    @DisplayName("isAdminLoggedIn - 请求登录态判断")
+    class IsAdminLoggedInTests {
+
+        @BeforeEach
+        void initSetup() throws IOException {
+            setupService.init("admin", "password123", "multi");
+        }
+
+        @Test
+        @DisplayName("有效 session cookie 应识别为已登录")
+        void shouldRecognizeValidSessionCookie() {
+            String token = setupService.createSession(false);
+            MockHttpServletRequest request = new MockHttpServletRequest();
+            request.setCookies(new Cookie("pixiv_session", token));
+
+            assertThat(setupService.isAdminLoggedIn(request)).isTrue();
+        }
+
+        @Test
+        @DisplayName("无效 session 应返回未登录")
+        void shouldRejectInvalidSession() {
+            MockHttpServletRequest request = new MockHttpServletRequest();
+            request.setCookies(new Cookie("pixiv_session", "invalid-token"));
+
+            assertThat(setupService.isAdminLoggedIn(request)).isFalse();
         }
     }
 }

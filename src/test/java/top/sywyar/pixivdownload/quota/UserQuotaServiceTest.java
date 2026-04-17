@@ -276,6 +276,18 @@ class UserQuotaServiceTest {
             assertThat(entry.getToken()).isEqualTo(token);
             assertThat(entry.getUserUuid()).isEqualTo("user1");
         }
+
+        @Test
+        @DisplayName("管理员打包应创建不关联 UUID 的压缩包记录")
+        void shouldCreateAdminArchiveWithoutUserUuid() {
+            String token = userQuotaService.triggerAdminArchive(java.util.List.of());
+
+            UserQuotaService.ArchiveEntry entry = userQuotaService.getArchive(token);
+            assertThat(entry).isNotNull();
+            assertThat(entry.getToken()).isEqualTo(token);
+            assertThat(entry.getUserUuid()).isNull();
+            assertThat(entry.getStatus()).isEqualTo("empty");
+        }
     }
 
     // ========== deleteArchive ==========

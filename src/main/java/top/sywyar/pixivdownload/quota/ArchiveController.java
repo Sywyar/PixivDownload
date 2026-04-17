@@ -10,14 +10,23 @@ import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import top.sywyar.pixivdownload.common.UuidUtils;
+import top.sywyar.pixivdownload.download.db.ArtworkRecord;
+import top.sywyar.pixivdownload.download.db.PixivDatabase;
 import top.sywyar.pixivdownload.download.response.ErrorResponse;
+import top.sywyar.pixivdownload.quota.request.AdminPackRequest;
 import top.sywyar.pixivdownload.quota.response.ArchiveStatusResponse;
 import top.sywyar.pixivdownload.quota.response.PackRateLimitResponse;
 import top.sywyar.pixivdownload.quota.response.QuotaInitResponse;
 import top.sywyar.pixivdownload.quota.response.TriggerPackResponse;
 import top.sywyar.pixivdownload.setup.SetupService;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
 
 @RestController
 @Slf4j
@@ -27,6 +36,7 @@ public class ArchiveController {
     private final UserQuotaService userQuotaService;
     private final MultiModeConfig multiModeConfig;
     private final SetupService setupService;
+    private final PixivDatabase pixivDatabase;
 
     /**
      * 初始化配额会话：返回当前用户的 UUID 和配额状态。
@@ -34,10 +44,13 @@ public class ArchiveController {
      */
     @PostMapping("/api/quota/init")
     public ResponseEntity<QuotaInitResponse> initQuota(HttpServletRequest request) {
+        if (setupService.isAdminLoggedIn(request)) {
+            return ResponseEntity.ok(new QuotaInitResponse(false, true, null, null, null, null, null));
+        }
 
         if (!"multi".equals(setupService.getMode())
                 || !multiModeConfig.getQuota().isEnabled()) {
-            return ResponseEntity.ok(new QuotaInitResponse(false, null, null, null, null, null));
+            return ResponseEntity.ok(new QuotaInitResponse(false, false, null, null, null, null, null));
         }
 
         String existingUuid = UuidUtils.extractExistingUuid(request);
@@ -51,6 +64,7 @@ public class ArchiveController {
 
         return responseBuilder.body(new QuotaInitResponse(
                 true,
+                false,
                 uuid,
                 status.artworksUsed(),
                 status.maxArtworks(),
@@ -94,6 +108,52 @@ public class ArchiveController {
         }
 
         String token = userQuotaService.triggerArchive(uuid);
+        long expireSeconds = (long) multiModeConfig.getQuota().getArchiveExpireMinutes() * 60;
+        return ResponseEntity.ok(new TriggerPackResponse(token, expireSeconds));
+    }
+
+    @PostMapping("/api/archive/pack-artworks")
+    public ResponseEntity<?> triggerAdminPack(@RequestBody AdminPackRequest request,
+                                              HttpServletRequest httpRequest) {
+        if (!setupService.isAdminLoggedIn(httpRequest)) {
+            return ResponseEntity.status(401).body(new ErrorResponse("Unauthorized"));
+        }
+
+        if (request == null || request.getArtworkIds() == null || request.getArtworkIds().isEmpty()) {
+            return ResponseEntity.badRequest().body(new ErrorResponse("no artworks to pack"));
+        }
+
+        Set<Path> uniqueFolders = new LinkedHashSet<>();
+        for (Long artworkId : request.getArtworkIds()) {
+            if (artworkId == null) {
+                continue;
+            }
+            ArtworkRecord artwork = pixivDatabase.getArtwork(artworkId);
+            if (artwork == null) {
+                log.info("管理员打包跳过不存在的作品记录: artworkId={}", artworkId);
+                continue;
+            }
+
+            String folderString = resolveArtworkFolder(artwork);
+            if (folderString == null || folderString.isBlank()) {
+                log.info("管理员打包跳过缺少文件夹的作品记录: artworkId={}", artworkId);
+                continue;
+            }
+
+            Path folder = Path.of(folderString);
+            if (!Files.isDirectory(folder)) {
+                log.info("管理员打包跳过不存在的文件夹: artworkId={}, folder={}", artworkId, folder);
+                continue;
+            }
+            uniqueFolders.add(folder);
+        }
+
+        if (uniqueFolders.isEmpty()) {
+            return ResponseEntity.noContent().build();
+        }
+
+        List<Path> folders = new ArrayList<>(uniqueFolders);
+        String token = userQuotaService.triggerAdminArchive(folders);
         long expireSeconds = (long) multiModeConfig.getQuota().getArchiveExpireMinutes() * 60;
         return ResponseEntity.ok(new TriggerPackResponse(token, expireSeconds));
     }
@@ -154,5 +214,12 @@ public class ArchiveController {
                 .sameSite("Strict")
                 .httpOnly(true)
                 .build();
+    }
+
+    private String resolveArtworkFolder(ArtworkRecord artwork) {
+        if (artwork.moved() && artwork.moveFolder() != null && !artwork.moveFolder().isBlank()) {
+            return artwork.moveFolder();
+        }
+        return artwork.folder();
     }
 }

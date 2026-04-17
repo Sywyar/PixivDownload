@@ -10,6 +10,7 @@ import top.sywyar.pixivdownload.quota.UserQuotaService;
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class QuotaInitResponse {
     private final boolean enabled;
+    private final boolean adminMode;
     private final String uuid;
     private final Integer artworksUsed;
     private final Integer maxArtworks;
