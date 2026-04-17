@@ -58,7 +58,14 @@ Download the latest version from [Releases](../../releases):
 | `PixivDownload-vX.X.X.jar`                    | Universal JAR, requires Java 17+                                                                                                    |
 | `PixivDownload-*-win-x64-online-portable.zip` | Windows online portable build with the smallest download size; if FFmpeg is already installed, this is the only package you need    |
 | `PixivDownload-*-win-x64-portable.zip`        | Windows offline portable build with bundled JRE and FFmpeg, suitable when FFmpeg is not installed or when you need an offline setup |
-| `PixivDownload-*-win-x64.msi`                 | Windows installer with a feature-selection page; if FFmpeg is already installed, you do not need to select the FFmpeg component    |
+| `PixivDownload-*-win-x64-<culture>-with-ffmpeg.msi` | Windows installer, currently shipped in `zh-CN` and `en-US`; FFmpeg is bundled and installed by default, so it works out of the box at a larger download size |
+| `PixivDownload-*-win-x64-<culture>-no-ffmpeg.msi`   | Windows installer, currently shipped in `zh-CN` and `en-US`; FFmpeg is not bundled, so the installer is smaller and best when FFmpeg already exists or Ugoira-to-WebP is not needed |
+
+> Windows MSI packages are now split into fixed variants, so choose the package before downloading:
+> - `zh-CN` / `en-US`: installer UI language
+> - `with-ffmpeg`: FFmpeg is bundled for an out-of-box setup
+> - `no-ffmpeg`: FFmpeg is not bundled; best when FFmpeg already exists or when you only need regular image downloads
+> - The MSI wizard does not offer runtime language switching and no longer exposes an FFmpeg feature-selection page
 
 ```bash
 # JAR startup

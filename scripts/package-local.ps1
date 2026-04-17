@@ -4,7 +4,9 @@ param(
     [switch]$RunTests,
     [switch]$SkipOfflinePortable,
     [switch]$SkipMsi,
-    [switch]$RedownloadFfmpeg
+    [switch]$RedownloadFfmpeg,
+    [string[]]$MsiCultures = @("zh-CN", "en-US"),
+    [string[]]$MsiVariants = @("with-ffmpeg", "no-ffmpeg")
 )
 
 $ErrorActionPreference = "Stop"
@@ -29,11 +31,31 @@ $FfmpegZipUrl = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/
 $FfmpegExe = Join-Path $FfmpegDir "ffmpeg.exe"
 $FfprobeExe = Join-Path $FfmpegDir "ffprobe.exe"
 $FfmpegLicense = Join-Path $FfmpegDir "ffmpeg-LGPL.txt"
-$MsiPath = Join-Path $OutDir "$AppName-$Version-win-x64.msi"
 $OnlineZipPath = Join-Path $OutDir "$AppName-$Version-win-x64-online-portable.zip"
 $OfflineZipPath = Join-Path $OutDir "$AppName-$Version-win-x64-portable.zip"
 $FixWixKeyPathsScript = Join-Path $PSScriptRoot "fix-wix-per-user-keypaths.ps1"
 $InstallerVersion = $null
+$MsiLocalization = @{
+    "en-US" = @{
+        WxlPath = Join-Path $ProjectRoot "packaging/windows/installer.en-US.wxl"
+        LicenseRtfPath = Join-Path $ProjectRoot "packaging/windows/license.en-US.rtf"
+    }
+    "zh-CN" = @{
+        WxlPath = Join-Path $ProjectRoot "packaging/windows/installer.zh-CN.wxl"
+        LicenseRtfPath = Join-Path $ProjectRoot "packaging/windows/license.zh-CN.rtf"
+    }
+}
+$MsiVariantConfig = @{
+    "with-ffmpeg" = @{
+        IncludeFfmpeg = "yes"
+        RequiresPayload = $true
+    }
+    "no-ffmpeg" = @{
+        IncludeFfmpeg = "no"
+        RequiresPayload = $false
+    }
+}
+$BuiltMsiArtifacts = @()
 
 function Write-Step {
     param([string]$Message)
@@ -114,6 +136,28 @@ function Get-InstallerVersion {
     return $match.Value
 }
 
+function Get-MsiCultureConfig {
+    param([string]$Culture)
+
+    if (-not $MsiLocalization.ContainsKey($Culture)) {
+        $supported = ($MsiLocalization.Keys | Sort-Object) -join ", "
+        throw "Unsupported MSI culture '$Culture'. Supported values: $supported"
+    }
+
+    return $MsiLocalization[$Culture]
+}
+
+function Get-MsiVariantConfig {
+    param([string]$Variant)
+
+    if (-not $MsiVariantConfig.ContainsKey($Variant)) {
+        $supported = ($MsiVariantConfig.Keys | Sort-Object) -join ", "
+        throw "Unsupported MSI variant '$Variant'. Supported values: $supported"
+    }
+
+    return $MsiVariantConfig[$Variant]
+}
+
 function Ensure-FfmpegPayload {
     if ($SkipOfflinePortable -and $SkipMsi) {
         return
@@ -163,10 +207,24 @@ Push-Location $ProjectRoot
 try {
     Write-Step "Checking local toolchain"
     $InstallerVersion = Get-InstallerVersion $Version
+    $MsiCultures = @($MsiCultures | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique)
+    $MsiVariants = @($MsiVariants | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique)
     $mavenCmd = Get-MavenCommand
     Assert-Command "jlink"
     Assert-Command "jpackage"
     if (-not $SkipMsi) {
+        if ($MsiCultures.Count -eq 0) {
+            throw "At least one MSI culture must be specified unless -SkipMsi is used."
+        }
+        if ($MsiVariants.Count -eq 0) {
+            throw "At least one MSI variant must be specified unless -SkipMsi is used."
+        }
+        foreach ($culture in $MsiCultures) {
+            [void](Get-MsiCultureConfig $culture)
+        }
+        foreach ($variant in $MsiVariants) {
+            [void](Get-MsiVariantConfig $variant)
+        }
         Assert-Command "heat.exe"
         Assert-Command "candle.exe"
         Assert-Command "light.exe"
@@ -218,7 +276,18 @@ try {
     Write-Step "Packaging online portable zip"
     Compress-Archive -Path $OnlineAppDir -DestinationPath $OnlineZipPath -Force
 
-    Ensure-FfmpegPayload
+    $requiresFfmpegPayload = (-not $SkipOfflinePortable)
+    if (-not $SkipMsi) {
+        foreach ($variant in $MsiVariants) {
+            if ((Get-MsiVariantConfig $variant).RequiresPayload) {
+                $requiresFfmpegPayload = $true
+                break
+            }
+        }
+    }
+    if ($requiresFfmpegPayload) {
+        Ensure-FfmpegPayload
+    }
 
     if (-not $SkipOfflinePortable) {
         Write-Step "Building offline app-image"
@@ -249,31 +318,55 @@ try {
         )
         & $FixWixKeyPathsScript -Path (Join-Path $WixDir "AppFiles.wxs")
 
-        Write-Step "Compiling WiX sources"
-        Invoke-External "candle.exe" @(
-            "-nologo",
-            "-arch", "x64",
-            "-ext", "WixUIExtension",
-            "-dVersion=$InstallerVersion",
-            "-dAppImageDir=$OnlineAppDir",
-            "-dFfmpegExe=$FfmpegExe",
-            "-dFfprobeExe=$FfprobeExe",
-            "-dFfmpegLicense=$FfmpegLicense",
-            "-out", "$WixDir\",
-            "packaging/windows/installer.wxs",
-            (Join-Path $WixDir "AppFiles.wxs")
-        )
+        foreach ($variant in $MsiVariants) {
+            $variantConfig = Get-MsiVariantConfig $variant
 
-        Write-Step "Linking MSI"
-        Invoke-External "light.exe" @(
-            "-nologo",
-            "-ext", "WixUIExtension",
-            "-sice:ICE64",
-            "-sice:ICE91",
-            "-out", $MsiPath,
-            (Join-Path $WixDir "installer.wixobj"),
-            (Join-Path $WixDir "AppFiles.wixobj")
-        )
+            Write-Step "Compiling WiX sources ($variant)"
+            $candleArgs = @(
+                "-nologo",
+                "-arch", "x64",
+                "-ext", "WixUIExtension",
+                "-dVersion=$InstallerVersion",
+                "-dAppImageDir=$OnlineAppDir",
+                "-dIncludeFfmpeg=$($variantConfig.IncludeFfmpeg)",
+                "-out", "$WixDir\",
+                "packaging/windows/installer.wxs",
+                (Join-Path $WixDir "AppFiles.wxs")
+            )
+            if ($variantConfig.RequiresPayload) {
+                $candleArgs += @(
+                    "-dFfmpegExe=$FfmpegExe",
+                    "-dFfprobeExe=$FfprobeExe",
+                    "-dFfmpegLicense=$FfmpegLicense"
+                )
+            }
+            Invoke-External "candle.exe" $candleArgs
+
+            foreach ($culture in $MsiCultures) {
+                $cultureConfig = Get-MsiCultureConfig $culture
+                $msiPath = Join-Path $OutDir "$AppName-$Version-win-x64-$culture-$variant.msi"
+
+                Write-Step "Linking MSI ($culture, $variant)"
+                Invoke-External "light.exe" @(
+                    "-nologo",
+                    "-ext", "WixUIExtension",
+                    "-cultures:$culture",
+                    "-loc", $cultureConfig.WxlPath,
+                    "-dWixUILicenseRtf=$($cultureConfig.LicenseRtfPath)",
+                    "-sice:ICE64",
+                    "-sice:ICE91",
+                    "-out", $msiPath,
+                    (Join-Path $WixDir "installer.wixobj"),
+                    (Join-Path $WixDir "AppFiles.wixobj")
+                )
+
+                $BuiltMsiArtifacts += [pscustomobject]@{
+                    Culture = $culture
+                    Variant = $variant
+                    Path = $msiPath
+                }
+            }
+        }
     }
 
     Write-Step "Done"
@@ -282,7 +375,9 @@ try {
         Write-Host "Offline portable: $OfflineZipPath"
     }
     if (-not $SkipMsi) {
-        Write-Host "MSI            : $MsiPath"
+        foreach ($artifact in $BuiltMsiArtifacts) {
+            Write-Host ("MSI ({0}, {1}) : {2}" -f $artifact.Culture, $artifact.Variant, $artifact.Path)
+        }
     }
     Write-Host "Online app dir : $OnlineAppDir"
 } finally {

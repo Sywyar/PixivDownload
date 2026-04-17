@@ -1,21 +1,24 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
   <Product Id="*"
-           Name="PixivDownload"
-           Language="1033"
+           Name="!(loc.ProductName)"
+           Language="!(loc.ProductLanguage)"
            Version="$(var.Version)"
-           Manufacturer="sywyar"
+           Manufacturer="!(loc.Manufacturer)"
            UpgradeCode="4D4F3566-C6C0-4D24-9242-86059B2A84A5">
     <Package InstallerVersion="500"
              Platform="x64"
              Compressed="yes"
-             InstallScope="perUser" />
+             InstallScope="perUser"
+             SummaryCodepage="!(loc.SummaryCodepage)" />
 
-    <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
+    <MajorUpgrade DowngradeErrorMessage="!(loc.DowngradeErrorMessage)" />
     <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
 
     <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER" />
-    <WixVariable Id="WixUILicenseRtf" Value="packaging/windows/license.rtf" />
+    <WixVariable Id="WixUILicenseRtf"
+                 Value="packaging/windows/license.en-US.rtf"
+                 Overridable="yes" />
 
     <Icon Id="AppIcon" SourceFile="src/main/resources/static/favicon.ico" />
     <Property Id="ARPPRODUCTICON" Value="AppIcon" />
@@ -35,27 +38,31 @@
     </Directory>
 
     <Feature Id="MainFeature"
-             Title="PixivDownload"
-             Description="Core application files."
+             Title="!(loc.MainFeatureTitle)"
+             Description="!(loc.MainFeatureDescription)"
              Level="1"
-             Display="expand"
+             Display="hidden"
              Absent="disallow"
              ConfigurableDirectory="INSTALLFOLDER">
       <ComponentGroupRef Id="AppFiles" />
       <ComponentRef Id="ApplicationShortcuts" />
 
+      <?if $(var.IncludeFfmpeg) = yes ?>
       <Feature Id="FFmpegFeature"
-               Title="FFmpeg runtime"
-               Description="Install ffmpeg and ffprobe for Ugoira to WebP conversion."
+               Title="!(loc.FfmpegFeatureTitle)"
+               Description="!(loc.FfmpegFeatureDescription)"
                Level="1"
+               Display="hidden"
+               Absent="disallow"
                AllowAdvertise="no">
         <ComponentRef Id="FfmpegExecutable" />
         <ComponentRef Id="FfprobeExecutable" />
         <ComponentRef Id="FfmpegLicense" />
       </Feature>
+      <?endif?>
     </Feature>
 
-    <UIRef Id="WixUI_FeatureTree" />
+    <UIRef Id="WixUI_InstallDir" />
     <UIRef Id="WixUI_ErrorProgressText" />
   </Product>
 
@@ -85,6 +92,7 @@
     </Component>
   </Fragment>
 
+  <?if $(var.IncludeFfmpeg) = yes ?>
   <Fragment>
     <DirectoryRef Id="INSTALLFOLDER">
       <Component Id="FfmpegExecutable" Guid="{391B2966-A1F0-46CF-AB9B-73D96D81D794}">
@@ -119,4 +127,5 @@
       </Component>
     </DirectoryRef>
   </Fragment>
+  <?endif?>
 </Wix>
