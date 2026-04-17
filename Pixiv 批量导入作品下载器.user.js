@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Pixiv N-Tab 批量下载器
+// @name         Pixiv 批量导入作品下载器
 // @namespace    http://tampermonkey.net/
-// @version      2.0.4
-// @description  解析 N-Tab 导出，批量提交作品给本地后端下载，支持严格的下载状态校验。
+// @version      2.0.5
+// @description  粘贴作品链接列表批量下载，格式为 url | title，兼容 One-Tab，N-Tab 等标签页管理插件导出格式，支持严格的下载状态校验。
 // @author       Rewritten by ChatGPT,Claude,Sywyar
 // @match        https://www.pixiv.net/*
 // @grant        GM_xmlhttpRequest
@@ -492,6 +492,19 @@
             this._quotaExceededHandled = false;
         }
 
+        dedupeQueueItems(items) {
+            const seen = new Set();
+            const uniqueItems = [];
+            for (const item of items || []) {
+                if (!item || item.id === undefined || item.id === null) continue;
+                const id = String(item.id);
+                if (seen.has(id)) continue;
+                seen.add(id);
+                uniqueItems.push({...item, id});
+            }
+            return uniqueItems;
+        }
+
         loadFromStorage() {
             try {
                 const raw = GM_getValue(CONFIG.STORAGE_KEY, null);
@@ -499,9 +512,9 @@
                 const parsed = JSON.parse(raw);
                 if (Array.isArray(parsed.queue)) {
                     // 刷新后 downloading 状态的任务实际已中断，重置为 idle 以便重新下载
-                    this.queue = parsed.queue.map(q =>
+                    this.queue = this.dedupeQueueItems(parsed.queue.map(q =>
                         q.status === 'downloading' ? {...q, status: 'idle', lastMessage: '刷新后重置'} : q
-                    );
+                    ));
                     this.isRunning = false; // 启动时默认暂停，避免自动跑
                     this.isPaused = !!parsed.isPaused;
                     this.stats = parsed.stats || {completed: 0, success: 0, failed: 0, active: 0, skipped: 0};
@@ -559,7 +572,8 @@
         }
 
         setQueue(items) {
-            this.queue = items.map(it => ({
+            const uniqueItems = this.dedupeQueueItems(items);
+            this.queue = uniqueItems.map(it => ({
                 id: String(it.id),
                 title: it.title || `作品 ${it.id}`,
                 url: it.url || `https://www.pixiv.net/artworks/${it.id}`,
@@ -573,11 +587,12 @@
             this.updateStats();
             this.saveToStorage();
             this.ui.renderQueue(this.queue);
+            return uniqueItems.length;
         }
 
         parseAndSetFromText(rawText) {
             const lines = rawText.split('\n').map(l => l.trim()).filter(Boolean);
-            const items = [];
+            let items = [];
             const regex = /https?:\/\/www\.pixiv\.net\/artworks\/(\d+)/;
             for (const ln of lines) {
                 const m = ln.match(regex);
@@ -588,6 +603,7 @@
                     items.push({id, title: title || `作品 ${id}`, url: `https://www.pixiv.net/artworks/${id}`});
                 }
             }
+            items = this.dedupeQueueItems(items);
             this.setQueue(items);
             this.ui.setStatus(`解析完成：找到 ${items.length} 个作品`, 'success');
         }
@@ -744,7 +760,7 @@
                 // 必须先获取 meta：illustType===2 表示动图，pages API 对动图只返回 1 张 JPG 缩略图
                 // 不能依赖 pages 返回空来判断动图，必须用 illustType 判断
                 const meta = await Api.getArtworkMeta(item.id);
-                if (meta && meta.illustTitle) item.title = meta.illustTitle;
+                item.title = (meta && meta.illustTitle) || item.title || `作品 ${item.id}`;
 
                 if (this.r18Only) {
                     const restriction = meta ? (meta.xRestrict ?? meta.xrestrict ?? 0) : 0;
@@ -1072,7 +1088,7 @@
                 }
             });
             const titleText = $el('div', {
-                html: '🎨 N-Tab批量下载器 v1.2.1 (支持动图)',
+                html: '🎨 批量导入作品下载器 v1.2.1 (支持动图)',
                 style: {fontWeight: 'bold', color: '#333', textAlign: 'center', fontSize: '16px', flex: '1'}
             });
             collapseBtn.addEventListener('click', () => this.toggleCollapse());
@@ -1085,7 +1101,7 @@
             const miniFab = $el('button', {
                 id: 'ntab-mini-fab',
                 innerText: '🎨',
-                title: 'N-Tab批量下载器',
+                title: '批量导入作品下载器',
                 style: {
                     display: 'none',
                     position: 'fixed',
@@ -1129,7 +1145,7 @@
             const inputSection = $el('div', {style: {marginBottom: '15px'}});
             const textarea = $el('textarea', {
                 id: 'ntab-data-input',
-                placeholder: `粘贴 N-Tab 导出的内容...`,
+                placeholder: `粘贴作品链接列表，兼容 One-Tab，N-Tab 等标签页管理插件导出格式...`,
                 style: {
                     width: '100%',
                     height: '120px',
@@ -1142,6 +1158,20 @@
                 }
             });
             inputSection.appendChild(textarea);
+            const formatNotice = $el('div', {
+                html: `<div style="font-weight:bold;margin-bottom:4px;">导入格式：<span style="font-family:monospace;background:#fff;border-radius:4px;padding:1px 6px;">url | title</span></div><div>每行一条，例如：<span style="font-family:monospace;background:#fff;border-radius:4px;padding:1px 6px;">https://www.pixiv.net/artworks/12345678 | 示例标题</span></div><div>标题可留空；下载前会自动获取真实标题。兼容 One-Tab，N-Tab 等标签页管理插件导出格式。</div><div>也兼容下方“导出下载列表”“导出未下载列表”按钮生成的作品列表，可直接重新导入。</div>`,
+                style: {
+                    marginBottom: '12px',
+                    padding: '10px 12px',
+                    border: '1px solid #ffb84d',
+                    background: '#fff4db',
+                    borderRadius: '8px',
+                    color: '#8a5100',
+                    fontSize: '12px',
+                    lineHeight: '1.6'
+                }
+            });
+            inputSection.appendChild(formatNotice);
 
             const settings = $el('div', {style: {marginBottom: '15px'}});
             settings.innerHTML = `
@@ -1188,7 +1218,7 @@
             const buttons = [
                 {
                     id: 'parse-btn',
-                    text: '📋 解析N-Tab数据',
+                    text: '📋 导入并加入队列',
                     bgColor: '#007bff',
                     onClick: () => this.manager.parseAndSetFromText(this.elements.textarea.value)
                 },
@@ -1736,7 +1766,7 @@
         });
     })();
 
-    GM_registerMenuCommand('打开 Pixiv N-Tab 批量下载器', () => {
+    GM_registerMenuCommand('打开 Pixiv 批量导入作品下载器', () => {
         const root = document.getElementById('pixiv-batch-downloader-ui');
         if (root) {
             root.style.display = 'block';

@@ -9,13 +9,22 @@
     <Package InstallerVersion="500"
              Platform="x64"
              Compressed="yes"
-             InstallScope="perUser"
+             InstallScope="perMachine"
+             InstallPrivileges="elevated"
              SummaryCodepage="!(loc.SummaryCodepage)" />
 
-    <MajorUpgrade DowngradeErrorMessage="!(loc.DowngradeErrorMessage)" />
+    <MajorUpgrade AllowSameVersionUpgrades="yes"
+                  DowngradeErrorMessage="!(loc.DowngradeErrorMessage)" />
     <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
 
     <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER" />
+    <Property Id="INSTALLFOLDER" Secure="yes">
+      <RegistrySearch Id="FindExistingInstallLocation"
+                      Root="HKLM"
+                      Key="Software\sywyar\PixivDownload"
+                      Name="InstallLocation"
+                      Type="raw" />
+    </Property>
     <WixVariable Id="WixUILicenseRtf"
                  Value="packaging/windows/license.en-US.rtf"
                  Overridable="yes" />
@@ -24,17 +33,15 @@
     <Property Id="ARPPRODUCTICON" Value="AppIcon" />
 
     <Directory Id="TARGETDIR" Name="SourceDir">
-      <Directory Id="LocalAppDataFolder">
-        <Directory Id="ProgramsDir" Name="Programs">
-          <Directory Id="INSTALLFOLDER" Name="PixivDownload">
-            <Directory Id="LICENSESDIR" Name="licenses" />
-          </Directory>
+      <Directory Id="ProgramFiles64Folder">
+        <Directory Id="INSTALLFOLDER" Name="PixivDownload">
+          <Directory Id="LICENSESDIR" Name="licenses" />
         </Directory>
       </Directory>
-      <Directory Id="ProgramMenuFolder">
+      <Directory Id="CommonProgramsFolder">
         <Directory Id="ProgramMenuDir" Name="PixivDownload" />
       </Directory>
-      <Directory Id="DesktopFolder" />
+      <Directory Id="CommonDesktopFolder" />
     </Directory>
 
     <Feature Id="MainFeature"
@@ -76,14 +83,19 @@
                 Target="[INSTALLFOLDER]PixivDownload.exe"
                 Advertise="no" />
       <Shortcut Id="DesktopShortcut"
-                Directory="DesktopFolder"
+                Directory="CommonDesktopFolder"
                 Name="PixivDownload"
                 WorkingDirectory="INSTALLFOLDER"
                 Icon="AppIcon"
                 Target="[INSTALLFOLDER]PixivDownload.exe"
                 Advertise="no" />
       <RemoveFolder Id="RemoveProgramMenuDir" Directory="ProgramMenuDir" On="uninstall" />
-      <RegistryValue Root="HKCU"
+      <RegistryValue Root="HKLM"
+                     Key="Software\sywyar\PixivDownload"
+                     Name="InstallLocation"
+                     Type="string"
+                     Value="[INSTALLFOLDER]" />
+      <RegistryValue Root="HKLM"
                      Key="Software\sywyar\PixivDownload"
                      Name="installed"
                      Type="integer"
@@ -97,7 +109,7 @@
     <DirectoryRef Id="INSTALLFOLDER">
       <Component Id="FfmpegExecutable" Guid="{391B2966-A1F0-46CF-AB9B-73D96D81D794}">
         <File Id="FfmpegExecutableFile" Source="$(var.FfmpegExe)" />
-        <RegistryValue Root="HKCU"
+        <RegistryValue Root="HKLM"
                        Key="Software\sywyar\PixivDownload\Components"
                        Name="FfmpegExecutable"
                        Type="integer"
@@ -106,7 +118,7 @@
       </Component>
       <Component Id="FfprobeExecutable" Guid="{30390239-668B-4D7D-BD37-FCCF0F6DF990}">
         <File Id="FfprobeExecutableFile" Source="$(var.FfprobeExe)" />
-        <RegistryValue Root="HKCU"
+        <RegistryValue Root="HKLM"
                        Key="Software\sywyar\PixivDownload\Components"
                        Name="FfprobeExecutable"
                        Type="integer"
@@ -118,7 +130,7 @@
     <DirectoryRef Id="LICENSESDIR">
       <Component Id="FfmpegLicense" Guid="{7A1C8F71-7A06-4B71-BB98-5E66AFBC0D8F}">
         <File Id="FfmpegLicenseFile" Source="$(var.FfmpegLicense)" />
-        <RegistryValue Root="HKCU"
+        <RegistryValue Root="HKLM"
                        Key="Software\sywyar\PixivDownload\Components"
                        Name="FfmpegLicense"
                        Type="integer"

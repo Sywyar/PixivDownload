@@ -115,6 +115,13 @@ jobs:
             --java-options "-Dfile.encoding=UTF-8" \
             --dest build/app-image-online
 
+      - name: Patch launcher to request administrator rights
+        shell: pwsh
+        run: |
+          ./scripts/set-windows-exe-requested-execution-level.ps1 `
+            -Path "build/app-image-online/PixivDownload/PixivDownload.exe" `
+            -Level "requireAdministrator"
+
       - name: Download FFmpeg payload
         shell: bash
         run: |
@@ -169,7 +176,10 @@ jobs:
             -gg `
             -var var.AppImageDir `
             -out "build/wix/AppFiles.wxs"
-          ./scripts/fix-wix-per-user-keypaths.ps1 -Path "build/wix/AppFiles.wxs"
+          ./scripts/fix-wix-per-user-keypaths.ps1 `
+            -Path "build/wix/AppFiles.wxs" `
+            -RegistryRoot "HKLM" `
+            -RegistryKey "Software\sywyar\PixivDownload\Components"
 
       - name: Build localized MSI variants
         shell: pwsh
@@ -230,6 +240,7 @@ jobs:
                 "-cultures:$($culture.Culture)"
                 '-loc', $culture.Wxl
                 "-dWixUILicenseRtf=$($culture.License)"
+                '-sice:ICE61'
                 '-sice:ICE64'
                 '-sice:ICE91'
                 '-out', "build/out/PixivDownload-${{ steps.vars.outputs.version }}-win-x64-$($culture.Culture)-$($variant.Name).msi"

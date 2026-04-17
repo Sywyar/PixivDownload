@@ -552,6 +552,7 @@
             color: white;
             background: rgba(0, 0, 0, 0.1);
             font-weight: bold;
+            cursor: default;
         }
 
         .app-nav-link i {
@@ -790,12 +791,12 @@
 
 <nav class="app-nav">
     <span class="app-nav-brand">Pixiv 下载助手</span>
-    <a href="/monitor.html" class="app-nav-link">
+    <a href="/monitor.html" class="app-nav-link" target="_blank" rel="noopener">
         <i class="fas fa-chart-line"></i> MONITOR
     </a>
-    <a href="/pixiv-batch.html" class="app-nav-link active">
+    <span class="app-nav-link active" aria-current="page">
         <i class="fas fa-layer-group"></i> BATCH
-    </a>
+    </span>
     <div class="app-nav-spacer"></div>
     <button id="login-btn" style="display:none;" class="app-nav-login"
             onclick="location.href='/login.html?redirect=/pixiv-batch.html'">Login</button>
@@ -841,19 +842,25 @@
 
     <!-- Mode tabs -->
     <div class="tabs">
-        <div class="tab active" id="tab-ntab" onclick="switchMode('ntab')">🎨 N-Tab 模式</div>
+        <div class="tab active" id="tab-ntab" onclick="switchMode('ntab')">🎨 批量导入作品</div>
         <div class="tab" id="tab-user" onclick="switchMode('user')">👤 User 模式</div>
         <div class="tab" id="tab-search" onclick="switchMode('search')">🔍 Search 模式</div>
     </div>
 
     <!-- N-Tab panel -->
     <div class="card mode-panel active" id="panel-ntab">
-        <div class="card-title">N-Tab 导出数据</div>
+        <div class="card-title">批量导入作品</div>
         <textarea id="ntab-textarea"
-                  placeholder="粘贴 N-Tab 导出的内容（每行包含 https://www.pixiv.net/artworks/{id}）..."></textarea>
+                  placeholder="粘贴作品链接列表，兼容 One-Tab，N-Tab 等标签页管理插件导出格式..."></textarea>
+        <div style="margin:10px 0 12px;padding:10px 12px;border:1px solid #ffb84d;background:#fff4db;border-radius:8px;color:#8a5100;font-size:13px;line-height:1.6;">
+            <div style="font-weight:700;">导入格式：<span style="font-family:monospace;background:#fff;border-radius:4px;padding:1px 6px;">url | title</span></div>
+            <div>每行一条，例如：<span style="font-family:monospace;background:#fff;border-radius:4px;padding:1px 6px;">https://www.pixiv.net/artworks/12345678 | 示例标题</span></div>
+            <div>标题可留空；下载前会自动获取真实标题。兼容 One-Tab，N-Tab 等标签页管理插件导出格式。</div>
+            <div>也兼容下方“导出全部”“导出未下载”按钮生成的作品列表，可直接重新导入。</div>
+        </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:0;">
-            <button class="btn btn-blue" onclick="parseNTab()">📋 解析并加入队列</button>
-            <button class="btn" style="background:#e67e22;" onclick="parseNTabFresh()">🗑 清除队列并重新解析</button>
+            <button class="btn btn-blue" onclick="parseNTab()">📋 导入并加入队列</button>
+            <button class="btn" style="background:#e67e22;" onclick="parseNTabFresh()">🗑 清空队列后重新导入</button>
         </div>
     </div>
 
@@ -899,7 +906,7 @@
             Pixiv Premium 会员，未购买时 Pixiv 将自动按最新排序返回结果
         </div>
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;font-size:13px;">
-            <input type="checkbox" id="search-blur-r18" checked onchange="toggleBlurR18()">
+            <input type="checkbox" id="search-blur-r18" onchange="toggleBlurR18()">
             <label for="search-blur-r18" style="cursor:pointer;color:#d63384;">模糊 R18 缩略图（悬停查看）</label>
         </div>
         <div id="search-results-area">
@@ -1808,7 +1815,7 @@
 
         try {
             const meta = await getArtworkMeta(item.id);
-            item.title = meta.illustTitle || `作品 ${item.id}`;
+            item.title = meta.illustTitle || item.title || `作品 ${item.id}`;
 
             const isR18 = Number(meta.xRestrict ?? meta.xrestrict ?? 0) > 0;
             if (state.settings.R18Only && !isR18) {
@@ -1977,11 +1984,24 @@
     /* ============================================================
        队列管理
     ============================================================ */
+    function dedupeQueueItems(items) {
+        const seen = new Set();
+        const uniqueItems = [];
+        for (const item of items || []) {
+            if (!item || item.id === undefined || item.id === null) continue;
+            const id = String(item.id);
+            if (seen.has(id)) continue;
+            seen.add(id);
+            uniqueItems.push({...item, id});
+        }
+        return uniqueItems;
+    }
+
     function parseNTab() {
         const text = document.getElementById('ntab-textarea').value;
         const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
         const regex = /https?:\/\/www\.pixiv\.net\/artworks\/(\d+)/;
-        const items = [];
+        let items = [];
         for (const ln of lines) {
             const m = ln.match(regex);
             if (m) {
@@ -1990,6 +2010,7 @@
                 items.push({id, title: titleRaw || `作品 ${id}`});
             }
         }
+        items = dedupeQueueItems(items);
         if (!items.length) {
             setStatus('未解析到任何作品链接', 'error');
             return;
@@ -2018,6 +2039,7 @@
                 endTime: null,
                 lastMessage: ''
             });
+            existing.add(id);
             added++;
         }
         updateStats();
@@ -2248,7 +2270,7 @@
                 ? `<span style="background:#007bff;color:white;border-radius:3px;padding:1px 5px;font-size:10px;margin-left:5px;vertical-align:middle;">User</span>`
                 : q.source === 'search'
                     ? `<span style="background:#28a745;color:white;border-radius:3px;padding:1px 5px;font-size:10px;margin-left:5px;vertical-align:middle;">Search</span>`
-                    : `<span style="background:#6610f2;color:white;border-radius:3px;padding:1px 5px;font-size:10px;margin-left:5px;vertical-align:middle;">N-Tab</span>`;
+                    : `<span style="background:#6610f2;color:white;border-radius:3px;padding:1px 5px;font-size:10px;margin-left:5px;vertical-align:middle;">导入</span>`;
             const R18Label = q.isR18 === true
                 ? `<span style="background:#dc3545;color:white;border-radius:3px;padding:1px 5px;font-size:10px;margin-left:3px;vertical-align:middle;">R18</span>`
                 : q.isR18 === false
@@ -2336,7 +2358,7 @@
             }
             const parsed = JSON.parse(raw);
             if (Array.isArray(parsed.queue)) {
-                state.queue = parsed.queue;
+                state.queue = dedupeQueueItems(parsed.queue);
                 // 刷新前正在下载的项目实际已中断，标记为失败
                 state.queue.forEach(q => {
                     if (q.status === 'downloading') {
@@ -2405,7 +2427,7 @@
         currentMode: 'all',
         currentOrder: 'date_d',
         currentSMode: 's_tag',
-        blurR18: true,
+        blurR18: false,
         noCookie: false,
         activeBlobUrls: []
     };
@@ -2693,7 +2715,7 @@
         if (savedMode === 'search') {
             const blurPref = storeGet('pixiv_search_blur_r18');
             if (blurPref !== null) {
-                searchState.blurR18 = blurPref !== 'false';
+                searchState.blurR18 = blurPref === 'true';
                 document.getElementById('search-blur-r18').checked = searchState.blurR18;
             }
         }

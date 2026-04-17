@@ -27,11 +27,11 @@ public class ScriptRegistry {
      * 已知脚本文件名 → 短英文 id 映射，避免中文出现在 URL 路径上。
      */
     private static final Map<String, String> FILENAME_TO_ID = Map.of(
-            "Pixiv作品图片下载器(Java后端版).user.js", "artwork-java",
-            "Pixiv作品图片下载器(Local download).user.js", "artwork-local",
+            "Pixiv 单作品图片下载器(Java后端版).user.js", "artwork-java",
+            "Pixiv 单作品图片下载器(Local download).user.js", "artwork-local",
             "Pixiv User 批量下载器.user.js", "user-batch",
             "Pixiv 页面批量下载器.user.js", "page-batch",
-            "Pixiv N-Tab 批量下载器.user.js", "ntab-batch"
+            "Pixiv 批量导入作品下载器.user.js", "import-batch"
     );
 
     private final List<ScriptResource> scripts;

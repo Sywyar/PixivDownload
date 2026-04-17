@@ -6,18 +6,29 @@ Local Pixiv batch image download tool, consisting of a **Spring Boot backend** +
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
 
+## Table of Contents
+
+- [Overview](#overview)
+- [Installation](#installation)
+- [Usage](#usage)
+- [Development Guide](#development-guide)
+- [Disclaimer](#disclaimer)
+- [Additional Notes](#additional-notes)
+- [Friends Links](#friends-links)
+- [开发计划](#开发计划)
+
 ## Overview
 
 PixivDownload is a local Pixiv batch image download tool with multiple download methods and convenient management features.
 
 ### Features
 
-- Pixiv-batch.html [offers one-stop downloading](#Web-Batch-Download), N-Tab batch downloading, batch downloading of user-submitted works, and batch downloading of searched works. It works in conjunction with a page-based batch download script, requiring no other scripts.
+- Pixiv-batch.html [offers one-stop downloading](#Web-Batch-Download), including bulk artwork import, batch downloading of user-submitted works, and batch downloading of searched works. It works in conjunction with a page-based batch download script, requiring no other scripts.
 - Batch page download — scrape all works from the entire Pixiv site, including search pages, followed feeds, leaderboards, etc.
 - monitor.html is a [one-stop management page](#Download-Monitor) that allows for multi-dimensional filtering and sorting of works.
 - Single artwork download — one-click download on artwork pages
 - User homepage batch download — batch download all works from a user
-- N-Tab bookmark batch download — import N-Tab bookmark exports for batch downloading
+- Bulk artwork import — paste artwork link lists in `url | title` format for batch downloading, compatible with export formats from tab manager extensions such as OneTab and N-Tab
 - Keyword search download — search and download Pixiv artworks via web interface
 - Animated image auto-conversion to WebP — automatically convert Ugoira to WebP with delays
 - Download history management — record downloaded artworks, support resumable downloads
@@ -26,13 +37,16 @@ PixivDownload is a local Pixiv batch image download tool with multiple download 
 
 ### Screenshots
 
+<details>
+<summary><strong>Expand to view screenshots</strong></summary>
+
 #### Screenshot of monitor.html page
 ![](./image/1.png)
 
 #### Screenshot of the pixiv-batch.html plugin installation page
 ![](./image/2.png)
 
-#### Screenshot of pixiv-batch.html N-Tab parsing and queueing page (The script achieves the same effect, but the web version is recommended for its convenience.)
+#### Screenshot of the pixiv-batch.html bulk artwork import page (The script achieves the same effect, but the web version is recommended for its convenience.)
 ![](./image/3.png)
 
 #### Screenshot of pixiv-batch.html User parsing and queueing page (The script achieves the same effect, but the web version is recommended for its convenience.)
@@ -44,8 +58,10 @@ PixivDownload is a local Pixiv batch image download tool with multiple download 
 #### This is a screenshot of a Pixiv page batch downloader (user.js), supporting full site scraping of Pixiv.
 ![](./image/6.png)
 
-#### 
+#### Screenshot of single-artwork script download (same effect for Java backend and Local download)
 ![](./image/7.png)
+
+</details>
 
 ## Installation
 
@@ -129,14 +145,15 @@ After logging in, open `http://localhost:6999/pixiv-batch.html`, click the「�
 
 Download scripts from [Releases](../../releases) and drag them into the Tampermonkey management panel:
 
-| Script File                     | Use Case                                              |
-|---------------------------------|-------------------------------------------------------|
-| `Pixiv作品图片下载器(Java后端版).user.js` | Single artwork page download                          |
-| `Pixiv User 批量下载器.user.js`      | User homepage batch download                          |
-| `Pixiv N-Tab 批量下载器.user.js`     | N-Tab bookmark import batch download                  |
-| `Pixiv 页面批量下载器.user.js`         | Page DOM crawling (supports full Pixiv site crawling) |
+| Script File                            | Use Case                                                                                                  |
+|----------------------------------------|-----------------------------------------------------------------------------------------------------------|
+| `Pixiv 单作品图片下载器(Java后端版).user.js`        | Single artwork page download                                                                              |
+| `Pixiv 单作品图片下载器(Local download).user.js` | Single artwork page download (browser local download, no Java backend required)                           |
+| `Pixiv User 批量下载器.user.js`             | User homepage batch download                                                                              |
+| `Pixiv 批量导入作品下载器.user.js`              | Bulk artwork import (compatible with export formats from tab manager extensions such as OneTab and N-Tab) |
+| `Pixiv 页面批量下载器.user.js`                | Page DOM crawling (supports full Pixiv site crawling)                                                     |
 
-> **Recommended: Use the web interface first.** `http://localhost:6999/pixiv-batch.html` supports N-Tab mode, User mode, and Search mode. No userscript installation needed for batch downloading.
+> **Recommended: Use the web interface first.** `http://localhost:6999/pixiv-batch.html` supports Bulk Artwork Import, User mode, and Search mode. No userscript installation needed for batch downloading.
 
 ## Usage
 
@@ -152,9 +169,16 @@ Visit `http://localhost:6999/pixiv-batch.html` (solo mode requires login first):
 
 | Mode           | Description                                                                       |
 |----------------|-----------------------------------------------------------------------------------|
-| 🎨 N-Tab Mode  | Paste N-Tab exported artwork links for batch downloading                          |
+| 🎨 Bulk Artwork Import | Paste artwork link lists for batch downloading, compatible with export formats from tab manager extensions such as OneTab and N-Tab |
 | 👤 User Mode   | Enter user ID to batch download all works from that user                          |
 | 🔍 Search Mode | Search by keyword and preview thumbnails before adding to queue (requires Cookie) |
+
+Bulk artwork import format:
+
+- One artwork per line, in `url | title` format
+- Example: `https://www.pixiv.net/artworks/12345678 | Sample Title`
+- `title` can be left empty; the real title is fetched automatically before download
+- Compatible with export formats from tab manager extensions such as OneTab and N-Tab; exported lists can be imported again directly
 
 ### Download Monitor
 

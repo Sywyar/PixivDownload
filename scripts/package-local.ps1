@@ -34,6 +34,7 @@ $FfmpegLicense = Join-Path $FfmpegDir "ffmpeg-LGPL.txt"
 $OnlineZipPath = Join-Path $OutDir "$AppName-$Version-win-x64-online-portable.zip"
 $OfflineZipPath = Join-Path $OutDir "$AppName-$Version-win-x64-portable.zip"
 $FixWixKeyPathsScript = Join-Path $PSScriptRoot "fix-wix-per-user-keypaths.ps1"
+$SetExeExecutionLevelScript = Join-Path $PSScriptRoot "set-windows-exe-requested-execution-level.ps1"
 $InstallerVersion = $null
 $MsiLocalization = @{
     "en-US" = @{
@@ -273,6 +274,9 @@ try {
         "--dest", $OnlineAppImageRoot
     )
 
+    Write-Step "Patching launcher to request administrator rights"
+    & $SetExeExecutionLevelScript -Path (Join-Path $OnlineAppDir "$AppName.exe") -Level "requireAdministrator"
+
     Write-Step "Packaging online portable zip"
     Compress-Archive -Path $OnlineAppDir -DestinationPath $OnlineZipPath -Force
 
@@ -316,7 +320,10 @@ try {
             "-var", "var.AppImageDir",
             "-out", (Join-Path $WixDir "AppFiles.wxs")
         )
-        & $FixWixKeyPathsScript -Path (Join-Path $WixDir "AppFiles.wxs")
+        & $FixWixKeyPathsScript `
+            -Path (Join-Path $WixDir "AppFiles.wxs") `
+            -RegistryRoot "HKLM" `
+            -RegistryKey "Software\sywyar\PixivDownload\Components"
 
         foreach ($variant in $MsiVariants) {
             $variantConfig = Get-MsiVariantConfig $variant
@@ -353,6 +360,7 @@ try {
                     "-cultures:$culture",
                     "-loc", $cultureConfig.WxlPath,
                     "-dWixUILicenseRtf=$($cultureConfig.LicenseRtfPath)",
+                    "-sice:ICE61",
                     "-sice:ICE64",
                     "-sice:ICE91",
                     "-out", $msiPath,

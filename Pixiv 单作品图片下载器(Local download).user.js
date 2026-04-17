@@ -2,7 +2,7 @@
 // @name         Pixiv作品图片下载器(Local download)
 // @namespace    http://tampermonkey.net/
 // @version      1.2
-// @description  下载Pixiv作品的所有图片，并记录已下载的作品
+// @description  下载Pixiv 单个作品作品的所有图片，并记录已下载的作品(本地存储并不通过后端数据库)
 // @author       Rewritten by ChatGPT,Claude,Sywyar
 // @match        https://www.pixiv.net/*
 // @grant        GM_registerMenuCommand

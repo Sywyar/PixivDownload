@@ -2,7 +2,7 @@
 // @name         Pixiv作品图片下载器（Java后端版）
 // @namespace    http://tampermonkey.net/
 // @version      2.0.2
-// @description  通过Java后端服务下载Pixiv作品图片
+// @description  通过Java后端服务下载 Pixiv 单个作品图片
 // @author       Rewritten by ChatGPT,Claude,Sywyar
 // @match        https://www.pixiv.net/*
 // @grant        GM_registerMenuCommand

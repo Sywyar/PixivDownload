@@ -1,7 +1,9 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
-    [string]$Path
+    [string]$Path,
+    [string]$RegistryRoot = "HKCU",
+    [string]$RegistryKey = "Software\sywyar\PixivDownload\Components"
 )
 
 $ErrorActionPreference = "Stop"
@@ -17,13 +19,11 @@ $xml.Load($Path)
 
 $namespaceManager = New-Object System.Xml.XmlNamespaceManager($xml.NameTable)
 $namespaceManager.AddNamespace("w", $nsUri)
-$componentRegistryKey = "Software\sywyar\PixivDownload\Components"
-
 $components = $xml.SelectNodes("//w:Component", $namespaceManager)
 foreach ($component in $components) {
     $componentId = $component.GetAttribute("Id")
     $targetRegistryValue = $component.SelectSingleNode(
-        "./w:RegistryValue[@Root='HKCU' and @Key='$componentRegistryKey' and @Name='$componentId']",
+        "./w:RegistryValue[@Root='$RegistryRoot' and @Key='$RegistryKey' and @Name='$componentId']",
         $namespaceManager
     )
     $fileKeyPath = $component.SelectSingleNode("./w:File[@KeyPath='yes']", $namespaceManager)
@@ -47,8 +47,8 @@ foreach ($component in $components) {
     }
 
     $registryValue = $xml.CreateElement("RegistryValue", $nsUri)
-    $null = $registryValue.SetAttribute("Root", "HKCU")
-    $null = $registryValue.SetAttribute("Key", $componentRegistryKey)
+    $null = $registryValue.SetAttribute("Root", $RegistryRoot)
+    $null = $registryValue.SetAttribute("Key", $RegistryKey)
     $null = $registryValue.SetAttribute("Name", $componentId)
     $null = $registryValue.SetAttribute("Type", "integer")
     $null = $registryValue.SetAttribute("Value", "1")
