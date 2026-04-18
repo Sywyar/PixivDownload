@@ -1260,6 +1260,7 @@
     let updateInterval;
     let activeUpdateTimer = null;
     let lastCompletionTime = 0; // 最后一个下载完成的时间戳
+    let foregroundBurstUntil = 0; // 后台切回前台后的 1s 密集轮询截止时间戳
     let artworkModal = null;
     let imageModal = null;
 
@@ -1312,6 +1313,7 @@
 
         initDashboard();
         updateInterval = setInterval(updateDashboard, 5000);
+        foregroundBurstUntil = Date.now() + 10000; // 页面打开后 10s 内每秒轮询
         scheduleActiveSync();
 
         document.addEventListener('keydown', e => {
@@ -1323,7 +1325,8 @@
 
     document.addEventListener('visibilitychange', () => {
         if (!document.hidden) {
-            scheduleActiveSync(true); // 立即重新调度
+            foregroundBurstUntil = Date.now() + 10000; // 回到前台后 10s 内每秒轮询
+            scheduleActiveSync(true); // 立即查询一次
         }
     });
 
@@ -1680,6 +1683,7 @@
     // ===================== 活跃下载同步 =====================
     function getActiveSyncInterval() {
         if (document.hidden) return 15000;
+        if (Date.now() < foregroundBurstUntil) return 1000;
         if (activeDownloads.length > 0) return 1000;
         if (Date.now() - lastCompletionTime < 10000) return 1000;
         return 8000;
