@@ -3,6 +3,7 @@ package top.sywyar.pixivdownload.gui;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import top.sywyar.pixivdownload.PixivDownloadApplication;
+import top.sywyar.pixivdownload.config.RuntimeFiles;
 import top.sywyar.pixivdownload.gui.config.ConfigFileEditor;
 import top.sywyar.pixivdownload.gui.theme.FlatLafSetup;
 
@@ -53,7 +54,6 @@ public class GuiLauncher {
     // logger 故意不声明为 static final 字段，避免类加载时触发 logback 提前初始化
     private static Logger log;
 
-    private static final String CONFIG_FILE = "config.yaml";
     private static final String LOG_DIR = "log";
     private static final String LOG_HTML_DIR = LOG_DIR + "/html";
     private static final String LOG_LATEST = LOG_DIR + "/latest.log";
@@ -62,7 +62,7 @@ public class GuiLauncher {
     /** 保留最近的会话日志数量（不含 latest.log / latest.html） */
     private static final int LOG_HISTORY_COUNT = 5;
     private static final int DEFAULT_PORT = 6999;
-    private static final String DEFAULT_ROOT = "pixiv-download";
+    private static final String DEFAULT_ROOT = RuntimeFiles.DEFAULT_DOWNLOAD_ROOT;
 
     public static void main(String[] args) throws Exception {
         // ── 0. 在 logback 初始化前完成日志目录/属性准备 ──────────────────────────
@@ -91,7 +91,7 @@ public class GuiLauncher {
         // ── 2. 启动前读取配置（Spring 尚未就绪，直接读文件）────────────────────────
         int serverPort = DEFAULT_PORT;
         String rootFolder = DEFAULT_ROOT;
-        Path configPath = Path.of(CONFIG_FILE);
+        Path configPath = RuntimeFiles.resolveConfigYamlPath();
 
         if (configPath.toFile().exists()) {
             try {
@@ -108,6 +108,8 @@ public class GuiLauncher {
                 log.warn("读取配置文件失败，使用默认值: {}", e.getMessage());
             }
         }
+
+        RuntimeFiles.prepareRuntimeFiles(rootFolder);
 
         final int port = serverPort;
         final String root = rootFolder;

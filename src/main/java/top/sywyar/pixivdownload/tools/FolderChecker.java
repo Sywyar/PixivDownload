@@ -1,6 +1,7 @@
 package top.sywyar.pixivdownload.tools;
 
 import org.sqlite.SQLiteConfig;
+import top.sywyar.pixivdownload.config.RuntimeFiles;
 
 import javax.swing.*;
 import javax.swing.filechooser.FileNameExtensionFilter;
@@ -82,7 +83,7 @@ public class FolderChecker {
 
         JPanel dbRow = new JPanel(new BorderLayout(5, 0));
         dbRow.add(new JLabel("Database: "), BorderLayout.WEST);
-        dbPathField = new JTextField("pixiv-download/pixiv_download.db");
+        dbPathField = new JTextField(RuntimeFiles.dataDirectory().resolve(RuntimeFiles.PIXIV_DOWNLOAD_DB).toString());
         dbRow.add(dbPathField, BorderLayout.CENTER);
 
         JPanel btnRow = new JPanel(new FlowLayout(FlowLayout.RIGHT, 5, 0));

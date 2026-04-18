@@ -108,11 +108,11 @@ PixivDownload.exe
 | 自用模式 | 个人使用，多设备共享状态，需登录           |
 | 多人模式 | 多人共享服务器，各访客配置独立保存在浏览器，无需登录 |
 
-配置写入 `pixiv-download/setup_config.json` 后不再显示。删除该文件并重启可重新初始化。
+配置写入 `state/setup_config.json` 后不再显示。删除该文件并重启可重新初始化。
 
 ### 3. 配置代理
 
-后端通过 HTTP 代理访问 Pixiv CDN。启动后在运行目录生成 `config.yaml`，编辑代理配置后**重启服务**生效：
+后端通过 HTTP 代理访问 Pixiv CDN。启动后在 `config/config.yaml` 生成配置，编辑代理配置后**重启服务**生效：
 
 ```yaml
 proxy.enabled: true

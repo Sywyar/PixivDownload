@@ -25,8 +25,6 @@ import java.util.Set;
 @Slf4j
 public class AppConfigGenerator {
 
-    private static final String CONFIG_FILE = "config.yaml";
-
     private static final String DEFAULT_CONFIG = """
             # ========================================================
             # Pixiv Download 配置文件
@@ -82,7 +80,7 @@ public class AppConfigGenerator {
 
     @PostConstruct
     public void generateOrUpdateConfig() {
-        File configFile = new File(CONFIG_FILE);
+        File configFile = RuntimeFiles.resolveConfigYamlPath().toFile();
         if (!configFile.exists()) {
             writeDefaultConfig(configFile);
         } else {

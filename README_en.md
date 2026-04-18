@@ -108,11 +108,11 @@ After first startup, the browser will automatically open `http://localhost:6999/
 | Solo Mode  | Personal use, shared state across devices, requires login                               |
 | Multi Mode | Shared server, each visitor's config stored independently in browser, no login required |
 
-Configuration is written to `pixiv-download/setup_config.json` and the setup page will not appear again. Delete this file and restart to reinitialize.
+Configuration is written to `state/setup_config.json` and the setup page will not appear again. Delete this file and restart to reinitialize.
 
 ### 3. Configure Proxy
 
-The backend accesses Pixiv CDN through an HTTP proxy. On startup, `config.yaml` is automatically generated in the working directory. Edit the proxy configuration and **restart the service** to apply:
+The backend accesses Pixiv CDN through an HTTP proxy. On startup, the config file is automatically generated at `config/config.yaml`. Edit the proxy configuration and **restart the service** to apply:
 
 ```yaml
 proxy.enabled: true

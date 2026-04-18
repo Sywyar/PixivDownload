@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import top.sywyar.pixivdownload.config.RuntimeFiles;
 import top.sywyar.pixivdownload.download.config.DownloadConfig;
 import top.sywyar.pixivdownload.download.request.BatchStateRequest;
 import top.sywyar.pixivdownload.download.response.BatchStateResponse;
@@ -27,7 +28,7 @@ public class BatchStateController {
     public BatchStateController(DownloadConfig downloadConfig,
                                 SetupService setupService) {
         this.setupService = setupService;
-        this.stateFile = Path.of(downloadConfig.getRootFolder(), "batch_state.json");
+        this.stateFile = RuntimeFiles.resolveBatchStatePath(downloadConfig.getRootFolder());
     }
 
     @PostConstruct

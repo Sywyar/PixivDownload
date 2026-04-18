@@ -2,6 +2,7 @@ package top.sywyar.pixivdownload.gui.panel;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
+import top.sywyar.pixivdownload.config.RuntimeFiles;
 import top.sywyar.pixivdownload.gui.config.*;
 
 import javax.swing.*;
@@ -23,7 +24,7 @@ import java.util.List;
 public class ConfigPanel extends JPanel {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
-    private static final String DEFAULT_ROOT_FOLDER = "pixiv-download";
+    private static final String DEFAULT_ROOT_FOLDER = RuntimeFiles.DEFAULT_DOWNLOAD_ROOT;
     private static final String SOLO_MODE = "solo";
     private static final String MULTI_MODE_GROUP = "多人模式";
 
@@ -106,7 +107,7 @@ public class ConfigPanel extends JPanel {
             log.debug("读取下载目录失败，使用默认目录推断运行模式: {}", e.getMessage());
         }
 
-        Path setupConfigPath = Path.of(rootFolder, "setup_config.json");
+        Path setupConfigPath = RuntimeFiles.resolveSetupConfigPath(rootFolder);
         if (!Files.isRegularFile(setupConfigPath)) {
             return null;
         }

@@ -33,6 +33,9 @@ build/
 .vscode/
 /pixiv-download-Enn/
 /pixiv-download/
+/config/
+/state/
+/data/
 /image_classifier.properties
 /test/
 /config.yaml

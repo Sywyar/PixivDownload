@@ -7,6 +7,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 import top.sywyar.pixivdownload.common.SessionUtils;
+import top.sywyar.pixivdownload.config.RuntimeFiles;
 import top.sywyar.pixivdownload.download.config.DownloadConfig;
 
 import org.springframework.boot.ApplicationArguments;
@@ -51,7 +52,7 @@ public class SetupService {
     private static final long SESSION_LONG  = 30L * 24 * 3600 * 1000;  // 30 天
 
     public SetupService(DownloadConfig downloadConfig, ObjectMapper objectMapper, ApplicationArguments args) {
-        this.configFile = Path.of(downloadConfig.getRootFolder(), "setup_config.json");
+        this.configFile = RuntimeFiles.resolveSetupConfigPath(downloadConfig.getRootFolder());
         this.objectMapper = objectMapper;
         this.introMode = Arrays.asList(args.getSourceArgs()).contains("--intro");
         load();

@@ -6,6 +6,7 @@ import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.mock.web.MockHttpServletRequest;
+import top.sywyar.pixivdownload.config.RuntimeFiles;
 import top.sywyar.pixivdownload.download.config.DownloadConfig;
 
 import java.io.IOException;
@@ -21,10 +22,22 @@ class SetupServiceTest {
     Path tempDir;
 
     private SetupService setupService;
+    private Path configDir;
+    private Path stateDir;
 
     @BeforeEach
     void setUp() {
+        configDir = tempDir.resolve("config");
+        stateDir = tempDir.resolve("state");
+        System.setProperty(RuntimeFiles.CONFIG_DIR_PROPERTY, configDir.toString());
+        System.setProperty(RuntimeFiles.STATE_DIR_PROPERTY, stateDir.toString());
         setupService = createSetupService();
+    }
+
+    @AfterEach
+    void tearDown() {
+        System.clearProperty(RuntimeFiles.CONFIG_DIR_PROPERTY);
+        System.clearProperty(RuntimeFiles.STATE_DIR_PROPERTY);
     }
 
     private SetupService createSetupService() {
@@ -33,7 +46,7 @@ class SetupServiceTest {
 
     private SetupService createSetupServiceWithArgs(String... args) {
         DownloadConfig config = new DownloadConfig();
-        config.setRootFolder(tempDir.toString());
+        config.setRootFolder(tempDir.resolve("pixiv-download").toString());
         ApplicationArguments arguments = mock(ApplicationArguments.class);
         when(arguments.getSourceArgs()).thenReturn(args);
         return new SetupService(config, new ObjectMapper(), arguments);
@@ -102,6 +115,7 @@ class SetupServiceTest {
         @DisplayName("初始化后配置应持久化并可重新加载")
         void shouldPersistConfig() throws IOException {
             setupService.init("admin", "password123", "multi");
+            assertThat(stateDir.resolve(RuntimeFiles.SETUP_CONFIG_JSON)).exists();
 
             // 创建新的 SetupService 实例，模拟重启
             SetupService reloaded = createSetupService();

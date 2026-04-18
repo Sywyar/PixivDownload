@@ -3,6 +3,7 @@ package top.sywyar.pixivdownload.imageclassifier;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.*;
 import org.springframework.web.client.RestTemplate;
+import top.sywyar.pixivdownload.config.RuntimeFiles;
 
 import javax.swing.*;
 import javax.swing.Timer;
@@ -27,7 +28,6 @@ public class ImageClassifier extends JFrame {
     // =========================================================================
 
     private static final int    GROUP_SIZE         = 10;
-    private static final String CONFIG_FILE        = "image_classifier.properties";
     private static final String[] IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp"};
 
     // UI 配色
@@ -61,6 +61,7 @@ public class ImageClassifier extends JFrame {
     private Properties   config;
     private List<String> targetFolders;
     private List<String> folderRemarks;
+    private final File   configFile;
 
     // =========================================================================
     // UI 组件
@@ -96,6 +97,10 @@ public class ImageClassifier extends JFrame {
     // =========================================================================
 
     public ImageClassifier() {
+        String rootFolder = RuntimeFiles.readDownloadRootFromConfig(
+                RuntimeFiles.resolveConfigYamlPath(),
+                RuntimeFiles.DEFAULT_DOWNLOAD_ROOT);
+        this.configFile = RuntimeFiles.resolveImageClassifierPath(rootFolder).toFile();
         loadConfig();
         initUI();
         checkServerStatus();
@@ -135,9 +140,10 @@ public class ImageClassifier extends JFrame {
         };
 
         try {
-            File configFile = new File(CONFIG_FILE);
             if (configFile.exists()) {
-                config.load(new FileInputStream(configFile));
+                try (FileInputStream input = new FileInputStream(configFile)) {
+                    config.load(input);
+                }
             }
         } catch (IOException e) {
             log.warn("无法加载配置文件，使用默认配置: {}", e.getMessage());
@@ -173,7 +179,9 @@ public class ImageClassifier extends JFrame {
                 config.setProperty("target.folder." + i, targetFolders.get(i));
                 config.setProperty("folder.remark." + i, folderRemarks.get(i));
             }
-            config.store(new FileOutputStream(CONFIG_FILE), "Image Classifier Configuration");
+            try (FileOutputStream output = new FileOutputStream(configFile)) {
+                config.store(output, "Image Classifier Configuration");
+            }
             log.info("配置已保存");
         } catch (IOException e) {
             log.error("保存配置失败: {}", e.getMessage());

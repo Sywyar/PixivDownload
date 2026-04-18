@@ -10,6 +10,7 @@ import org.apache.hc.core5.http.HttpHost;
 import org.apache.hc.core5.http.io.entity.EntityUtils;
 import org.apache.hc.core5.util.Timeout;
 import org.sqlite.SQLiteConfig;
+import top.sywyar.pixivdownload.config.RuntimeFiles;
 
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -33,7 +34,7 @@ import java.util.List;
  * <pre>
  *   java -cp ... R18Backfill [选项]
  *
- *   --db      &lt;path&gt;       数据库文件路径（默认：pixiv-download/pixiv_download.db）
+ *   --db      &lt;path&gt;       数据库文件路径（默认：data/pixiv_download.db）
  *   --proxy   &lt;host:port&gt;  HTTP 代理（默认：127.0.0.1:7890）
  *   --no-proxy              不使用代理
  *   --delay   &lt;ms&gt;         每次请求间隔毫秒（默认：800）
@@ -57,7 +58,7 @@ public class R18Backfill {
 
     public static void main(String[] args) throws Exception {
         // ---- 解析参数 ----
-        String dbPath   = "pixiv-download/pixiv_download.db";
+        String dbPath   = RuntimeFiles.dataDirectory().resolve(RuntimeFiles.PIXIV_DOWNLOAD_DB).toString();
         String proxyHost = "127.0.0.1";
         int    proxyPort = 7890;
         boolean useProxy = true;
