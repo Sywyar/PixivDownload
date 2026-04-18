@@ -240,7 +240,7 @@ class SetupControllerTest {
         @Test
         @DisplayName("有效 session 应返回 valid=true")
         void shouldReturnAuthenticatedForValidSession() throws Exception {
-            when(setupService.isValidSession("valid-token")).thenReturn(true);
+            when(setupService.isAdminLoggedIn(any())).thenReturn(true);
 
             mockMvc.perform(get("/api/auth/check")
                             .cookie(new Cookie("pixiv_session", "valid-token")))
@@ -251,7 +251,7 @@ class SetupControllerTest {
         @Test
         @DisplayName("无效 session 应返回 valid=false")
         void shouldReturnUnauthenticatedForInvalidSession() throws Exception {
-            when(setupService.isValidSession(any())).thenReturn(false);
+            when(setupService.isAdminLoggedIn(any())).thenReturn(false);
 
             mockMvc.perform(get("/api/auth/check"))
                     .andExpect(status().isOk())
