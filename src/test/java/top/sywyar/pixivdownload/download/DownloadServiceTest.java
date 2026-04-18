@@ -5,6 +5,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.Mock;
@@ -19,6 +20,8 @@ import top.sywyar.pixivdownload.download.response.StatisticsResponse;
 import top.sywyar.pixivdownload.quota.UserQuotaService;
 
 import java.io.File;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.*;
@@ -27,6 +30,8 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 @DisplayName("DownloadService 单元测试")
 class DownloadServiceTest {
+    @TempDir
+    Path tempDir;
 
     @Mock
     private DownloadConfig downloadConfig;
@@ -227,6 +232,52 @@ class DownloadServiceTest {
             assertThatCode(() -> downloadService.getDownloadedRecord(12345L))
                     .isInstanceOf(RuntimeException.class)
                     .hasMessage("DB error");
+        }
+
+        @Test
+        @DisplayName("verifyFiles=true 且目录为空时应删除脏记录")
+        void shouldDeleteStaleRecordWhenDirectoryIsEmpty() throws Exception {
+            Path folder = Files.createDirectories(tempDir.resolve("12345"));
+            ArtworkRecord record = new ArtworkRecord(12345L, "测试作品", folder.toString(),
+                    3, "jpg", 1700000000L, false, null, null, false);
+            when(pixivDatabase.getArtwork(12345L)).thenReturn(record);
+
+            ArtworkRecord result = downloadService.getDownloadedRecord(12345L, true);
+
+            assertThat(result).isNull();
+            verify(pixivDatabase).deleteArtwork(12345L);
+        }
+
+        @Test
+        @DisplayName("verifyFiles=true 且目录里没有作品图片文件时应删除脏记录")
+        void shouldDeleteStaleRecordWhenDirectoryHasNoArtworkImages() throws Exception {
+            Path folder = Files.createDirectories(tempDir.resolve("22345"));
+            Files.writeString(folder.resolve("note.txt"), "orphan");
+            Files.writeString(folder.resolve("22345_p0.json"), "{}");
+            ArtworkRecord record = new ArtworkRecord(22345L, "测试作品", folder.toString(),
+                    1, "jpg", 1700000000L, false, null, null, false);
+            when(pixivDatabase.getArtwork(22345L)).thenReturn(record);
+
+            ArtworkRecord result = downloadService.getDownloadedRecord(22345L, true);
+
+            assertThat(result).isNull();
+            verify(pixivDatabase).deleteArtwork(22345L);
+        }
+
+        @Test
+        @DisplayName("verifyFiles=true 时应优先使用 move_folder 检测作品图片文件")
+        void shouldUseMoveFolderWhenArtworkImageExists() throws Exception {
+            Path originalFolder = Files.createDirectories(tempDir.resolve("32345-original"));
+            Path movedFolder = Files.createDirectories(tempDir.resolve("32345-moved"));
+            Files.write(movedFolder.resolve("32345_p0.webp"), new byte[]{1, 2, 3});
+            ArtworkRecord record = new ArtworkRecord(32345L, "测试作品", originalFolder.toString(),
+                    1, "webp", 1700000000L, true, movedFolder.toString(), 1700000001L, false);
+            when(pixivDatabase.getArtwork(32345L)).thenReturn(record);
+
+            ArtworkRecord result = downloadService.getDownloadedRecord(32345L, true);
+
+            assertThat(result).isSameAs(record);
+            verify(pixivDatabase, never()).deleteArtwork(32345L);
         }
     }
 

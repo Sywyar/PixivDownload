@@ -238,7 +238,7 @@ class DownloadControllerTest {
         void shouldReturnDownloadedArtwork() throws Exception {
             ArtworkRecord record = new ArtworkRecord(12345L, "测试作品", "/path/to/folder",
                     3, "jpg", 1700000000L, false, null, null, false);
-            when(downloadService.getDownloadedRecord(12345L)).thenReturn(record);
+            when(downloadService.getDownloadedRecord(12345L, false)).thenReturn(record);
 
             mockMvc.perform(get("/api/downloaded/12345"))
                     .andExpect(status().isOk())
@@ -250,10 +250,24 @@ class DownloadControllerTest {
         @Test
         @DisplayName("未找到的作品应返回 400")
         void shouldReturn400ForNotFound() throws Exception {
-            when(downloadService.getDownloadedRecord(99999L)).thenReturn(null);
+            when(downloadService.getDownloadedRecord(99999L, false)).thenReturn(null);
 
             mockMvc.perform(get("/api/downloaded/99999"))
                     .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        @DisplayName("verifyFiles=true 时应透传实际目录校验参数")
+        void shouldPassVerifyFilesFlag() throws Exception {
+            ArtworkRecord record = new ArtworkRecord(12345L, "娴嬭瘯浣滃搧", "/path/to/folder",
+                    1, "jpg", 1700000000L, false, null, null, false);
+            when(downloadService.getDownloadedRecord(12345L, true)).thenReturn(record);
+
+            mockMvc.perform(get("/api/downloaded/12345").param("verifyFiles", "true"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.artworkId").value(12345));
+
+            verify(downloadService).getDownloadedRecord(12345L, true);
         }
     }
 
@@ -357,8 +371,8 @@ class DownloadControllerTest {
 
         ArtworkRecord r1 = new ArtworkRecord(25L, "A", "/a", 1, "jpg", 200L, false, null, null, null);
         ArtworkRecord r2 = new ArtworkRecord(24L, "B", "/b", 2, "png", 100L, false, null, null, null);
-        when(downloadService.getDownloadedRecord(25L)).thenReturn(r1);
-        when(downloadService.getDownloadedRecord(24L)).thenReturn(r2);
+        when(downloadService.getDownloadedRecord(25L, false)).thenReturn(r1);
+        when(downloadService.getDownloadedRecord(24L, false)).thenReturn(r2);
 
         mockMvc.perform(get("/api/downloaded/history/paged")
                         .param("page", "0").param("size", "10"))

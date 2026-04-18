@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Pixiv User 批量下载器
 // @namespace    http://tampermonkey.net/
-// @version      2.0.4
+// @version      2.0.5
 // @description  适配 Pixiv 用户页面，自动获取所有作品 ID，对接本地 Java 后端。
 // @author       Rewritten by ChatGPT,Claude,Sywyar
 // @match        https://www.pixiv.net/*
@@ -39,6 +39,7 @@
 
         // 全局持久化 Keys
         KEY_SKIP_HISTORY: 'pixiv_global_skip_history',
+        KEY_VERIFY_HISTORY_FILES: 'pixiv_global_verify_history_files',
         KEY_R18_ONLY: 'pixiv_global_r18_only',
         KEY_INTERVAL: 'pixiv_global_interval',
         KEY_INTERVAL_UNIT: 'pixiv_global_interval_unit',
@@ -52,6 +53,7 @@
     // ====== 配额状态 ======
     let quotaInfo = { enabled: false, artworksUsed: 0, maxArtworks: 50, resetSeconds: 0 };
     let userUUID = GM_getValue(CONFIG.KEY_USER_UUID, null);
+    const VERIFY_HISTORY_FILES_TOOLTIP = '通过检查记录的目录是否存在、文件夹是否为空、文件夹中的文件是否包含图片来判断是否有效，如果无效则会重新下载';
 
     // 首次启动提示（只显示一次）
     function checkExternalServerNotice() {
@@ -120,6 +122,29 @@
             else if (c) e.appendChild(c);
         });
         return e;
+    }
+
+    function createHelpIcon(title) {
+        return $el('span', {
+            title,
+            textContent: '?',
+            style: {
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: '14px',
+                height: '14px',
+                border: '1px solid #999',
+                borderRadius: '50%',
+                color: '#666',
+                fontSize: '10px',
+                fontWeight: '700',
+                lineHeight: '1',
+                cursor: 'help',
+                userSelect: 'none',
+                flexShrink: '0'
+            }
+        });
     }
 
     function escapeHtml(s) {
@@ -351,11 +376,12 @@
                 });
             });
         },
-        checkDownloaded(artworkId) {
+        checkDownloaded(artworkId, verifyFiles = false) {
             return new Promise((resolve) => {
+                const query = verifyFiles ? '?verifyFiles=true' : '';
                 GM_xmlhttpRequest({
                     method: 'GET',
-                    url: `${CONFIG.CHECK_DOWNLOADED_URL}/${artworkId}`,
+                    url: `${CONFIG.CHECK_DOWNLOADED_URL}/${artworkId}${query}`,
                     onload: (res) => {
                         try {
                             if (res.status === 200) {
@@ -526,6 +552,7 @@
                 imageDelayUnit: GM_getValue(CONFIG.KEY_IMAGE_DELAY_UNIT, 'ms') || 'ms',
                 concurrent: GM_getValue(CONFIG.KEY_CONCURRENT, CONFIG.DEFAULT_CONCURRENT) || CONFIG.DEFAULT_CONCURRENT,
                 skipHistory: GM_getValue(CONFIG.KEY_SKIP_HISTORY, false),
+                verifyHistoryFiles: GM_getValue(CONFIG.KEY_VERIFY_HISTORY_FILES, false),
                 r18Only: GM_getValue(CONFIG.KEY_R18_ONLY, false),
                 bookmark: GM_getValue(CONFIG.KEY_BOOKMARK, false)
             };
@@ -599,6 +626,14 @@
         setSkipHistory(val) {
             this.globalSettings.skipHistory = val;
             GM_setValue(CONFIG.KEY_SKIP_HISTORY, val);
+            if (this.ui && this.ui.updateSkipHistoryVisibility) {
+                this.ui.updateSkipHistoryVisibility(val);
+            }
+        }
+
+        setVerifyHistoryFiles(val) {
+            this.globalSettings.verifyHistoryFiles = val;
+            GM_setValue(CONFIG.KEY_VERIFY_HISTORY_FILES, val);
         }
 
         setR18Only(val) {
@@ -794,7 +829,7 @@
             this.ui.renderQueue(this.queue);
 
             if (this.globalSettings.skipHistory) {
-                const isDownloaded = await Api.checkDownloaded(item.id);
+                const isDownloaded = await Api.checkDownloaded(item.id, this.globalSettings.verifyHistoryFiles);
                 if (isDownloaded) {
                     item.status = 'skipped';
                     item.lastMessage = '跳过 — 历史记录中已存在';
@@ -1127,6 +1162,7 @@
             if (!this.manager || !this.elements.interval) return;
             const s = this.manager.globalSettings;
             this.elements.skipHistory.checked = s.skipHistory;
+            this.elements.verifyHistoryFiles.checked = s.verifyHistoryFiles ?? false;
             this.elements.r18Only.checked = s.r18Only;
             if (this.elements.bookmarkAfterDl) this.elements.bookmarkAfterDl.checked = s.bookmark ?? false;
             this.elements.interval.value = s.interval;
@@ -1140,6 +1176,7 @@
             if (this.elements.imageDelayUnitBtn) {
                 this.elements.imageDelayUnitBtn.textContent = s.imageDelayUnit || 'ms';
             }
+            this.updateSkipHistoryVisibility(s.skipHistory);
         }
 
         _build() {
@@ -1225,6 +1262,12 @@
                     <label style="font-size: 12px; cursor:pointer; margin-left:15px; color:#d63384;">
                         <input type="checkbox" id="r18-only" style="vertical-align: middle;"> 仅下载R18作品
                     </label>
+                </div>
+                <div id="verify-history-files-row" style="display:none; align-items:center; margin-top: 8px; margin-bottom: 8px;">
+                    <label style="font-size: 12px; cursor:pointer;">
+                        <input type="checkbox" id="verify-history-files" style="vertical-align: middle;"> 实际目录检测
+                    </label>
+                    ${createHelpIcon(VERIFY_HISTORY_FILES_TOOLTIP).outerHTML}
                 </div>
                 <div style="display: flex; align-items: center; margin-top: 8px; margin-bottom: 8px;">
                     <label style="font-size: 12px; cursor:pointer;">
@@ -1350,6 +1393,8 @@
                 imageDelay: container.querySelector('#image-delay'),
                 concurrent: container.querySelector('#max-concurrent'),
                 skipHistory: container.querySelector('#skip-history'),
+                verifyHistoryFiles: container.querySelector('#verify-history-files'),
+                verifyHistoryFilesRow: container.querySelector('#verify-history-files-row'),
                 r18Only: container.querySelector('#r18-only'),
                 bookmarkAfterDl: container.querySelector('#bookmark-after-dl'),
                 serverBaseInput: container.querySelector('#server-base-url'),
@@ -1361,7 +1406,12 @@
                 el.addEventListener('change', fn);
                 if (el.type === 'number') el.addEventListener('input', fn);
             };
-            bindChange(this.elements.skipHistory, (e) => this.manager && this.manager.setSkipHistory(e.target.checked));
+            bindChange(this.elements.skipHistory, (e) => {
+                if (!this.manager) return;
+                this.manager.setSkipHistory(e.target.checked);
+                this.updateSkipHistoryVisibility(e.target.checked);
+            });
+            bindChange(this.elements.verifyHistoryFiles, (e) => this.manager && this.manager.setVerifyHistoryFiles(e.target.checked));
             bindChange(this.elements.r18Only, (e) => this.manager && this.manager.setR18Only(e.target.checked));
             if (this.elements.bookmarkAfterDl) {
                 bindChange(this.elements.bookmarkAfterDl, (e) => this.manager && this.manager.setBookmark(e.target.checked));
@@ -1423,6 +1473,11 @@
         bindManager(manager) {
             this.manager = manager;
             if (this.root) this.syncSettings();
+        }
+
+        updateSkipHistoryVisibility(enabled) {
+            if (!this.elements || !this.elements.verifyHistoryFilesRow) return;
+            this.elements.verifyHistoryFilesRow.style.display = enabled ? 'flex' : 'none';
         }
 
         // ---- 配额 UI 方法 ----
@@ -1566,6 +1621,7 @@
                 if (onlyNew) {
                     this.elements.skipHistory.checked = true;
                     this.manager.setSkipHistory(true);
+                    this.updateSkipHistoryVisibility(true);
                     this.handleStart();
                 }
             } catch (e) {

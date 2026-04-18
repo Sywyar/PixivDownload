@@ -210,6 +210,23 @@
             white-space: nowrap;
         }
 
+        .setting-help-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 14px;
+            height: 14px;
+            border: 1px solid #999;
+            border-radius: 50%;
+            color: #666;
+            font-size: 10px;
+            font-weight: 700;
+            line-height: 1;
+            cursor: help;
+            user-select: none;
+            flex-shrink: 0;
+        }
+
         .setting-item input[type=number] {
             width: 56px;
             padding: 4px 6px;
@@ -939,6 +956,11 @@
                 <input type="checkbox" id="s-skip">
                 <label for="s-skip" style="cursor:pointer;">跳过已下载作品</label>
             </div>
+            <div class="setting-item" id="s-verify-files-wrap" style="display:none;">
+                <input type="checkbox" id="s-verify-files">
+                <label for="s-verify-files" style="cursor:pointer;">实际目录检测</label>
+                <span class="setting-help-icon" title="通过检查记录的目录是否存在、文件夹是否为空、文件夹中的文件是否包含图片来判断是否有效，如果无效则会重新下载">?</span>
+            </div>
             <div class="setting-item">
                 <input type="checkbox" id="s-R18">
                 <label for="s-R18" class="R18-label" style="cursor:pointer;">仅下载 R18 作品</label>
@@ -1034,6 +1056,7 @@
             imageDelayUnit: 'ms',
             concurrent: 1,
             skipHistory: false,
+            verifyHistoryFiles: false,
             R18Only: false,
             bookmark: false
         }
@@ -1516,7 +1539,8 @@
 
     async function checkDownloaded(artworkId) {
         try {
-            const res = await fetch(`${BASE}/api/downloaded/${artworkId}`);
+            const query = state.settings.verifyHistoryFiles ? '?verifyFiles=true' : '';
+            const res = await fetch(`${BASE}/api/downloaded/${artworkId}${query}`);
             if (res.status === 200) {
                 const data = await res.json();
                 return !!data.artworkId;
@@ -2395,6 +2419,7 @@
         document.getElementById('s-interval').value = state.settings.interval;
         document.getElementById('s-concurrent').value = state.settings.concurrent;
         document.getElementById('s-skip').checked = state.settings.skipHistory;
+        document.getElementById('s-verify-files').checked = state.settings.verifyHistoryFiles ?? false;
         document.getElementById('s-R18').checked = state.settings.R18Only;
         document.getElementById('s-bookmark').checked = state.settings.bookmark ?? false;
         document.getElementById('s-image-delay').value = state.settings.imageDelay ?? 0;
@@ -2404,6 +2429,7 @@
         const imgUnit = state.settings.imageDelayUnit || 'ms';
         state.settings.imageDelayUnit = imgUnit;
         document.getElementById('s-image-delay-unit').textContent = imgUnit;
+        toggleSkipHistoryOptions();
     }
 
     function syncSettings() {
@@ -2411,9 +2437,17 @@
         state.settings.imageDelay = Math.max(0, parseFloat(document.getElementById('s-image-delay').value) || 0);
         state.settings.concurrent = Math.max(1, parseInt(document.getElementById('s-concurrent').value) || 1);
         state.settings.skipHistory = document.getElementById('s-skip').checked;
+        state.settings.verifyHistoryFiles = document.getElementById('s-verify-files').checked;
         state.settings.R18Only = document.getElementById('s-R18').checked;
         state.settings.bookmark = document.getElementById('s-bookmark').checked;
+        toggleSkipHistoryOptions();
         saveSettings();
+    }
+
+    function toggleSkipHistoryOptions() {
+        const wrap = document.getElementById('s-verify-files-wrap');
+        if (!wrap) return;
+        wrap.style.display = document.getElementById('s-skip').checked ? '' : 'none';
     }
 
     /* ============================================================
@@ -2689,7 +2723,7 @@
         });
 
         // Settings change → auto-save
-        ['s-interval', 's-image-delay', 's-concurrent', 's-skip', 's-R18'].forEach(id => {
+        ['s-interval', 's-image-delay', 's-concurrent', 's-skip', 's-verify-files', 's-R18', 's-bookmark'].forEach(id => {
             const el = document.getElementById(id);
             el.addEventListener('change', syncSettings);
             if (el.type === 'number') el.addEventListener('input', syncSettings);

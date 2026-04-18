@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Pixiv 页面批量下载器
 // @namespace    http://tampermonkey.net/
-// @version      1.0.1
+// @version      1.0.2
 // @description  抓取当前 Pixiv 页面（搜索页、关注动态、排行榜、主页等）上的所有作品
 // @author       Sywyar
 // @match        https://www.pixiv.net/*
@@ -44,6 +44,7 @@
         STATUS_TIMEOUT_MS: 300000,
         STORAGE_KEY: 'pixiv_page_batch_v1',
         KEY_SKIP_HISTORY: 'pixiv_global_skip_history',
+        KEY_VERIFY_HISTORY_FILES: 'pixiv_global_verify_history_files',
         KEY_R18_ONLY: 'pixiv_global_r18_only',
         KEY_INTERVAL: 'pixiv_global_interval',
         KEY_INTERVAL_UNIT: 'pixiv_global_interval_unit',
@@ -56,6 +57,7 @@
 
     let quotaInfo = { enabled: false, artworksUsed: 0, maxArtworks: 50, resetSeconds: 0 };
     let userUUID = GM_getValue(CONFIG.KEY_USER_UUID, null);
+    const VERIFY_HISTORY_FILES_TOOLTIP = '通过检查记录的目录是否存在、文件夹是否为空、文件夹中的文件是否包含图片来判断是否有效，如果无效则会重新下载';
 
     /* ========== 初始化提示 ========== */
     function checkExternalServerNotice() {
@@ -247,10 +249,11 @@
                 });
             });
         },
-        checkDownloaded(artworkId) {
+        checkDownloaded(artworkId, verifyFiles = false) {
             return new Promise((resolve) => {
+                const query = verifyFiles ? '?verifyFiles=true' : '';
                 GM_xmlhttpRequest({
-                    method: 'GET', url: `${serverBase}/api/downloaded/${artworkId}`,
+                    method: 'GET', url: `${serverBase}/api/downloaded/${artworkId}${query}`,
                     onload: (res) => {
                         try {
                             resolve(res.status === 200 && !!JSON.parse(res.responseText).artworkId);
@@ -400,6 +403,7 @@
                 imageDelayUnit: GM_getValue(CONFIG.KEY_IMAGE_DELAY_UNIT, 'ms') || 'ms',
                 concurrent: GM_getValue(CONFIG.KEY_CONCURRENT, CONFIG.DEFAULT_CONCURRENT) || CONFIG.DEFAULT_CONCURRENT,
                 skipHistory: GM_getValue(CONFIG.KEY_SKIP_HISTORY, false),
+                verifyHistoryFiles: GM_getValue(CONFIG.KEY_VERIFY_HISTORY_FILES, false),
                 r18Only: GM_getValue(CONFIG.KEY_R18_ONLY, false),
                 bookmark: GM_getValue(CONFIG.KEY_BOOKMARK, false)
             };
@@ -433,7 +437,14 @@
 
         deleteStorage() { try { GM_deleteValue(CONFIG.STORAGE_KEY); } catch {} }
 
-        setSkipHistory(val) { this.globalSettings.skipHistory = val; GM_setValue(CONFIG.KEY_SKIP_HISTORY, val); }
+        setSkipHistory(val) {
+            this.globalSettings.skipHistory = val;
+            GM_setValue(CONFIG.KEY_SKIP_HISTORY, val);
+            if (this.ui && this.ui.updateSkipHistoryVisibility) {
+                this.ui.updateSkipHistoryVisibility(val);
+            }
+        }
+        setVerifyHistoryFiles(val) { this.globalSettings.verifyHistoryFiles = val; GM_setValue(CONFIG.KEY_VERIFY_HISTORY_FILES, val); }
         setR18Only(val) { this.globalSettings.r18Only = val; GM_setValue(CONFIG.KEY_R18_ONLY, val); }
         setBookmark(val) { this.globalSettings.bookmark = val; GM_setValue(CONFIG.KEY_BOOKMARK, val); }
         setInterval(val) { this.globalSettings.interval = Math.max(0, parseFloat(val) || 0); GM_setValue(CONFIG.KEY_INTERVAL, this.globalSettings.interval); }
@@ -562,7 +573,7 @@
             this.ui.renderQueue(this.queue);
 
             if (this.globalSettings.skipHistory) {
-                const isDownloaded = await Api.checkDownloaded(item.id);
+                const isDownloaded = await Api.checkDownloaded(item.id, this.globalSettings.verifyHistoryFiles);
                 if (isDownloaded) {
                     item.status = 'skipped';
                     item.lastMessage = '跳过 — 历史记录中已存在';
@@ -909,6 +920,10 @@
                 </div>
                 <div style="display: flex; align-items: center; margin-bottom: 8px;">
                     <label style="font-size: 12px; margin-right: 10px; width: 120px;">服务器地址:</label>
+                    <label id="pbd-verify-history-files-row" style="display:none; font-size: 12px; cursor:pointer; margin-right: 10px;">
+                        <input type="checkbox" id="pbd-verify-history-files" style="vertical-align: middle;"> 实际目录检测
+                        <span title="${VERIFY_HISTORY_FILES_TOOLTIP}" style="display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border:1px solid #999;border-radius:50%;color:#666;font-size:10px;font-weight:700;line-height:1;cursor:help;user-select:none;vertical-align:middle;margin-left:4px;">?</span>
+                    </label>
                     <input type="text" id="pbd-server-url" value="${serverBase}" placeholder="http://localhost:6999"
                            style="flex: 1; padding: 4px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px;">
                 </div>
@@ -973,6 +988,8 @@
                 imageDelayUnitBtn: container.querySelector('#pbd-image-delay-unit-btn'),
                 concurrent: container.querySelector('#pbd-concurrent'),
                 skipHistory: container.querySelector('#pbd-skip-history'),
+                verifyHistoryFiles: container.querySelector('#pbd-verify-history-files'),
+                verifyHistoryFilesRow: container.querySelector('#pbd-verify-history-files-row'),
                 r18Only: container.querySelector('#pbd-r18-only'),
                 bookmark: container.querySelector('#pbd-bookmark'),
                 serverUrl: container.querySelector('#pbd-server-url'),
@@ -985,7 +1002,12 @@
                 el.addEventListener('change', fn);
                 if (el.type === 'number') el.addEventListener('input', fn);
             };
-            bindChange(this.elements.skipHistory, (e) => this.manager && this.manager.setSkipHistory(e.target.checked));
+            bindChange(this.elements.skipHistory, (e) => {
+                if (!this.manager) return;
+                this.manager.setSkipHistory(e.target.checked);
+                this.updateSkipHistoryVisibility(e.target.checked);
+            });
+            bindChange(this.elements.verifyHistoryFiles, (e) => this.manager && this.manager.setVerifyHistoryFiles(e.target.checked));
             bindChange(this.elements.r18Only, (e) => this.manager && this.manager.setR18Only(e.target.checked));
             bindChange(this.elements.bookmark, (e) => this.manager && this.manager.setBookmark(e.target.checked));
             bindChange(this.elements.interval, (e) => this.manager && this.manager.setInterval(e.target.value));
@@ -1036,10 +1058,16 @@
             if (this.root) this.syncSettings();
         }
 
+        updateSkipHistoryVisibility(enabled) {
+            if (!this.elements || !this.elements.verifyHistoryFilesRow) return;
+            this.elements.verifyHistoryFilesRow.style.display = enabled ? 'flex' : 'none';
+        }
+
         syncSettings() {
             if (!this.manager || !this.elements.interval) return;
             const s = this.manager.globalSettings;
             this.elements.skipHistory.checked = s.skipHistory;
+            this.elements.verifyHistoryFiles.checked = s.verifyHistoryFiles ?? false;
             this.elements.r18Only.checked = s.r18Only;
             this.elements.bookmark.checked = s.bookmark;
             this.elements.interval.value = s.interval;
@@ -1047,6 +1075,7 @@
             this.elements.imageDelay.value = s.imageDelay ?? 0;
             this.elements.imageDelayUnitBtn.textContent = s.imageDelayUnit || 'ms';
             this.elements.concurrent.value = s.concurrent;
+            this.updateSkipHistoryVisibility(s.skipHistory);
         }
 
         toggleCollapse() {

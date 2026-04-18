@@ -151,8 +151,10 @@ public class DownloadController {
     }
 
     @GetMapping("/downloaded/{artworkId}")
-    public ResponseEntity<DownloadedResponse> getDownloaded(@PathVariable Long artworkId) {
-        DownloadedResponse downloadedResponse = getArtWorkDownloadedResponse(artworkId);
+    public ResponseEntity<DownloadedResponse> getDownloaded(
+            @PathVariable Long artworkId,
+            @RequestParam(defaultValue = "false") boolean verifyFiles) {
+        DownloadedResponse downloadedResponse = getArtWorkDownloadedResponse(artworkId, verifyFiles);
         if (downloadedResponse == null) {
             return ResponseEntity.status(400).build();
         }
@@ -270,7 +272,11 @@ public class DownloadController {
     }
 
     public DownloadedResponse getArtWorkDownloadedResponse(Long artworkId) {
-        ArtworkRecord artwork = downloadService.getDownloadedRecord(artworkId);
+        return getArtWorkDownloadedResponse(artworkId, false);
+    }
+
+    public DownloadedResponse getArtWorkDownloadedResponse(Long artworkId, boolean verifyFiles) {
+        ArtworkRecord artwork = downloadService.getDownloadedRecord(artworkId, verifyFiles);
         if (artwork == null) {
             return null;
         }

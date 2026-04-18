@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Pixiv作品图片下载器（Java后端版）
 // @namespace    http://tampermonkey.net/
-// @version      2.0.2
+// @version      2.0.3
 // @description  通过Java后端服务下载 Pixiv 单个作品图片
 // @author       Rewritten by ChatGPT,Claude,Sywyar
 // @match        https://www.pixiv.net/*
@@ -25,12 +25,16 @@
 
     const KEY_USER_UUID = 'pixiv_user_uuid';
     const KEY_BOOKMARK_AFTER_DL = 'pixiv_bookmark_after_dl';
+    const KEY_SKIP_HISTORY = 'pixiv_single_skip_history';
+    const KEY_VERIFY_HISTORY_FILES = 'pixiv_single_verify_history_files';
+    const VERIFY_HISTORY_FILES_TOOLTIP = '通过检查记录的目录是否存在、文件夹是否为空、文件夹中的文件是否包含图片来判断是否有效，如果无效则会重新下载';
 
     // 动态 URL 计算
     const getBackendURL = () => serverBase + '/api/download/pixiv';
     const getQuotaInitURL = () => serverBase + '/api/quota/init';
     const getArchiveStatusBase = () => serverBase + '/api/archive/status';
     const getArchiveDownloadBase = () => serverBase + '/api/archive/download';
+    const getDownloadedCheckBase = () => serverBase + '/api/downloaded';
 
     let userUUID = GM_getValue(KEY_USER_UUID, null);
     let quotaInfo = { enabled: false, artworksUsed: 0, maxArtworks: 50, resetSeconds: 0 };
@@ -92,24 +96,6 @@
         const url = window.location.href;
         const match = url.match(/artworks\/(\d+)/);
         return match ? match[1] : null;
-    }
-
-    // 检查是否已下载过
-    function isAlreadyDownloaded(artworkId) {
-        const downloadedList = GM_getValue('downloadedArtworks', {});
-        return downloadedList.hasOwnProperty(artworkId);
-    }
-
-    // 记录已下载的作品
-    function markAsDownloaded(artworkId, folderName, imageCount) {
-        const downloadedList = GM_getValue('downloadedArtworks', {});
-        downloadedList[artworkId] = {
-            timestamp: new Date().toISOString(),
-            folder: folderName,
-            imageCount: imageCount,
-            url: window.location.href
-        };
-        GM_setValue('downloadedArtworks', downloadedList);
     }
 
     // 获取图片URL
@@ -271,6 +257,40 @@
     }
 
     // 下载图片
+    async function checkDownloaded(artworkId, verifyFiles = false) {
+        return new Promise((resolve) => {
+            const query = verifyFiles ? '?verifyFiles=true' : '';
+            GM_xmlhttpRequest({
+                method: 'GET',
+                url: `${getDownloadedCheckBase()}/${artworkId}${query}`,
+                timeout: 5000,
+                onload: function (response) {
+                    if (response.status === 401) {
+                        handleUnauthorized();
+                        resolve(false);
+                        return;
+                    }
+                    if (response.status !== 200) {
+                        resolve(false);
+                        return;
+                    }
+                    try {
+                        const data = JSON.parse(response.responseText);
+                        resolve(!!data.artworkId);
+                    } catch (e) {
+                        resolve(false);
+                    }
+                },
+                onerror: function () {
+                    resolve(false);
+                },
+                ontimeout: function () {
+                    resolve(false);
+                }
+            });
+        });
+    }
+
     async function downloadImages() {
         const artworkId = getArtworkId();
         if (!artworkId) {
@@ -286,16 +306,12 @@
         }
 
         // 检查是否已下载
-        if (isAlreadyDownloaded(artworkId)) {
-            const downloadedInfo = GM_getValue('downloadedArtworks', {})[artworkId];
-            const confirmDownload = confirm(
-                `作品 ${artworkId} 已经在 ${new Date(downloadedInfo.timestamp).toLocaleString()} 下载过\n` +
-                `文件夹: ${downloadedInfo.folder}\n` +
-                `图片数量: ${downloadedInfo.imageCount}张\n\n` +
-                `是否重新下载？`
-            );
-
-            if (!confirmDownload) {
+        const skipHistory = GM_getValue(KEY_SKIP_HISTORY, false);
+        const verifyHistoryFiles = skipHistory && GM_getValue(KEY_VERIFY_HISTORY_FILES, false);
+        if (skipHistory) {
+            const alreadyDownloaded = await checkDownloaded(artworkId, verifyHistoryFiles);
+            if (alreadyDownloaded) {
+                alert(`作品 ${artworkId} 已存在于下载历史中，已跳过本次下载。`);
                 return;
             }
         }
@@ -335,7 +351,6 @@
             // 发送下载请求到后端
             const response = await sendDownloadRequest(artworkId, title, imageUrls, other);
 
-            markAsDownloaded(artworkId, '后端处理中', imageUrls.length);
             // 刷新配额显示
             if (quotaInfo.enabled) {
                 quotaInfo.artworksUsed = Math.min(quotaInfo.maxArtworks, quotaInfo.artworksUsed + 1);
@@ -367,7 +382,8 @@
         const artworkId = getArtworkId();
         if (!artworkId) return; // 如果不是作品页面，不显示UI
 
-        const isDownloaded = isAlreadyDownloaded(artworkId);
+        const skipHistoryEnabled = GM_getValue(KEY_SKIP_HISTORY, false);
+        const verifyHistoryFilesEnabled = GM_getValue(KEY_VERIFY_HISTORY_FILES, false);
 
         const container = document.createElement('div');
         container.id = 'pixiv-downloader-ui';
@@ -377,7 +393,7 @@
             right: 20px;
             z-index: 10000;
             background: white;
-            border: 2px solid ${isDownloaded ? '#ff9500' : '#0096fa'};
+            border: 2px solid #0096fa;
             border-radius: 8px;
             padding: 10px;
             box-shadow: 0 2px 10px rgba(0,0,0,0.2);
@@ -398,13 +414,11 @@
         `;
 
         const statusDiv = document.createElement('div');
-        statusDiv.innerHTML = isDownloaded ?
-            '✅ 已下载过此作品' :
-            '⬇️ 可下载此作品';
+        statusDiv.innerHTML = '⬇️ 可下载此作品';
         statusDiv.style.cssText = `
             font-weight: bold;
             margin-bottom: 8px;
-            color: ${isDownloaded ? '#ff9500' : '#0096fa'};
+            color: #0096fa;
             text-align: center;
             font-size: 14px;
         `;
@@ -447,6 +461,45 @@
         bookmarkRow.appendChild(bookmarkChk);
         bookmarkRow.appendChild(bookmarkLabel);
 
+        const skipHistoryRow = document.createElement('div');
+        skipHistoryRow.style.cssText = 'display:flex;align-items:center;gap:6px;margin-bottom:6px;font-size:12px;color:#555;';
+        const skipHistoryChk = document.createElement('input');
+        skipHistoryChk.type = 'checkbox';
+        skipHistoryChk.id = 'pixiv-dl-skip-history';
+        skipHistoryChk.checked = skipHistoryEnabled;
+        const skipHistoryLabel = document.createElement('label');
+        skipHistoryLabel.htmlFor = 'pixiv-dl-skip-history';
+        skipHistoryLabel.textContent = '跳过历史下载';
+        skipHistoryLabel.style.cursor = 'pointer';
+        skipHistoryRow.appendChild(skipHistoryChk);
+        skipHistoryRow.appendChild(skipHistoryLabel);
+
+        const verifyHistoryFilesRow = document.createElement('div');
+        verifyHistoryFilesRow.style.cssText = `display:${skipHistoryEnabled ? 'flex' : 'none'};align-items:center;gap:6px;margin-bottom:6px;font-size:12px;color:#555;`;
+        const verifyHistoryFilesChk = document.createElement('input');
+        verifyHistoryFilesChk.type = 'checkbox';
+        verifyHistoryFilesChk.id = 'pixiv-dl-verify-history-files';
+        verifyHistoryFilesChk.checked = verifyHistoryFilesEnabled;
+        const verifyHistoryFilesLabel = document.createElement('label');
+        verifyHistoryFilesLabel.htmlFor = 'pixiv-dl-verify-history-files';
+        verifyHistoryFilesLabel.textContent = '实际目录检测';
+        verifyHistoryFilesLabel.style.cursor = 'pointer';
+        const verifyHistoryFilesHelp = document.createElement('span');
+        verifyHistoryFilesHelp.textContent = '?';
+        verifyHistoryFilesHelp.title = VERIFY_HISTORY_FILES_TOOLTIP;
+        verifyHistoryFilesHelp.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border:1px solid #999;border-radius:50%;color:#666;font-size:10px;font-weight:700;line-height:1;cursor:help;user-select:none;flex-shrink:0;';
+        verifyHistoryFilesRow.appendChild(verifyHistoryFilesChk);
+        verifyHistoryFilesRow.appendChild(verifyHistoryFilesLabel);
+        verifyHistoryFilesRow.appendChild(verifyHistoryFilesHelp);
+
+        skipHistoryChk.addEventListener('change', () => {
+            GM_setValue(KEY_SKIP_HISTORY, skipHistoryChk.checked);
+            verifyHistoryFilesRow.style.display = skipHistoryChk.checked ? 'flex' : 'none';
+        });
+        verifyHistoryFilesChk.addEventListener('change', () => {
+            GM_setValue(KEY_VERIFY_HISTORY_FILES, verifyHistoryFilesChk.checked);
+        });
+
         const artworkIdDiv = document.createElement('div');
         artworkIdDiv.innerHTML = `作品ID: ${artworkId}`;
         artworkIdDiv.style.cssText = `
@@ -488,6 +541,8 @@
         container.appendChild(statusDiv);
         container.appendChild(button);
         container.appendChild(bookmarkRow);
+        container.appendChild(skipHistoryRow);
+        container.appendChild(verifyHistoryFilesRow);
         container.appendChild(artworkIdDiv);
         container.appendChild(backendStatusDiv);
         container.appendChild(infoDiv);

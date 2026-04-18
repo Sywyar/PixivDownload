@@ -30,12 +30,14 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Instant;
 import java.util.*;
+import java.util.regex.Pattern;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 @Slf4j
 @Service
 public class DownloadService {
+    private static final Set<String> IMAGE_EXTENSIONS = Set.of("jpg", "jpeg", "png", "gif", "webp");
 
     private final DownloadConfig downloadConfig;
     private final ApplicationEventPublisher eventPublisher;
@@ -300,6 +302,18 @@ public class DownloadService {
         return pixivDatabase.getArtwork(artworkId);
     }
 
+    public ArtworkRecord getDownloadedRecord(Long artworkId, boolean verifyFiles) {
+        ArtworkRecord artwork = pixivDatabase.getArtwork(artworkId);
+        if (!verifyFiles || artwork == null) {
+            return artwork;
+        }
+        if (hasArtworkFiles(artwork)) {
+            return artwork;
+        }
+        removeStaleArtworkRecord(artwork);
+        return null;
+    }
+
     public ImageResponse getImageResponse(Long artworkId, int page, boolean thumbnail) throws IOException {
         ArtworkRecord artwork = pixivDatabase.getArtwork(artworkId);
         if (artwork == null) {
@@ -390,6 +404,50 @@ public class DownloadService {
         }
 
         return (imageFile != null && imageFile.exists()) ? imageFile : null;
+    }
+
+    private boolean hasArtworkFiles(ArtworkRecord artwork) {
+        String directoryPath = resolveArtworkDirectory(artwork);
+        if (!StringUtils.hasText(directoryPath)) {
+            return false;
+        }
+        File directory = new File(directoryPath);
+        if (!directory.isDirectory()) {
+            return false;
+        }
+        File[] files = directory.listFiles(File::isFile);
+        if (files == null || files.length == 0) {
+            return false;
+        }
+
+        Pattern artworkImagePattern = Pattern.compile("^" + artwork.artworkId() + "_p\\d+\\.[^.]+$",
+                Pattern.CASE_INSENSITIVE);
+        return Arrays.stream(files)
+                .map(File::getName)
+                .filter(artworkImagePattern.asMatchPredicate())
+                .map(this::getFileExtension)
+                .map(ext -> ext == null ? "" : ext.toLowerCase(Locale.ROOT))
+                .anyMatch(IMAGE_EXTENSIONS::contains);
+    }
+
+    private String resolveArtworkDirectory(ArtworkRecord artwork) {
+        if (artwork == null) {
+            return null;
+        }
+        if (StringUtils.hasText(artwork.moveFolder())) {
+            return artwork.moveFolder();
+        }
+        return artwork.folder();
+    }
+
+    private void removeStaleArtworkRecord(ArtworkRecord artwork) {
+        try {
+            pixivDatabase.deleteArtwork(artwork.artworkId());
+            log.info("删除无效下载记录: artworkId={}, path={}",
+                    artwork.artworkId(), resolveArtworkDirectory(artwork));
+        } catch (Exception e) {
+            log.warn("删除无效下载记录失败: artworkId={}", artwork.artworkId(), e);
+        }
     }
 
     public static File findFileByName(String directoryPath, String fileName) {

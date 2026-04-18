@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Pixiv 批量导入作品下载器
 // @namespace    http://tampermonkey.net/
-// @version      2.0.5
+// @version      2.0.6
 // @description  粘贴作品链接列表批量下载，格式为 url | title，兼容 One-Tab，N-Tab 等标签页管理插件导出格式，支持严格的下载状态校验。
 // @author       Rewritten by ChatGPT,Claude,Sywyar
 // @match        https://www.pixiv.net/*
@@ -57,6 +57,7 @@
         BACKEND_CHECK_TIMEOUT: 3000,
         STORAGE_KEY: 'pixiv_ntab_batch_v1',
         SKIP_HISTORY_KEY: 'pixiv_ntab_skip_history',
+        VERIFY_HISTORY_FILES_KEY: 'pixiv_ntab_verify_history_files',
         R18_ONLY_KEY: 'pixiv_ntab_r18_only',
         INTERVAL_UNIT_KEY: 'pixiv_ntab_interval_unit',
         IMAGE_DELAY_KEY: 'pixiv_ntab_image_delay',
@@ -68,6 +69,7 @@
     // ====== 配额状态 ======
     let quotaInfo = {enabled: false, artworksUsed: 0, maxArtworks: 50, resetSeconds: 0};
     let userUUID = GM_getValue(CONFIG.KEY_USER_UUID, null);
+    const VERIFY_HISTORY_FILES_TOOLTIP = '通过检查记录的目录是否存在、文件夹是否为空、文件夹中的文件是否包含图片来判断是否有效，如果无效则会重新下载';
 
     // 首次启动提示（只显示一次）
     function checkExternalServerNotice() {
@@ -329,11 +331,12 @@
                 });
             });
         },
-        checkDownloaded(artworkId) {
+        checkDownloaded(artworkId, verifyFiles = false) {
             return new Promise((resolve) => {
+                const query = verifyFiles ? '?verifyFiles=true' : '';
                 GM_xmlhttpRequest({
                     method: 'GET',
-                    url: `${serverBase}/api/downloaded/${artworkId}`,
+                    url: `${serverBase}/api/downloaded/${artworkId}${query}`,
                     onload: (res) => {
                         try {
                             if (res.status === 200) {
@@ -487,6 +490,7 @@
             this.activeWorkers = 0;
             this.stats = {completed: 0, success: 0, failed: 0, active: 0, skipped: 0};
             this.skipHistory = GM_getValue(CONFIG.SKIP_HISTORY_KEY, false);
+            this.verifyHistoryFiles = GM_getValue(CONFIG.VERIFY_HISTORY_FILES_KEY, false);
             this.r18Only = GM_getValue(CONFIG.R18_ONLY_KEY, false);
             this.bookmark = GM_getValue(CONFIG.BOOKMARK_KEY, false);
             this._quotaExceededHandled = false;
@@ -519,6 +523,7 @@
                     this.isPaused = !!parsed.isPaused;
                     this.stats = parsed.stats || {completed: 0, success: 0, failed: 0, active: 0, skipped: 0};
                     this.skipHistory = parsed.skipHistory !== undefined ? parsed.skipHistory : this.skipHistory;
+                    this.verifyHistoryFiles = parsed.verifyHistoryFiles !== undefined ? parsed.verifyHistoryFiles : this.verifyHistoryFiles;
                     this.r18Only = parsed.r18Only !== undefined ? parsed.r18Only : this.r18Only;
                     this.bookmark = parsed.bookmark !== undefined ? parsed.bookmark : this.bookmark;
                 }
@@ -535,6 +540,7 @@
                     isPaused: this.isPaused,
                     stats: this.stats,
                     skipHistory: this.skipHistory,
+                    verifyHistoryFiles: this.verifyHistoryFiles,
                     r18Only: this.r18Only,
                     bookmark: this.bookmark,
                     savedAt: new Date().toISOString()
@@ -548,6 +554,7 @@
             try {
                 GM_deleteValue(CONFIG.STORAGE_KEY);
                 GM_deleteValue(CONFIG.SKIP_HISTORY_KEY);
+                GM_deleteValue(CONFIG.VERIFY_HISTORY_FILES_KEY);
                 GM_deleteValue(CONFIG.R18_ONLY_KEY);
             } catch (e) {
             }
@@ -556,6 +563,15 @@
         setSkipHistory(skip) {
             this.skipHistory = skip;
             GM_setValue(CONFIG.SKIP_HISTORY_KEY, skip);
+            this.saveToStorage();
+            if (this.ui && this.ui.updateSkipHistoryVisibility) {
+                this.ui.updateSkipHistoryVisibility(skip);
+            }
+        }
+
+        setVerifyHistoryFiles(verify) {
+            this.verifyHistoryFiles = verify;
+            GM_setValue(CONFIG.VERIFY_HISTORY_FILES_KEY, verify);
             this.saveToStorage();
         }
 
@@ -739,7 +755,7 @@
             this.ui.renderQueue(this.queue);
 
             if (this.skipHistory) {
-                const isDownloaded = await Api.checkDownloaded(item.id);
+                const isDownloaded = await Api.checkDownloaded(item.id, this.verifyHistoryFiles);
                 if (isDownloaded) {
                     item.status = 'skipped';
                     item.lastMessage = '跳过 — 历史记录中已存在';
@@ -1193,6 +1209,11 @@
                     <label style="font-size: 12px; margin-right: 10px; width: 120px;">跳过历史下载:</label>
                     <input type="checkbox" id="skip-history" style="width: 16px; height: 16px;">
                 </div>
+                <div id="verify-history-files-row" style="display: none; align-items: center; margin-bottom: 10px;">
+                    <label style="font-size: 12px; margin-right: 10px; width: 120px;">实际目录检测:</label>
+                    <span title="${VERIFY_HISTORY_FILES_TOOLTIP}" style="display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border:1px solid #999;border-radius:50%;color:#666;font-size:10px;font-weight:700;line-height:1;cursor:help;user-select:none;margin-right:8px;">?</span>
+                    <input type="checkbox" id="verify-history-files" style="width: 16px; height: 16px;">
+                </div>
                 <div style="display: flex; align-items: center; margin-bottom: 10px;">
                     <label style="font-size: 12px; margin-right: 10px; width: 120px; color: #d63384;">仅下载R18作品:</label>
                     <input type="checkbox" id="r18-only" style="width: 16px; height: 16px;">
@@ -1337,6 +1358,8 @@
                 imageDelayUnitBtn: container.querySelector('#image-delay-unit-btn'),
                 concurrent: container.querySelector('#max-concurrent'),
                 skipHistory: container.querySelector('#skip-history'),
+                verifyHistoryFiles: container.querySelector('#verify-history-files'),
+                verifyHistoryFilesRow: container.querySelector('#verify-history-files-row'),
                 r18Only: container.querySelector('#r18-only'),
                 bookmarkAfterDl: container.querySelector('#bookmark-after-dl'),
                 serverBaseInput: container.querySelector('#server-base-url'),
@@ -1391,10 +1414,15 @@
         bindManager(manager) {
             this.manager = manager;
             this.elements.skipHistory.checked = manager.skipHistory;
+            this.elements.verifyHistoryFiles.checked = manager.verifyHistoryFiles;
             this.elements.r18Only.checked = manager.r18Only;
             this.elements.bookmarkAfterDl.checked = manager.bookmark;
             this.elements.skipHistory.addEventListener('change', (e) => {
                 this.manager.setSkipHistory(e.target.checked);
+                this.updateSkipHistoryVisibility(e.target.checked);
+            });
+            this.elements.verifyHistoryFiles.addEventListener('change', (e) => {
+                this.manager.setVerifyHistoryFiles(e.target.checked);
             });
             this.elements.r18Only.addEventListener('change', (e) => {
                 this.manager.setR18Only(e.target.checked);
@@ -1408,6 +1436,12 @@
                     GM_setValue(KEY_SERVER_URL, serverBase);
                 });
             }
+            this.updateSkipHistoryVisibility(manager.skipHistory);
+        }
+
+        updateSkipHistoryVisibility(enabled) {
+            if (!this.elements.verifyHistoryFilesRow) return;
+            this.elements.verifyHistoryFilesRow.style.display = enabled ? 'flex' : 'none';
         }
 
         async handleStart() {
