@@ -31,7 +31,7 @@ public class ScriptRegistry {
             "Pixiv 单作品图片下载器(Local download).user.js", "artwork-local",
             "Pixiv User 批量下载器.user.js", "user-batch",
             "Pixiv 页面批量下载器.user.js", "page-batch",
-            "Pixiv 批量导入作品下载器.user.js", "import-batch"
+            "Pixiv URL 批量导入作品下载器.user.js", "import-batch"
     );
 
     private final List<ScriptResource> scripts;

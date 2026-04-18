@@ -150,7 +150,7 @@ Download scripts from [Releases](../../releases) and drag them into the Tampermo
 | `Pixiv 单作品图片下载器(Java后端版).user.js`        | Single artwork page download                                                                              |
 | `Pixiv 单作品图片下载器(Local download).user.js` | Single artwork page download (browser local download, no Java backend required)                           |
 | `Pixiv User 批量下载器.user.js`             | User homepage batch download                                                                              |
-| `Pixiv 批量导入作品下载器.user.js`              | Bulk artwork import (compatible with export formats from tab manager extensions such as OneTab and N-Tab) |
+| `Pixiv URL 批量导入作品下载器.user.js`              | Bulk artwork import (compatible with export formats from tab manager extensions such as OneTab and N-Tab) |
 | `Pixiv 页面批量下载器.user.js`                | Page DOM crawling (supports full Pixiv site crawling)                                                     |
 
 > **Recommended: Use the web interface first.** `http://localhost:6999/pixiv-batch.html` supports Bulk Artwork Import, User mode, and Search mode. No userscript installation needed for batch downloading.

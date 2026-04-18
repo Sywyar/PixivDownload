@@ -1116,7 +1116,7 @@
                 }
             });
             const titleText = $el('div', {
-                html: '🎨 批量导入作品下载器 v1.2.1 (支持动图)',
+                html: '🎨 批量导入作品下载器',
                 style: {fontWeight: 'bold', color: '#333', textAlign: 'center', fontSize: '16px', flex: '1'}
             });
             collapseBtn.addEventListener('click', () => this.toggleCollapse());

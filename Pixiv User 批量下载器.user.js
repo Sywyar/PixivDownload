@@ -1616,10 +1616,10 @@
                 let displayText;
                 if (userName) {
                     // 显示格式：User: 用户名(用户ID)
-                    displayText = `User: ${userName}(${uid}) (批量下载)`;
+                    displayText = `User: ${userName}(${uid})`;
                 } else {
                     // 如果还没有获取到用户名，只显示用户ID
-                    displayText = `User: ${uid} (批量下载)`;
+                    displayText = `User: ${uid}`;
                 }
                 this.elements.title.innerText = `🖼️ ${displayText}`;
             }
