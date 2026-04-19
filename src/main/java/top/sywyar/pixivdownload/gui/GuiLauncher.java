@@ -3,6 +3,7 @@ package top.sywyar.pixivdownload.gui;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import top.sywyar.pixivdownload.PixivDownloadApplication;
+import top.sywyar.pixivdownload.common.AppVersion;
 import top.sywyar.pixivdownload.config.RuntimeFiles;
 import top.sywyar.pixivdownload.gui.config.ConfigFileEditor;
 import top.sywyar.pixivdownload.gui.theme.FlatLafSetup;
@@ -76,6 +77,7 @@ public class GuiLauncher {
 
         // ── 触发 logback 初始化（此时 LOG_TIMESTAMP 已就绪）─────────────────────
         log = LoggerFactory.getLogger(GuiLauncher.class);
+        log.info("PixivDownload 版本：{}", AppVersion.getDisplayVersion());
         log.info("PixivDownload 启动中，args={}", Arrays.toString(args));
 
         SingleInstanceManager singleInstanceManager;

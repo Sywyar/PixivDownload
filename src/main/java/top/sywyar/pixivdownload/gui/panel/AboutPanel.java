@@ -1,5 +1,7 @@
 package top.sywyar.pixivdownload.gui.panel;
 
+import top.sywyar.pixivdownload.common.AppVersion;
+
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.MouseAdapter;
@@ -13,6 +15,7 @@ public class AboutPanel extends JPanel {
 
     private static final String GITHUB_URL = "https://github.com/Sywyar/PixivDownload";
     private static final String APP_NAME = "PixivDownload";
+    private static final String APP_VERSION = AppVersion.getDisplayVersion();
 
     private static final String LICENSE_TEXT = """
             - 本项目仅供个人学习和研究使用，请勿用于任何商业用途。
@@ -705,6 +708,13 @@ public class AboutPanel extends JPanel {
         nameLabel.setFont(nameLabel.getFont().deriveFont(Font.BOLD, 20f));
         nameLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
         topPanel.add(nameLabel);
+        topPanel.add(Box.createVerticalStrut(6));
+
+        JLabel versionLabel = new JLabel("版本：" + APP_VERSION);
+        versionLabel.setFont(versionLabel.getFont().deriveFont(Font.PLAIN, 12f));
+        versionLabel.setForeground(Color.GRAY);
+        versionLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
+        topPanel.add(versionLabel);
         topPanel.add(Box.createVerticalStrut(6));
 
         // 描述

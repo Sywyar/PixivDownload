@@ -240,9 +240,9 @@ try {
 
     Write-Step "Building application JAR"
     if ($RunTests) {
-        Invoke-External $mavenCmd @("package")
+        Invoke-External $mavenCmd @("package", "-Dapp.release.version=$Version")
     } else {
-        Invoke-External $mavenCmd @("package", "-DskipTests")
+        Invoke-External $mavenCmd @("package", "-DskipTests", "-Dapp.release.version=$Version")
     }
 
     $jar = Get-BuiltJar

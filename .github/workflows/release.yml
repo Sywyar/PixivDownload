@@ -33,8 +33,18 @@ jobs:
           distribution: 'temurin'
           cache: maven
 
+      - name: Resolve version
+        id: vars
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          if [[ -z "$VERSION" || "$VERSION" == "$GITHUB_REF_NAME" ]]; then
+            VERSION="0.0.1"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
       - name: Build JAR
-        run: mvn package -DskipTests
+        run: mvn package -DskipTests -Dapp.release.version=${{ steps.vars.outputs.version }}
 
       - name: Rename JAR
         run: |
@@ -66,11 +76,7 @@ jobs:
           distribution: 'temurin'
           cache: maven
 
-      - name: Build JAR
-        shell: bash
-        run: mvn package -DskipTests
-
-      - name: Resolve version and locate jar
+      - name: Resolve version
         id: vars
         shell: bash
         run: |
@@ -78,15 +84,24 @@ jobs:
           if [[ -z "$VERSION" || "$VERSION" == "$GITHUB_REF_NAME" ]]; then
             VERSION="0.0.1"
           fi
-          JAR=$(ls target/PixivDownload-*.jar | head -n1)
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Build JAR
+        shell: bash
+        run: mvn package -DskipTests -Dapp.release.version=${{ steps.vars.outputs.version }}
+
+      - name: Refresh built jar path
+        id: built_jar
+        shell: bash
+        run: |
+          JAR=$(ls target/PixivDownload-*.jar | head -n1)
           echo "jar=$JAR" >> "$GITHUB_OUTPUT"
 
       - name: Stage JAR for jpackage
         shell: bash
         run: |
           mkdir -p build/input
-          cp "${{ steps.vars.outputs.jar }}" "build/input/PixivDownload-${{ steps.vars.outputs.version }}.jar"
+          cp "${{ steps.built_jar.outputs.jar }}" "build/input/PixivDownload-${{ steps.vars.outputs.version }}.jar"
 
       - name: Build trimmed runtime with jlink
         shell: bash
