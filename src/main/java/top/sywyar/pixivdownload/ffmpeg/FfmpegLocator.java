@@ -57,7 +57,10 @@ public final class FfmpegLocator {
     }
 
     public static Path managedRootDir() {
-        return defaultManagedRoot(OS_NAME, System.getenv("LOCALAPPDATA"), userHomeDir());
+        return packagedApplicationRoot()
+                .or(FfmpegLocator::workingDirectory)
+                .or(FfmpegLocator::launcherRoot)
+                .orElseGet(() -> defaultManagedRoot(OS_NAME, System.getenv("LOCALAPPDATA"), userHomeDir()));
     }
 
     public static Path managedToolsDir() {
@@ -161,7 +164,7 @@ public final class FfmpegLocator {
         }
     }
 
-    private static Optional<Path> launcherRoot() {
+    private static Optional<Path> packagedApplicationRoot() {
         try {
             Path location = Path.of(FfmpegLocator.class.getProtectionDomain().getCodeSource().getLocation().toURI());
             if (Files.isRegularFile(location)) {
@@ -175,6 +178,19 @@ public final class FfmpegLocator {
                 }
                 return Optional.ofNullable(parent).filter(Files::isDirectory);
             }
+        } catch (URISyntaxException | NullPointerException ignored) {
+            return Optional.empty();
+        }
+        return Optional.empty();
+    }
+
+    private static Optional<Path> launcherRoot() {
+        Optional<Path> packagedRoot = packagedApplicationRoot();
+        if (packagedRoot.isPresent()) {
+            return packagedRoot;
+        }
+        try {
+            Path location = Path.of(FfmpegLocator.class.getProtectionDomain().getCodeSource().getLocation().toURI());
             if (Files.isDirectory(location)) {
                 return Optional.of(location);
             }

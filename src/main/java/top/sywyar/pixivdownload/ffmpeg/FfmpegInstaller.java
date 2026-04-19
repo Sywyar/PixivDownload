@@ -72,7 +72,7 @@ public final class FfmpegInstaller {
             Files.createDirectories(licenseDir);
             Files.writeString(licenseDir.resolve("ffmpeg-LGPL.txt"), LGPL_NOTICE);
 
-            progress.onProgress("FFmpeg 已安装到用户目录。", 1L, 1L);
+            progress.onProgress("FFmpeg 已安装到软件目录。", 1L, 1L);
             return FfmpegLocator.managedInstallation()
                     .orElseThrow(() -> new IOException("FFmpeg 安装完成，但未检测到安装结果。"));
         } finally {

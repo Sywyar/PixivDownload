@@ -21,7 +21,7 @@ public record FfmpegInstallation(Path ffmpegPath, Path ffprobePath, Path homeDir
     }
 
     public enum Source {
-        MANAGED("用户目录"),
+        MANAGED("软件目录"),
         BUNDLED("安装包内置"),
         SYSTEM("系统 PATH");
 

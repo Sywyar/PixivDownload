@@ -44,7 +44,7 @@ public class StatusPanel extends JPanel {
 
     private final JLabel ffmpegBadge = new JLabel("正在检测 FFmpeg...");
     private final JLabel ffmpegSourceLabel = secondaryLabel("动图转 WebP 需要 FFmpeg，普通图片下载不受影响。");
-    private final JLabel ffmpegPathLabel = secondaryLabel("用户目录安装位置将显示在这里。");
+    private final JLabel ffmpegPathLabel = secondaryLabel("软件目录安装位置将显示在这里。");
     private final JButton ffmpegActionButton = new JButton("下载 FFmpeg");
     private final JButton openFfmpegDirButton = new JButton("打开 FFmpeg 目录");
     private final JProgressBar ffmpegProgress = new JProgressBar();
@@ -316,7 +316,7 @@ public class StatusPanel extends JPanel {
             ffmpegBadge.setText("未检测到 FFmpeg");
             ffmpegBadge.setForeground(new Color(180, 100, 0));
             ffmpegSourceLabel.setText("普通图片下载不受影响；需要处理 Ugoira 动图时，再点击右侧按钮即可。");
-            ffmpegPathLabel.setText("用户目录安装位置：" + FfmpegLocator.managedToolsDir());
+            ffmpegPathLabel.setText("软件目录安装位置：" + FfmpegLocator.managedToolsDir());
             ffmpegPathLabel.setToolTipText(FfmpegLocator.managedToolsDir().toString());
             ffmpegActionButton.setText(FfmpegInstaller.supportsManagedDownload() ? "下载 FFmpeg" : "请手动安装 FFmpeg");
             ffmpegActionButton.setEnabled(FfmpegInstaller.supportsManagedDownload());
@@ -335,7 +335,7 @@ public class StatusPanel extends JPanel {
         ffmpegPathLabel.setToolTipText(installation.ffmpegPath().toString());
         ffmpegActionButton.setText(switch (installation.source()) {
             case MANAGED -> "重新下载 FFmpeg";
-            case BUNDLED, SYSTEM -> "下载到用户目录";
+            case BUNDLED, SYSTEM -> "下载到软件目录";
         });
         ffmpegActionButton.setEnabled(FfmpegInstaller.supportsManagedDownload());
         openFfmpegDirButton.setEnabled(true);
@@ -353,7 +353,7 @@ public class StatusPanel extends JPanel {
         }
 
         int confirm = JOptionPane.showConfirmDialog(this,
-                "将下载 FFmpeg 到用户目录，用于 Ugoira 动图转 WebP。普通图片下载不会受到影响。\n\n是否继续？",
+                "将下载 FFmpeg 到软件目录，用于 Ugoira 动图转 WebP。普通图片下载不会受到影响。\n\n是否继续？",
                 "下载 FFmpeg", JOptionPane.YES_NO_OPTION);
         if (confirm != JOptionPane.YES_OPTION) {
             return;
