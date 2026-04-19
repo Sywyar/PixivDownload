@@ -39,28 +39,36 @@ function Resolve-UserscriptSources {
 
     $resolved = @{}
     foreach ($file in $allFiles) {
-        if ($file.Name -match 'Local download') {
+        if ($file.Name -match "Local download") {
             continue
-        } elseif ($file.Name -match 'Java') {
+        }
+        if ($file.Name -match "Java") {
             $resolved["single-java"] = $file
-        } elseif ($file.Name -match '^Pixiv User ') {
+            continue
+        }
+        if ($file.Name -match "^Pixiv User ") {
             $resolved["user-batch"] = $file
-        } elseif ($file.Name -match '^Pixiv URL ') {
+            continue
+        }
+        if ($file.Name -match "^Pixiv URL ") {
             $resolved["import-batch"] = $file
+            continue
         }
     }
 
     $assignedPaths = @($resolved.Values | ForEach-Object { $_.FullName })
-    $pageCandidate = @(
+    $pageCandidates = @(
         $allFiles | Where-Object {
-            $_.Name -notmatch 'Local download' -and
+            $_.Name -notmatch "Local download" -and
             $assignedPaths -notcontains $_.FullName
         }
     )
-    if ($pageCandidate.Count -ne 1) {
+
+    if ($pageCandidates.Count -ne 1) {
         throw "Could not uniquely identify the page batch userscript source."
     }
-    $resolved["page-batch"] = $pageCandidate[0]
+
+    $resolved["page-batch"] = $pageCandidates[0]
 
     foreach ($definition in $SourceDefinitions) {
         if (-not $resolved.ContainsKey($definition.Key)) {
@@ -74,7 +82,7 @@ function Resolve-UserscriptSources {
 function Get-UserscriptHeaderLines {
     param([string]$Content)
 
-    $headerPattern = '(?s)// ==UserScript==\s*(.*?)\s*// ==/UserScript=='
+    $headerPattern = "(?s)// ==UserScript==\s*(.*?)\s*// ==/UserScript=="
     $match = [regex]::Match($Content, $headerPattern)
     if (-not $match.Success) {
         throw "Userscript header not found."
@@ -86,8 +94,8 @@ function Get-UserscriptHeaderLines {
 function Remove-UserscriptHeader {
     param([string]$Content)
 
-    $regex = [regex]'(?s)^.*?// ==/UserScript==\s*'
-    return $regex.Replace($Content, '', 1).Trim()
+    $regex = [regex]"(?s)^.*?// ==/UserScript==\s*"
+    return $regex.Replace($Content, "", 1).Trim()
 }
 
 function Convert-ToBundleFunction {
@@ -97,10 +105,10 @@ function Convert-ToBundleFunction {
     )
 
     $body = Remove-UserscriptHeader -Content $Content
-    $startRegex = [regex]'^\(function\s*\(\s*\)\s*\{'
-    $endRegex = [regex]'\}\)\(\);\s*$'
+    $startRegex = [regex]"^\(function\s*\(\s*\)\s*\{"
+    $endRegex = [regex]"\}\)\(\);\s*$"
     $body = $startRegex.Replace($body, "function $FunctionName() {", 1)
-    $body = $endRegex.Replace($body, '}', 1)
+    $body = $endRegex.Replace($body, "}", 1)
 
     if (-not $body.StartsWith("function $FunctionName() {")) {
         throw "Failed to convert outer IIFE for function $FunctionName."
@@ -139,13 +147,13 @@ foreach ($definition in $SourceDefinitions) {
     $headerLines = Get-UserscriptHeaderLines -Content $content
 
     foreach ($line in $headerLines) {
-        if ($line -match '^\s*//\s*@grant\s+(.+?)\s*$') {
+        if ($line -match "^\s*//\s*@grant\s+(.+?)\s*$") {
             Add-UniqueValues -Target $grantValues -Values @($matches[1].Trim())
-        } elseif ($line -match '^\s*//\s*@match\s+(.+?)\s*$') {
+        } elseif ($line -match "^\s*//\s*@match\s+(.+?)\s*$") {
             Add-UniqueValues -Target $matchValues -Values @($matches[1].Trim())
-        } elseif ($line -match '^\s*//\s*@connect\s+(.+?)\s*$') {
+        } elseif ($line -match "^\s*//\s*@connect\s+(.+?)\s*$") {
             Add-UniqueValues -Target $connectValues -Values @($matches[1].Trim())
-        } elseif ($line -match '^\s*//\s*@run-at\s+document-start\s*$') {
+        } elseif ($line -match "^\s*//\s*@run-at\s+document-start\s*$") {
             $hasDocumentStart = $true
         }
     }
@@ -160,11 +168,15 @@ if (-not $grantValues.Contains("GM_registerMenuCommand")) {
 
 $runAt = if ($hasDocumentStart) { "document-start" } else { "document-end" }
 $metadataLines = [System.Collections.Generic.List[string]]::new()
+$bundleDescriptionZh = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String("Ly8gQGRlc2NyaXB0aW9uICBQaXhpdiDlpJrlkIjkuIDkuIvovb3ohJrmnKzvvIzmlbTlkIjpobXpnaLmibnph4/kuIvovb3jgIFVc2VyIOaJuemHj+S4i+i9veOAgVVSTCDmibnph4/lr7zlhaXlkozljZXkvZzlk4HkuIvovb3vvIhKYXZh5ZCO56uv54mI77yJ44CC5aaC5aSa5ZCI5LiA6ISa5pys5byC5bi477yM6K+35YWI5bCd6K+V5a+55bqU54us56uL6ISa5pys77yb6Iul5LuF5aSa5ZCI5LiA5byC5bi477yM6K+36ZmE5aSN546w5q2l6aqk5ZCO5o+Q5LqkIGlzc3Vl44CC"))
+$bundleDescriptionEn = "// @description:en  Pixiv all-in-one downloader for page batch, user batch, URL import, and single-artwork download (Java backend). If the bundle misbehaves, try the matching standalone script first; if only the bundle fails, open an issue with reproduction details."
+
 $null = $metadataLines.Add("// ==UserScript==")
 $null = $metadataLines.Add("// @name         Pixiv All-in-One Downloader")
 $null = $metadataLines.Add("// @namespace    http://tampermonkey.net/")
 $null = $metadataLines.Add("// @version      $Version")
-$null = $metadataLines.Add("// @description  Bundled Pixiv downloader that combines page batch, user batch, URL import, and Java-backend single-artwork downloading.")
+$null = $metadataLines.Add($bundleDescriptionZh)
+$null = $metadataLines.Add($bundleDescriptionEn)
 $null = $metadataLines.Add("// @author       Sywyar")
 foreach ($value in $matchValues) {
     $null = $metadataLines.Add("// @match        $value")

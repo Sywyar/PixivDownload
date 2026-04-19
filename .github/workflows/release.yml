@@ -43,6 +43,10 @@ jobs:
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
+      - name: Generate bundled userscript
+        shell: pwsh
+        run: ./scripts/build-userscript-bundle.ps1 -Version "${{ steps.vars.outputs.version }}"
+
       - name: Build JAR
         run: mvn package -DskipTests -Dapp.release.version=${{ steps.vars.outputs.version }}
 
@@ -56,6 +60,12 @@ jobs:
         with:
           name: jar
           path: target/PixivDownload-*.jar
+
+      - name: Upload userscript artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: userscripts
+          path: build/generated-userscripts/*.user.js
 
   build-windows-installer:
     runs-on: windows-latest
@@ -85,6 +95,10 @@ jobs:
             VERSION="0.0.1"
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Generate bundled userscript
+        shell: pwsh
+        run: ./scripts/build-userscript-bundle.ps1 -Version "${{ steps.vars.outputs.version }}"
 
       - name: Build JAR
         shell: bash
@@ -300,6 +314,12 @@ jobs:
           name: windows-installer
           path: artifacts/
 
+      - name: Download userscript artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: userscripts
+          path: artifacts/userscripts
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
@@ -307,6 +327,7 @@ jobs:
             artifacts/PixivDownload-${{ github.ref_name }}.jar
             artifacts/*.msi
             artifacts/*-portable.zip
+            artifacts/userscripts/*.user.js
             *.user.js
           generate_release_notes: true
           body: |
@@ -352,5 +373,7 @@ jobs:
             ### 油猴脚本
 
             如仍需使用油猴脚本，登录后打开 `http://localhost:6999/pixiv-batch.html`，点击页面顶部的“油猴脚本”卡片并安装对应脚本。部署在非 localhost 服务器时，`@connect` 会自动替换为实际地址。
+            如果只想安装一个脚本，优先选择 `Pixiv All-in-One.user.js`。它整合了页面批量下载、User 批量下载、URL 批量导入和单作品下载（Java 后端版），`Local download` 仍保持独立脚本。
+            如果多合一脚本遇到问题，请先尝试对应的独立脚本；如果独立版本正常、只有多合一异常，请附带复现步骤和环境信息提交 issue。
 
             ## 详细说明请查看 README
