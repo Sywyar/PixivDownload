@@ -83,7 +83,7 @@ public final class DatabaseSchemaInspector {
     private static List<ManagedDatabaseSchema.ColumnSpec> readColumns(Connection connection, String tableName) throws SQLException {
         List<ManagedDatabaseSchema.ColumnSpec> columns = new ArrayList<>();
         try (Statement statement = connection.createStatement();
-             ResultSet rs = statement.executeQuery("PRAGMA table_info(" + quoteIdentifier(tableName) + ")")) {
+             ResultSet rs = statement.executeQuery("PRAGMA table_info(" + tableName + ")")) {
             while (rs.next()) {
                 columns.add(new ManagedDatabaseSchema.ColumnSpec(
                         rs.getString("name"),
@@ -100,7 +100,7 @@ public final class DatabaseSchemaInspector {
     private static List<ManagedDatabaseSchema.IndexSpec> readIndexes(Connection connection, String tableName) throws SQLException {
         List<ManagedDatabaseSchema.IndexSpec> indexes = new ArrayList<>();
         try (Statement statement = connection.createStatement();
-             ResultSet rs = statement.executeQuery("PRAGMA index_list(" + quoteIdentifier(tableName) + ")")) {
+             ResultSet rs = statement.executeQuery("PRAGMA index_list(" + tableName + ")")) {
             while (rs.next()) {
                 String originCode = rs.getString("origin");
                 if ("pk".equalsIgnoreCase(originCode)) {
@@ -131,7 +131,7 @@ public final class DatabaseSchemaInspector {
     private static List<String> readIndexColumns(Connection connection, String indexName) throws SQLException {
         List<String> columns = new ArrayList<>();
         try (Statement statement = connection.createStatement();
-             ResultSet rs = statement.executeQuery("PRAGMA index_info(" + quoteIdentifier(indexName) + ")")) {
+             ResultSet rs = statement.executeQuery("PRAGMA index_info(" + indexName + ")")) {
             while (rs.next()) {
                 columns.add(ManagedDatabaseSchema.normalizeIdentifier(rs.getString("name")));
             }
@@ -202,10 +202,6 @@ public final class DatabaseSchemaInspector {
             differences.add("表 " + tableName + " 列 " + expected.name() + " 主键顺序不一致: expected="
                     + expected.primaryKeyPosition() + ", actual=" + actual.primaryKeyPosition());
         }
-    }
-
-    private static String quoteIdentifier(String identifier) {
-        return "\"" + identifier.replace("\"", "\"\"") + "\"";
     }
 
     public record SchemaComparison(boolean matches, List<String> differences) {

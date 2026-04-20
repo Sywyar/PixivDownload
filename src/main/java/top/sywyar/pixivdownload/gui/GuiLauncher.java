@@ -67,11 +67,12 @@ public class GuiLauncher {
     private static final String LOG_LATEST = LOG_DIR + "/latest.log";
     private static final String LOG_HTML_LATEST = LOG_HTML_DIR + "/latest.html";
     private static final String LOG_SESSION_PREFIX = "pixiv-download_";
-    /** 保留最近的会话日志数量（不含 latest.log / latest.html） */
+    /**
+     * 保留最近的会话日志数量（不含 latest.log / latest.html）
+     */
     private static final int LOG_HISTORY_COUNT = 5;
     private static final int DEFAULT_PORT = 6999;
     private static final String DEFAULT_ROOT = RuntimeFiles.DEFAULT_DOWNLOAD_ROOT;
-    private static volatile Integer startupBackfillCheckResult;
 
     public static void main(String[] args) throws Exception {
         // ── 0. 在 logback 初始化前完成日志目录/属性准备 ──────────────────────────
@@ -80,7 +81,6 @@ public class GuiLauncher {
 
         // ── 触发 logback 初始化（此时 LOG_TIMESTAMP 已就绪）─────────────────────
         log = LoggerFactory.getLogger(GuiLauncher.class);
-        startupBackfillCheckResult = null;
         log.info("PixivDownload 版本：{}", AppVersion.getDisplayVersion());
         log.info("PixivDownload 启动中，args={}", Arrays.toString(args));
 
@@ -159,8 +159,6 @@ public class GuiLauncher {
             frame.showWindow();
             maybeScheduleStartupBackfillFlow(frame, configPath, root);
         });
-
-        // ── 4. 在后台线程启动 Spring Boot ─────────────────────────────────────────
     }
 
     // ────────────────────────────────────────────────────────────────────────
@@ -232,146 +230,127 @@ public class GuiLauncher {
         }
     }
 
-    public static Integer getStartupBackfillCheckResult() {
-        return startupBackfillCheckResult;
-    }
-
     private static void maybeScheduleStartupBackfillFlow(MainFrame frame, Path configPath, String rootFolder) {
         ArtworksBackFill.Options options = buildStartupBackfillOptions(configPath, rootFolder);
         Path databasePath = Path.of(options.dbPath());
 
         Thread worker = new Thread(() -> {
-            if (!hasInspectableDatabase(databasePath)) {
-                log.info("Startup schema check skipped because database file is absent or empty: {}", databasePath.toAbsolutePath());
-                startBackendAfterStartupPreparation(null);
-                return;
-            }
-
-            DatabaseSchemaInspector.SchemaComparison comparison;
             try {
-                comparison = DatabaseSchemaInspector.compare(databasePath);
-            } catch (Throwable error) {
-                log.warn("Failed to compare database schema at startup", error);
-                startBackendAfterStartupPreparation(() -> JOptionPane.showMessageDialog(
-                        frame,
-                        "启动时未能完成数据库结构检查，后端将继续启动。\n原因：" + safeMessage(error),
-                        "数据库结构检查",
-                        JOptionPane.WARNING_MESSAGE
-                ));
-                return;
+                runStartupSchemaBackfill(frame, databasePath, options);
+            } catch (Throwable fatal) {
+                log.error("Startup schema-backfill flow failed unexpectedly", fatal);
+                BackendLifecycleManager.startAsync();
             }
-
-            if (comparison.matches()) {
-                log.info("Startup schema check passed for {}", databasePath.toAbsolutePath());
-                startBackendAfterStartupPreparation(null);
-                return;
-            }
-
-            log.info("Database schema mismatch detected at startup:\n{}", comparison.summary(8));
-            showStartupSchemaReminder(frame, comparison);
-            runStartupBackfillCheck(frame, options);
-        }, "startup-schema-check");
+        }, "startup-schema-backfill");
         worker.setDaemon(true);
         worker.start();
     }
 
-    private static void showStartupSchemaReminder(Component owner,
-                                                  DatabaseSchemaInspector.SchemaComparison comparison) {
-        runOnEdtAndWait(() -> JOptionPane.showMessageDialog(
-                owner,
+    private static void runStartupSchemaBackfill(MainFrame frame, Path databasePath,
+                                                 ArtworksBackFill.Options options) {
+        if (!hasInspectableDatabase(databasePath)) {
+            log.info("Startup schema check skipped: database absent or empty at {}", databasePath.toAbsolutePath());
+            BackendLifecycleManager.startAsync();
+            return;
+        }
+
+        DatabaseSchemaInspector.SchemaComparison comparison;
+        try {
+            comparison = DatabaseSchemaInspector.compare(databasePath);
+        } catch (Throwable error) {
+            log.warn("Failed to compare database schema at startup", error);
+            SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(
+                    frame,
+                    "启动时未能完成数据库结构检查，后端将继续启动。\n原因：" + safeMessage(error),
+                    "数据库结构检查",
+                    JOptionPane.WARNING_MESSAGE));
+            BackendLifecycleManager.startAsync();
+            return;
+        }
+
+        if (comparison.matches()) {
+            log.info("Startup schema check passed for {}", databasePath.toAbsolutePath());
+            BackendLifecycleManager.startAsync();
+            return;
+        }
+
+        log.info("Startup schema mismatch:\n{}", comparison.summary(8));
+        SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(
+                frame,
                 "检测到本地数据库结构与当前维护结构不一致。\n"
-                        + "程序将先执行一次数据库回填检查，若发现待回填记录则自动开始回填。\n\n"
+                        + "程序将在后台执行一次数据库回填检查，若发现待回填记录则自动开始回填。\n\n"
                         + "结构差异摘要：\n" + comparison.summary(6),
                 "数据库结构变化提醒",
-                JOptionPane.INFORMATION_MESSAGE
-        ));
-    }
+                JOptionPane.INFORMATION_MESSAGE));
 
-    private static void runStartupBackfillCheck(MainFrame frame, ArtworksBackFill.Options options) {
-        Thread worker = new Thread(() -> {
-            try {
-                startupBackfillCheckResult = ArtworksBackFill.countCandidates(options);
-                log.info("Startup backfill check completed. pendingCandidates={}", startupBackfillCheckResult);
-            } catch (Throwable error) {
-                log.warn("Startup backfill check failed", error);
-                startBackendAfterStartupPreparation(() -> JOptionPane.showMessageDialog(
-                        frame,
-                        "数据库回填检查失败，后端将继续启动。\n原因：" + safeMessage(error),
-                        "数据库回填检查",
-                        JOptionPane.WARNING_MESSAGE
-                ));
-                return;
-            }
+        int pendingCount;
+        try {
+            pendingCount = ArtworksBackFill.countCandidates(options);
+            log.info("Startup backfill check: pendingCandidates={}", pendingCount);
+        } catch (Throwable error) {
+            log.warn("Startup backfill check failed", error);
+            SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(
+                    frame,
+                    "数据库回填检查失败，后端将继续启动。\n原因：" + safeMessage(error),
+                    "数据库回填检查",
+                    JOptionPane.WARNING_MESSAGE));
+            BackendLifecycleManager.startAsync();
+            return;
+        }
 
-            if (startupBackfillCheckResult != null && startupBackfillCheckResult > 0) {
-                showStartupBackfillAutoRunNotice(frame, startupBackfillCheckResult);
-                runStartupBackfillInBackground(frame, options);
-                return;
-            }
+        if (pendingCount <= 0) {
+            BackendLifecycleManager.startAsync();
+            return;
+        }
 
-            startBackendAfterStartupPreparation(null);
-        }, "startup-backfill-check");
-        worker.setDaemon(true);
-        worker.start();
-    }
-
-    private static void showStartupBackfillAutoRunNotice(Component owner, int pendingCount) {
-        runOnEdtAndWait(() -> JOptionPane.showMessageDialog(
-                owner,
-                "数据库回填检查发现 " + pendingCount + " 条待回填记录。\n"
+        final int confirmedPending = pendingCount;
+        SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(
+                frame,
+                "数据库回填检查发现 " + confirmedPending + " 条待回填记录。\n"
                         + "程序将自动开始数据库回填，并尝试打开实时日志文件。",
                 "自动数据库回填",
-                JOptionPane.INFORMATION_MESSAGE
-        ));
-    }
+                JOptionPane.INFORMATION_MESSAGE));
 
-    private static void runStartupBackfillInBackground(MainFrame frame, ArtworksBackFill.Options options) {
-        Thread worker = new Thread(() -> {
-            ToolHtmlLogSession logSession = null;
-            ArtworksBackFill.Summary summary = null;
-            Throwable failure = null;
-
+        ToolHtmlLogSession logSession = null;
+        ArtworksBackFill.Summary summary = null;
+        Throwable failure = null;
+        try {
             try {
+                logSession = ToolHtmlLogSession.open("artworks-backfill", ArtworksBackFill.class);
                 try {
-                    logSession = ToolHtmlLogSession.open("artworks-backfill", ArtworksBackFill.class);
-                    try {
-                        logSession.openLatestInBrowser();
-                    } catch (Exception browserError) {
-                        log.warn("Failed to open startup backfill log page", browserError);
-                    }
-                } catch (Exception logError) {
-                    log.warn("Failed to create startup backfill log session", logError);
+                    logSession.openLatestInBrowser();
+                } catch (Exception browserError) {
+                    log.warn("Failed to open startup backfill log page", browserError);
                 }
-
-                summary = ArtworksBackFill.run(options);
-            } catch (Throwable error) {
-                failure = error;
-                log.error("Startup auto backfill failed", error);
-            } finally {
-                if (logSession != null) {
-                    try {
-                        logSession.close();
-                    } catch (Exception ignored) {
-                    }
-                }
-
-                ArtworksBackFill.Summary finalSummary = summary;
-                Throwable finalFailure = failure;
-                startBackendAfterStartupPreparation(() ->
-                        showStartupBackfillResult(frame, finalSummary, finalFailure));
+            } catch (Exception logError) {
+                log.warn("Failed to create startup backfill log session", logError);
             }
-        }, "startup-auto-backfill");
-        worker.setDaemon(true);
-        worker.start();
+            summary = ArtworksBackFill.run(options);
+        } catch (Throwable error) {
+            failure = error;
+            log.error("Startup auto backfill failed", error);
+        } finally {
+            if (logSession != null) {
+                try {
+                    logSession.close();
+                } catch (Exception ignored) {
+                }
+            }
+        }
+
+        ArtworksBackFill.Summary finalSummary = summary;
+        Throwable finalFailure = failure;
+        BackendLifecycleManager.startAsync(() -> showStartupBackfillResult(frame, finalSummary, finalFailure, confirmedPending));
     }
 
     private static void showStartupBackfillResult(Component owner,
                                                   ArtworksBackFill.Summary summary,
-                                                  Throwable failure) {
+                                                  Throwable failure,
+                                                  int checkedCount) {
         if (failure != null) {
             JOptionPane.showMessageDialog(
                     owner,
-                    "自动数据库回填失败：" + safeMessage(failure) + "\n请稍后在“工具”页手动重试。",
+                    "自动数据库回填失败：" + safeMessage(failure) + "\n请稍后在工具页手动重试。",
                     "自动数据库回填",
                     JOptionPane.ERROR_MESSAGE
             );
@@ -382,14 +361,12 @@ public class GuiLauncher {
             return;
         }
 
-        Integer checkedCount = startupBackfillCheckResult;
-        String checkedText = checkedCount == null ? "未知" : String.valueOf(checkedCount);
         String resultText = summary.rateLimited()
                 ? "自动数据库回填因限流提前结束，后端已恢复。"
                 : "自动数据库回填已完成，后端已恢复。";
         JOptionPane.showMessageDialog(
                 owner,
-                resultText + "\n启动检查结果：" + checkedText
+                resultText + "\n启动检查结果：" + checkedCount
                         + "\n已处理：" + summary.processed() + " / " + summary.totalCandidates(),
                 "自动数据库回填",
                 summary.rateLimited() ? JOptionPane.WARNING_MESSAGE : JOptionPane.INFORMATION_MESSAGE
@@ -411,7 +388,7 @@ public class GuiLauncher {
             } catch (Exception e) {
                 log.warn("Failed to load proxy defaults for startup backfill: {}", e.getMessage());
             }
-        }
+        }//"
 
         return new ArtworksBackFill.Options(
                 RuntimeFiles.resolveDatabasePath(rootFolder).toString(),
@@ -430,27 +407,6 @@ public class GuiLauncher {
         } catch (Exception e) {
             log.warn("Failed to inspect database file {}: {}", databasePath.toAbsolutePath(), e.getMessage());
             return false;
-        }
-    }
-
-    private static void startBackendAfterStartupPreparation(Runnable afterStart) {
-        if (!BackendLifecycleManager.startAsync(afterStart) && afterStart != null) {
-            SwingUtilities.invokeLater(afterStart);
-        }
-    }
-
-    private static void runOnEdtAndWait(Runnable action) {
-        if (action == null) {
-            return;
-        }
-        if (SwingUtilities.isEventDispatchThread()) {
-            action.run();
-            return;
-        }
-        try {
-            SwingUtilities.invokeAndWait(action);
-        } catch (Exception e) {
-            throw new IllegalStateException("Failed to execute action on EDT", e);
         }
     }
 
@@ -558,7 +514,9 @@ public class GuiLauncher {
         return null;
     }
 
-    /** 从 "Port 6999 was already in use" / ":6999" 等消息中提取端口号。 */
+    /**
+     * 从 "Port 6999 was already in use" / ":6999" 等消息中提取端口号。
+     */
     private static String extractPort(String msg) {
         if (msg == null) {
             return null;
@@ -609,7 +567,9 @@ public class GuiLauncher {
         }, "single-instance-shutdown"));
     }
 
-    /** 从参数列表中过滤掉 GUI 专用参数，避免传入 Spring。 */
+    /**
+     * 从参数列表中过滤掉 GUI 专用参数，避免传入 Spring。
+     */
     private static String[] filterArgs(String[] args) {
         return Arrays.stream(args)
                 .filter(arg -> !arg.equals("--no-gui"))
