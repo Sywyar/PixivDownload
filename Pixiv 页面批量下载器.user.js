@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Pixiv 页面批量下载器
 // @namespace    http://tampermonkey.net/
-// @version      1.0.4
+// @version      1.0.5
 // @description  抓取当前 Pixiv 页面（搜索页、关注动态、排行榜、主页等）上的所有作品
 // @author       Sywyar
 // @match        https://www.pixiv.net/*
@@ -189,6 +189,23 @@
                     method: 'GET',
                     url: `https://www.pixiv.net/ajax/illust/${artworkId}/ugoira_meta`,
                     headers: { Referer: 'https://www.pixiv.net/' },
+                    onload: (res) => {
+                        try {
+                            const data = JSON.parse(res.responseText);
+                            if (data.error) reject(new Error(data.message || 'pixiv ajax error'));
+                            else resolve(data.body);
+                        } catch (e) { reject(e); }
+                    },
+                    onerror: reject
+                });
+            });
+        },
+        getRelatedArtworks(artworkId, limit = 18) {
+            return new Promise((resolve, reject) => {
+                GM_xmlhttpRequest({
+                    method: 'GET',
+                    url: `https://www.pixiv.net/ajax/illust/${artworkId}/recommend/init?limit=${limit}`,
+                    headers: { Referer: `https://www.pixiv.net/artworks/${artworkId}` },
                     onload: (res) => {
                         try {
                             const data = JSON.parse(res.responseText);
@@ -855,6 +872,7 @@
             this._injectOverlayStyles();
             this._build();
             if (this.manager) this.syncSettings();
+            this.updateSinglePageButtonsVisibility();
         }
 
         _injectOverlayStyles() {
@@ -957,6 +975,8 @@
             const buttonContainer = $el('div', { style: { display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '10px' } });
             const buttons = [
                 { id: 'pbd-scrape-btn', text: '📷 抓取当前页面作品', bgColor: '#17a2b8', onClick: () => this.handleScrape() },
+                { id: 'pbd-scrape-current-btn', text: '🎯 抓取当前作品', bgColor: '#17a2b8', onClick: () => this.handleScrapeCurrent(), singlePageOnly: true },
+                { id: 'pbd-scrape-related-btn', text: '🧩 抓取相关作品', bgColor: '#17a2b8', onClick: () => this.handleScrapeRelated(), singlePageOnly: true },
                 { id: 'pbd-start-btn', text: '🚀 开始批量下载', bgColor: '#28a745', onClick: () => this.handleStart() },
                 { id: 'pbd-retry-btn', text: '🔁 重新下载失败的作品', bgColor: '#17a2b8', onClick: () => this.handleRetry() },
                 { id: 'pbd-pause-btn', text: '⏸️ 暂停下载', bgColor: '#ffc107', onClick: () => this.handlePause(), disabled: true },
@@ -964,6 +984,7 @@
                 { id: 'pbd-export-failed-btn', text: '📋 导出未下载列表', bgColor: '#6610f2', onClick: () => this.handleExportFailed() },
                 { id: 'pbd-clear-btn', text: '🗑️ 清除队列', bgColor: '#6c757d', onClick: () => this.handleClear() }
             ];
+            const singlePageButtons = [];
             buttons.forEach(cfg => {
                 const btn = $el('button', {
                     id: cfg.id, innerText: cfg.text,
@@ -971,8 +992,13 @@
                 });
                 btn.disabled = !!cfg.disabled;
                 btn.addEventListener('click', cfg.onClick);
+                if (cfg.singlePageOnly) {
+                    btn.style.display = 'none';
+                    singlePageButtons.push(btn);
+                }
                 buttonContainer.appendChild(btn);
             });
+            this._singlePageButtons = singlePageButtons;
 
             const currentDownload = $el('div', {
                 style: { marginBottom: '10px', padding: '8px', background: '#f8f9fa', borderRadius: '5px', borderLeft: '4px solid #17a2b8', fontSize: '11px' }
@@ -1138,6 +1164,60 @@
             }
             const added = this.manager.addItemsToQueue(ids);
             this.setStatus(`抓取完成：页面共 ${ids.length} 个作品，新增 ${added} 个到队列`, 'success');
+        }
+
+        handleScrapeCurrent() {
+            const m = location.pathname.match(/\/artworks\/(\d+)/);
+            if (!m) {
+                this.setStatus('当前不在单作品页面', 'warning');
+                return;
+            }
+            const id = m[1];
+            const added = this.manager.addItemsToQueue([id]);
+            if (added > 0) this.setStatus(`已将当前作品 ${id} 加入队列`, 'success');
+            else this.setStatus(`作品 ${id} 已在队列中`, 'warning');
+        }
+
+        async handleScrapeRelated() {
+            const m = location.pathname.match(/\/artworks\/(\d+)/);
+            if (!m) {
+                this.setStatus('当前不在单作品页面', 'warning');
+                return;
+            }
+            const currentId = m[1];
+            this.setStatus('正在获取相关作品...', 'info');
+            try {
+                const body = await Api.getRelatedArtworks(currentId);
+                const seen = new Set();
+                const ids = [];
+                const pushId = (rawId) => {
+                    const s = String(rawId);
+                    if (!/^\d+$/.test(s)) return;
+                    if (s === currentId || seen.has(s)) return;
+                    seen.add(s);
+                    ids.push(s);
+                };
+                if (body && Array.isArray(body.illusts)) {
+                    for (const it of body.illusts) if (it && it.id) pushId(it.id);
+                }
+                if (body && Array.isArray(body.nextIds)) {
+                    for (const nid of body.nextIds) pushId(nid);
+                }
+                if (!ids.length) {
+                    this.setStatus('未找到相关作品', 'warning');
+                    return;
+                }
+                const added = this.manager.addItemsToQueue(ids);
+                this.setStatus(`相关作品：共 ${ids.length} 个，新增 ${added} 个到队列`, 'success');
+            } catch (e) {
+                this.setStatus(`获取相关作品失败：${e.message || e}`, 'error');
+            }
+        }
+
+        updateSinglePageButtonsVisibility() {
+            if (!this._singlePageButtons) return;
+            const show = /\/artworks\/\d+/.test(location.pathname);
+            this._singlePageButtons.forEach(btn => { btn.style.display = show ? 'block' : 'none'; });
         }
 
         handleStart() { this.manager && this.manager.start(); }
@@ -1434,6 +1514,7 @@
         }
         ui.renderQueue(manager.queue);
         ui.updateOverlays();
+        ui.updateSinglePageButtonsVisibility();
     }
 
     updateVisibility(true);
