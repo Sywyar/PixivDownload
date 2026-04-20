@@ -372,14 +372,27 @@ public class UserQuotaService {
         if (oldArtworks.isEmpty()) return;
         log.info("timed-delete: 发现 {} 个超期作品，开始清理", oldArtworks.size());
         for (ArtworkRecord artwork : oldArtworks) {
-            deleteArtworkFolder(Paths.get(artwork.folder()));
+            deleteArtworkFolder(artwork);
         }
     }
 
     /** 删除作品文件夹及其下载历史记录（统计数据不受影响）。*/
     private void deleteArtworkFolder(Path folder) {
+        deleteArtworkFolder(folder, tryParseArtworkId(folder));
+    }
+
+    /** 删除作品文件夹及其下载历史记录（统计数据不受影响）。*/
+    private void deleteArtworkFolder(ArtworkRecord artwork) {
+        if (artwork == null) {
+            return;
+        }
+        deleteArtworkFolder(resolveArtworkFolder(artwork), artwork.artworkId());
+    }
+
+    /** 删除作品文件夹及其下载历史记录（统计数据不受影响）。*/
+    private void deleteArtworkFolder(Path folder, Long artworkId) {
         try {
-            if (Files.exists(folder)) {
+            if (folder != null && Files.exists(folder)) {
                 try (var stream = Files.walk(folder)) {
                     stream.sorted(Comparator.reverseOrder()).map(Path::toFile).forEach(File::delete);
                 }
@@ -389,13 +402,38 @@ public class UserQuotaService {
             log.warn("删除源文件夹失败: {}", folder, e);
         }
         try {
-            long artworkId = Long.parseLong(folder.getFileName().toString());
+            if (artworkId == null) {
+                return;
+            }
             pixivDatabase.deleteArtwork(artworkId);
             log.info("已删除下载历史记录: artworkId={}", artworkId);
-        } catch (NumberFormatException ignored) {
-            // 文件夹名不是纯数字（如用户名子目录），跳过
         } catch (Exception e) {
             log.warn("删除下载历史记录失败: folder={}", folder, e);
+        }
+    }
+
+    private Path resolveArtworkFolder(ArtworkRecord artwork) {
+        if (artwork == null) {
+            return null;
+        }
+        String folder = artwork.moved() && artwork.moveFolder() != null && !artwork.moveFolder().isBlank()
+                ? artwork.moveFolder()
+                : artwork.folder();
+        if (folder == null || folder.isBlank()) {
+            return null;
+        }
+        return Paths.get(folder);
+    }
+
+    private Long tryParseArtworkId(Path folder) {
+        if (folder == null || folder.getFileName() == null) {
+            return null;
+        }
+        try {
+            return Long.parseLong(folder.getFileName().toString());
+        } catch (NumberFormatException ignored) {
+            // 文件夹名不是纯数字（如用户名子目录），跳过
+            return null;
         }
     }
 

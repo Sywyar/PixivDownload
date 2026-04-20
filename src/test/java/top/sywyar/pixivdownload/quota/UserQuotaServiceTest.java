@@ -4,19 +4,29 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import top.sywyar.pixivdownload.download.config.DownloadConfig;
+import top.sywyar.pixivdownload.download.db.ArtworkRecord;
 import top.sywyar.pixivdownload.download.db.PixivDatabase;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 @DisplayName("UserQuotaService 单元测试")
 class UserQuotaServiceTest {
+
+    @TempDir
+    Path tempDir;
 
     @Mock
     private DownloadConfig downloadConfig;
@@ -297,6 +307,41 @@ class UserQuotaServiceTest {
     void shouldHandleDeleteNonExistentArchive() {
         assertThatCode(() -> userQuotaService.deleteArchive("nonexistent"))
                 .doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("timed-delete 应优先删除 moveFolder 并按 artworkId 删库")
+    void shouldDeleteMovedFolderAndRecordDuringTimedCleanup() throws Exception {
+        multiModeConfig.setPostDownloadMode("timed-delete");
+        multiModeConfig.setDeleteAfterHours(1);
+
+        Path originalFolder = Files.createDirectories(tempDir.resolve("12345"));
+        Files.writeString(originalFolder.resolve("12345_p0.jpg"), "original");
+        Path movedFolder = Files.createDirectories(tempDir.resolve("moved-folder"));
+        Files.writeString(movedFolder.resolve("12345_p0.jpg"), "moved");
+
+        ArtworkRecord artwork = new ArtworkRecord(
+                12345L,
+                "测试",
+                originalFolder.toString(),
+                1,
+                "jpg",
+                100L,
+                true,
+                movedFolder.toString(),
+                200L,
+                false,
+                null,
+                null,
+                null
+        );
+        when(pixivDatabase.getArtworksOlderThan(anyLong())).thenReturn(List.of(artwork));
+
+        userQuotaService.cleanupTimedDeleteArtworks();
+
+        assertThat(Files.exists(movedFolder)).isFalse();
+        assertThat(Files.exists(originalFolder)).isTrue();
+        verify(pixivDatabase).deleteArtwork(12345L);
     }
 
     // ========== generateUuidFromFingerprint ==========
