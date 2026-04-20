@@ -314,6 +314,10 @@
             background: #6c757d;
         }
 
+        .btn-red {
+            background: #dc3545;
+        }
+
         /* ---- Status / Stats ---- */
         #status-bar {
             text-align: center;
@@ -638,6 +642,105 @@
             margin-right: 2px;
         }
 
+        .search-extra-filters {
+            border: 1px solid #e5e5e5;
+            border-radius: 8px;
+            padding: 10px 12px;
+            background: #fafafa;
+            margin-bottom: 12px;
+        }
+
+        .search-extra-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+
+        .search-extra-title {
+            font-size: 12px;
+            font-weight: bold;
+            color: #555;
+            text-transform: uppercase;
+            letter-spacing: .4px;
+        }
+
+        .search-extra-note {
+            font-size: 11px;
+            color: #777;
+        }
+
+        .search-extra-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 10px 12px;
+            align-items: end;
+        }
+
+        .search-extra-item {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .search-extra-item label {
+            font-size: 12px;
+            color: #555;
+            font-weight: bold;
+        }
+
+        .search-extra-item input,
+        .search-extra-item select {
+            width: 100%;
+            padding: 7px 9px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 13px;
+            background: white;
+        }
+
+        .search-extra-actions {
+            display: flex;
+            justify-content: flex-end;
+            margin-top: 10px;
+        }
+
+        .search-fill-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-bottom: 12px;
+            font-size: 13px;
+        }
+
+        .search-fill-row input[type=number] {
+            width: 88px;
+            padding: 6px 8px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 13px;
+            background: white;
+        }
+
+        .search-fill-label {
+            color: #555;
+            font-weight: bold;
+        }
+
+        .search-fill-warning {
+            color: #dc3545;
+            cursor: help;
+            font-weight: bold;
+            user-select: none;
+        }
+
+        .search-fill-note {
+            font-size: 12px;
+            color: #777;
+        }
+
         /* Thumbnail grid */
         .search-grid {
             display: grid;
@@ -937,9 +1040,70 @@
         <div id="search-premium-tip" style="display:none;font-size:11px;color:#e6a700;margin-bottom:8px;">⚠ 热门排序需要
             Pixiv Premium 会员，未购买时 Pixiv 将自动按最新排序返回结果
         </div>
+        <div class="search-extra-filters">
+            <div class="search-extra-head">
+                <div class="search-extra-title">附加筛选</div>
+                <div class="search-extra-note">客户端过滤，仅作用当前页；收藏数会按需读取当前页作品元数据</div>
+            </div>
+            <div class="search-extra-grid">
+                <div class="search-extra-item">
+                    <label for="search-ai-filter">AI 作品</label>
+                    <select id="search-ai-filter" onchange="handleSearchFilterChange()">
+                        <option value="all">全部</option>
+                        <option value="exclude">排除 AI</option>
+                        <option value="only">仅 AI</option>
+                    </select>
+                </div>
+                <div class="search-extra-item">
+                    <label for="search-type-filter">作品类型</label>
+                    <select id="search-type-filter" onchange="handleSearchFilterChange()">
+                        <option value="all">全部</option>
+                        <option value="illust">插画</option>
+                        <option value="manga">漫画</option>
+                        <option value="ugoira">动图</option>
+                    </select>
+                </div>
+                <div class="search-extra-item">
+                    <label for="search-pages-min">最少页数</label>
+                    <input type="number" id="search-pages-min" min="1" step="1" placeholder="不限"
+                           onchange="handleSearchFilterChange()">
+                </div>
+                <div class="search-extra-item">
+                    <label for="search-pages-max">最多页数</label>
+                    <input type="number" id="search-pages-max" min="1" step="1" placeholder="不限"
+                           onchange="handleSearchFilterChange()">
+                </div>
+                <div class="search-extra-item">
+                    <label for="search-bookmarks-min">最少收藏</label>
+                    <input type="number" id="search-bookmarks-min" min="0" step="1" placeholder="不限"
+                           onchange="handleSearchFilterChange()">
+                </div>
+                <div class="search-extra-item">
+                    <label for="search-bookmarks-max">最多收藏</label>
+                    <input type="number" id="search-bookmarks-max" min="0" step="1" placeholder="不限"
+                           onchange="handleSearchFilterChange()">
+                </div>
+            </div>
+            <div class="search-extra-actions">
+                <button class="btn btn-red" style="padding:6px 10px;font-size:12px;" onclick="resetSearchFilters()">重置附加筛选</button>
+            </div>
+        </div>
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;font-size:13px;">
             <input type="checkbox" id="search-blur-r18" onchange="toggleBlurR18()">
             <label for="search-blur-r18" style="cursor:pointer;color:#d63384;">模糊 R18 缩略图（悬停查看）</label>
+        </div>
+        <!-- TODO: 向后补充功能暂时隐藏，等待后续决策后恢复。
+             恢复方法：删除此注释包裹，将下方 div 重新显示即可。
+             同时需恢复后端 GET /api/pixiv/search/fill 端点（PixivProxyController.java），
+             搜索 "TODO: 向后补充" 定位两处注释。 -->
+        <div class="search-fill-row" style="display:none;">
+            <span class="search-fill-label">向后补充</span>
+            <input type="number" id="search-fill-pages" min="1" step="1" value="3" onchange="handleSearchFillInputChange()">
+            <span>页</span>
+            <span class="search-fill-warning"
+                  title="每次点击补充，会在上次已加载的页面之后继续向后获取 N 页并追加到当前结果中，可多次点击叠加。过大的 N 会导致请求量暴增；solo 模式下 N 不受限制；multi 模式下每次最多 multi-mode.limit-page 页（管理员不受限）。">⚠</span>
+            <button class="btn btn-yellow" id="btn-search-fill" style="padding:6px 12px;color:#333;" onclick="fillSearchResults()" disabled>补充</button>
+            <span class="search-fill-note" id="search-fill-note">solo 模式：不限制</span>
         </div>
         <div id="search-results-area">
             <div style="text-align:center;color:#aaa;padding:24px 0;font-size:13px;">输入关键词后点击搜索；未保存 Cookie
@@ -1332,6 +1496,7 @@
     let appMode = 'multi';   // 'solo' | 'multi'，init() 中确定
     let isAdmin = false;
     let serverState = {};    // solo 模式下的状态内存镜像
+    let multiModeLimitPage = 0;  // multi 模式下补页上限（0=不限制），来自 /api/setup/status
 
     async function detectMode() {
         try {
@@ -1339,6 +1504,7 @@
             if (res.ok) {
                 const data = await res.json();
                 appMode = data.mode === 'solo' ? 'solo' : 'multi';
+                multiModeLimitPage = Math.max(0, data.multiModeLimitPage ?? 0);
             }
         } catch {
             appMode = 'multi';
@@ -2504,18 +2670,284 @@
     /* ============================================================
        搜索模式
     ============================================================ */
+    function defaultSearchFilters() {
+        return {
+            ai: 'all',
+            type: 'all',
+            pageMin: null,
+            pageMax: null,
+            bookmarkMin: null,
+            bookmarkMax: null
+        };
+    }
+
     let searchState = {
+        rawResults: [],
         results: [],
         total: 0,
         currentPage: 1,
+        lastFetchedPage: 1,  // 记录已加载到第几页，fill 从此页之后继续
         currentWord: '',
         currentMode: 'all',
         currentOrder: 'date_d',
         currentSMode: 's_tag',
         blurR18: false,
         noCookie: false,
-        activeBlobUrls: []
+        activeBlobUrls: [],
+        metaCache: {},
+        filterSeq: 0,
+        pixivPageCount: 0,
+        currentFilters: defaultSearchFilters(),
+        filterSummary: {
+            rawCount: 0,
+            filteredCount: 0,
+            bookmarkMetaMissing: 0,
+            bookmarkFilterActive: false
+        }
     };
+
+    function parseSearchFilterNumber(value, min) {
+        if (value === null || value === undefined) return null;
+        const raw = String(value).trim();
+        if (!raw) return null;
+        const n = Math.floor(Number(raw));
+        if (!Number.isFinite(n)) return null;
+        return Math.max(min, n);
+    }
+
+    function normalizeSearchFilters(filters) {
+        const out = defaultSearchFilters();
+        out.ai = ['all', 'exclude', 'only'].includes(filters?.ai) ? filters.ai : 'all';
+        out.type = ['all', 'illust', 'manga', 'ugoira'].includes(filters?.type) ? filters.type : 'all';
+        out.pageMin = parseSearchFilterNumber(filters?.pageMin, 1);
+        out.pageMax = parseSearchFilterNumber(filters?.pageMax, 1);
+        out.bookmarkMin = parseSearchFilterNumber(filters?.bookmarkMin, 0);
+        out.bookmarkMax = parseSearchFilterNumber(filters?.bookmarkMax, 0);
+        if (out.pageMin !== null && out.pageMax !== null && out.pageMin > out.pageMax) {
+            [out.pageMin, out.pageMax] = [out.pageMax, out.pageMin];
+        }
+        if (out.bookmarkMin !== null && out.bookmarkMax !== null && out.bookmarkMin > out.bookmarkMax) {
+            [out.bookmarkMin, out.bookmarkMax] = [out.bookmarkMax, out.bookmarkMin];
+        }
+        return out;
+    }
+
+    function setSearchFiltersUI(filters) {
+        document.getElementById('search-ai-filter').value = filters.ai;
+        document.getElementById('search-type-filter').value = filters.type;
+        document.getElementById('search-pages-min').value = filters.pageMin ?? '';
+        document.getElementById('search-pages-max').value = filters.pageMax ?? '';
+        document.getElementById('search-bookmarks-min').value = filters.bookmarkMin ?? '';
+        document.getElementById('search-bookmarks-max').value = filters.bookmarkMax ?? '';
+    }
+
+    function getSearchFiltersFromUI() {
+        return normalizeSearchFilters({
+            ai: document.getElementById('search-ai-filter').value,
+            type: document.getElementById('search-type-filter').value,
+            pageMin: document.getElementById('search-pages-min').value,
+            pageMax: document.getElementById('search-pages-max').value,
+            bookmarkMin: document.getElementById('search-bookmarks-min').value,
+            bookmarkMax: document.getElementById('search-bookmarks-max').value
+        });
+    }
+
+    function saveSearchFilterPrefs(filters) {
+        storeSet('pixiv_search_filters', JSON.stringify({
+            ai: filters.ai,
+            type: filters.type,
+            pageMin: filters.pageMin,
+            pageMax: filters.pageMax,
+            bookmarkMin: filters.bookmarkMin,
+            bookmarkMax: filters.bookmarkMax
+        }));
+    }
+
+    function loadSearchFilterPrefs() {
+        try {
+            const raw = storeGet('pixiv_search_filters');
+            const filters = raw ? normalizeSearchFilters(JSON.parse(raw)) : defaultSearchFilters();
+            searchState.currentFilters = filters;
+            setSearchFiltersUI(filters);
+        } catch {
+            const filters = defaultSearchFilters();
+            searchState.currentFilters = filters;
+            setSearchFiltersUI(filters);
+        }
+    }
+
+    function hasBookmarkFilter(filters = searchState.currentFilters) {
+        return filters.bookmarkMin !== null || filters.bookmarkMax !== null;
+    }
+
+    function hasExtraSearchFilter(filters = searchState.currentFilters) {
+        return filters.ai !== 'all'
+            || filters.type !== 'all'
+            || filters.pageMin !== null
+            || filters.pageMax !== null
+            || hasBookmarkFilter(filters);
+    }
+
+    function getCachedSearchMeta(artworkId) {
+        return searchState.metaCache[String(artworkId)] || null;
+    }
+
+    function getSearchBookmarkCount(item) {
+        const cached = getCachedSearchMeta(item.id);
+        if (!cached || !cached.bookmarkResolved) return null;
+        const count = Number(cached.bookmarkCount);
+        return Number.isFinite(count) && count >= 0 ? count : null;
+    }
+
+    async function ensureSearchBookmarkMeta(items, requestSeq) {
+        const missingIds = [];
+        const seen = new Set();
+        for (const item of items) {
+            const id = String(item.id);
+            if (seen.has(id)) continue;
+            seen.add(id);
+            const cached = getCachedSearchMeta(id);
+            if (!cached || !cached.bookmarkResolved) missingIds.push(id);
+        }
+        if (!missingIds.length) return;
+
+        let cursor = 0;
+        const workers = [];
+        const workerCount = Math.min(6, missingIds.length);
+        for (let i = 0; i < workerCount; i++) {
+            workers.push((async () => {
+                while (cursor < missingIds.length) {
+                    if (requestSeq !== searchState.filterSeq) return;
+                    const id = missingIds[cursor++];
+                    try {
+                        const meta = await getArtworkMeta(id);
+                        searchState.metaCache[id] = {
+                            ...(searchState.metaCache[id] || {}),
+                            bookmarkCount: Number(meta?.bookmarkCount ?? -1),
+                            bookmarkResolved: true
+                        };
+                    } catch {
+                        searchState.metaCache[id] = {
+                            ...(searchState.metaCache[id] || {}),
+                            bookmarkCount: -1,
+                            bookmarkResolved: true,
+                            bookmarkError: true
+                        };
+                    }
+                }
+            })());
+        }
+        await Promise.all(workers);
+    }
+
+    function matchSearchFilters(item, filters, stats) {
+        const aiType = Number(item.aiType ?? 0);
+        if (filters.ai === 'exclude' && aiType >= 2) return false;
+        if (filters.ai === 'only' && aiType < 2) return false;
+
+        const illustType = Number(item.illustType ?? 0);
+        if (filters.type === 'illust' && illustType !== 0) return false;
+        if (filters.type === 'manga' && illustType !== 1) return false;
+        if (filters.type === 'ugoira' && illustType !== 2) return false;
+
+        const pageCount = Number(item.pageCount ?? 0);
+        if (filters.pageMin !== null && pageCount < filters.pageMin) return false;
+        if (filters.pageMax !== null && pageCount > filters.pageMax) return false;
+
+        if (hasBookmarkFilter(filters)) {
+            const bookmarkCount = getSearchBookmarkCount(item);
+            if (bookmarkCount === null) {
+                stats.bookmarkMetaMissing++;
+                return false;
+            }
+            if (filters.bookmarkMin !== null && bookmarkCount < filters.bookmarkMin) return false;
+            if (filters.bookmarkMax !== null && bookmarkCount > filters.bookmarkMax) return false;
+        }
+
+        return true;
+    }
+
+    async function applyCurrentSearchFilters(options = {}) {
+        const filters = normalizeSearchFilters(options.filters || getSearchFiltersFromUI());
+        searchState.currentFilters = filters;
+        setSearchFiltersUI(filters);
+        saveSearchFilterPrefs(filters);
+
+        const requestSeq = ++searchState.filterSeq;
+        const sourceItems = searchState.rawResults || [];
+        const bookmarkFilterActive = hasBookmarkFilter(filters);
+        const needsBookmarkMeta = bookmarkFilterActive && sourceItems.some(item => {
+            const cached = getCachedSearchMeta(item.id);
+            return !cached || !cached.bookmarkResolved;
+        });
+
+        if (bookmarkFilterActive && needsBookmarkMeta && sourceItems.length) {
+            document.getElementById('search-results-area').innerHTML =
+                '<div class="search-spinner"><span class="search-spinner-icon"></span>读取当前页收藏数中...</div>';
+            document.getElementById('btn-add-all').disabled = true;
+        }
+
+        if (bookmarkFilterActive) {
+            await ensureSearchBookmarkMeta(sourceItems, requestSeq);
+            if (requestSeq !== searchState.filterSeq) return null;
+        }
+
+        const stats = {
+            rawCount: sourceItems.length,
+            filteredCount: 0,
+            bookmarkMetaMissing: 0,
+            bookmarkFilterActive
+        };
+        const filtered = sourceItems.filter(item => matchSearchFilters(item, filters, stats));
+        stats.filteredCount = filtered.length;
+
+        searchState.results = filtered;
+        searchState.filterSummary = stats;
+
+        renderSearchResults();
+        renderSearchPagination();
+        document.getElementById('btn-add-all').disabled = searchState.results.length === 0;
+
+        if (options.setStatus && searchState.currentWord) {
+            const prefix = options.statusPrefix || '已应用筛选：';
+            const parts = [`当前页 ${stats.rawCount} 个`];
+            if (hasExtraSearchFilter(filters)) {
+                parts.push(`筛选后 ${stats.filteredCount} 个`);
+                if (stats.bookmarkMetaMissing > 0) {
+                    parts.push(`${stats.bookmarkMetaMissing} 个收藏数不可用已排除`);
+                }
+            } else {
+                parts.push('未启用附加筛选');
+            }
+            parts.push(`Pixiv 总数 ${searchState.total.toLocaleString()}`);
+            setStatus(prefix + parts.join('，'), 'success');
+        }
+
+        return stats;
+    }
+
+    async function handleSearchFilterChange() {
+        const filters = getSearchFiltersFromUI();
+        searchState.currentFilters = filters;
+        saveSearchFilterPrefs(filters);
+        if (!searchState.currentWord) return;
+        await applyCurrentSearchFilters({setStatus: true});
+    }
+
+    async function resetSearchFilters() {
+        const filters = defaultSearchFilters();
+        searchState.currentFilters = filters;
+        setSearchFiltersUI(filters);
+        saveSearchFilterPrefs(filters);
+        if (!searchState.currentWord) return;
+        await applyCurrentSearchFilters({setStatus: true});
+    }
+
+    function getSearchClientModeLabel() {
+        if (searchState.currentMode === 'r18') return 'R-18';
+        if (searchState.currentMode === 'r18g') return 'R-18G';
+        return '';
+    }
 
     function hasPixivCookie() {
         return !!getCookie().trim();
@@ -2544,11 +2976,13 @@
         searchState.currentOrder = order;
         searchState.currentSMode = sMode;
         searchState.currentPage = page;
+        searchState.lastFetchedPage = page;
 
         document.getElementById('search-results-area').innerHTML =
             '<div class="search-spinner"><span class="search-spinner-icon"></span>搜索中...</div>';
         document.getElementById('search-pagination').style.display = 'none';
         document.getElementById('btn-add-all').disabled = true;
+        document.getElementById('btn-search-fill').disabled = true;
 
         try {
             const params = new URLSearchParams({word, order, mode, sMode, page});
@@ -2560,55 +2994,109 @@
                 return;
             }
             let items = data.items || [];
-            const rawCount = items.length;
+            const pixivPageCount = items.length;
             if (clientFilter > 0) items = items.filter(it => Number(it.xRestrict ?? 0) === clientFilter);
+            searchState.pixivPageCount = pixivPageCount;
+            searchState.rawResults = items;
             searchState.results = items;
             searchState.total = data.total || 0;
             searchState.noCookie = !hasPixivCookie();
-            renderSearchResults();
-            renderSearchPagination();
-            document.getElementById('btn-add-all').disabled = searchState.results.length === 0;
+            const filterStats = await applyCurrentSearchFilters();
+            if (!filterStats) return;
             if (clientFilter > 0) {
                 const label = clientFilter === 2 ? 'R-18G' : 'R-18';
-                setStatus(`搜索完成：R-18+ 原始结果 ${rawCount} 个，筛选后 ${label} ${items.length} 个（总数为 Pixiv 返回的 R-18+ 总数）`, 'success');
+                const parts = [
+                    `R-18+ 当前页原始 ${pixivPageCount} 个`,
+                    `${label} 筛后 ${searchState.rawResults.length} 个`
+                ];
+                if (hasExtraSearchFilter()) {
+                    parts.push(`附加筛选后 ${searchState.results.length} 个`);
+                    if (searchState.filterSummary.bookmarkMetaMissing > 0) {
+                        parts.push(`${searchState.filterSummary.bookmarkMetaMissing} 个收藏数不可用已排除`);
+                    }
+                }
+                parts.push(`Pixiv 总数 ${searchState.total.toLocaleString()}`);
+                setStatus(`搜索完成：${parts.join('，')}`, 'success');
             } else {
-                setStatus(`搜索完成：共 ${searchState.total.toLocaleString()} 个结果`, 'success');
+                const parts = [`当前页 ${searchState.pixivPageCount} 个`];
+                if (hasExtraSearchFilter()) {
+                    parts.push(`附加筛选后 ${searchState.results.length} 个`);
+                    if (searchState.filterSummary.bookmarkMetaMissing > 0) {
+                        parts.push(`${searchState.filterSummary.bookmarkMetaMissing} 个收藏数不可用已排除`);
+                    }
+                }
+                parts.push(`Pixiv 总数 ${searchState.total.toLocaleString()}`);
+                setStatus(`搜索完成：${parts.join('，')}`, 'success');
             }
         } catch (e) {
             document.getElementById('search-results-area').innerHTML =
                 `<div style="color:#dc3545;text-align:center;padding:24px 0;">请求失败：${esc(e.message)}</div>`;
+        } finally {
+            if (searchState.rawResults.length > 0) {
+                document.getElementById('btn-search-fill').disabled = false;
+            }
         }
     }
 
     function renderSearchResults() {
         const area = document.getElementById('search-results-area');
-        if (!searchState.results.length) {
+        if (!searchState.rawResults.length) {
             area.innerHTML = '<div style="color:#aaa;text-align:center;padding:24px 0;">无搜索结果</div>';
             return;
         }
+        if (!searchState.results.length) {
+            const tips = [];
+            tips.push(`Pixiv 当前页 ${searchState.rawResults.length} 个结果`);
+            if (searchState.filterSummary.bookmarkFilterActive && searchState.filterSummary.bookmarkMetaMissing > 0) {
+                tips.push(`${searchState.filterSummary.bookmarkMetaMissing} 个收藏数不可用已排除`);
+            }
+            area.innerHTML = `<div style="color:#aaa;text-align:center;padding:24px 0;">附加筛选后无结果<br><span style="font-size:12px;">${tips.join('，')}</span></div>`;
+            return;
+        }
         const inQueue = new Set(state.queue.map(q => q.id));
+        const clientModeLabel = getSearchClientModeLabel();
+        const summary = [
+            `共 ${searchState.total.toLocaleString()} 个结果`,
+            `当前第 ${searchState.currentPage} 页`,
+            `Pixiv 返回 ${searchState.pixivPageCount} 个`
+        ];
+        if (clientModeLabel) {
+            summary.push(`${clientModeLabel} 筛后 ${searchState.rawResults.length} 个`);
+        }
+        if (hasExtraSearchFilter()) {
+            summary.push(`附加筛选后 ${searchState.results.length} 个`);
+            if (searchState.filterSummary.bookmarkMetaMissing > 0) {
+                summary.push(`${searchState.filterSummary.bookmarkMetaMissing} 个收藏数不可用已排除`);
+            }
+        }
         area.innerHTML = `
     ${searchState.noCookie ? '<div style="font-size:12px;color:#e6a700;margin-bottom:8px;">⚠ 未保存 Cookie，搜索结果可能减少</div>' : ''}
     <div style="font-size:12px;color:#888;margin-bottom:10px;">
-      共 ${searchState.total.toLocaleString()} 个结果，当前第 ${searchState.currentPage} 页，显示 ${searchState.results.length} 个
+      ${summary.join('，')}
     </div>
     <div class="search-grid">
       ${searchState.results.map((item, idx) => {
             const xr = Number(item.xRestrict ?? 0);
+            const illustType = Number(item.illustType ?? 0);
             const isR18 = xr >= 1;
             const isAi = Number(item.aiType ?? 0) >= 2;
+            const bookmarkCount = getSearchBookmarkCount(item);
             const blurClass = (isR18 && searchState.blurR18) ? 'blur-r18' : '';
             const r18Badge = xr === 2
                 ? '<span class="thumb-badge" style="background:#b91c1c;">R-18G</span>'
                 : xr === 1 ? '<span class="thumb-badge">R-18</span>' : '';
             const aiBadge = isAi ? '<span class="thumb-badge thumb-badge-ai">AI</span>' : '';
+            const typeBadge = illustType === 2
+                ? '<span class="thumb-badge" style="background:#0ea5e9;">动图</span>'
+                : illustType === 1 ? '<span class="thumb-badge" style="background:#f59e0b;">漫画</span>' : '';
             const pagesLabel = item.pageCount > 1 ? `<span class="thumb-pages">${item.pageCount}P</span>` : '';
             const inQueueClass = inQueue.has(item.id) ? ' in-queue' : '';
             const queueTip = inQueue.has(item.id) ? ' · 点击移除' : ' · 点击加入队列';
+            const bookmarkTip = bookmarkCount !== null ? ` · 收藏 ${bookmarkCount.toLocaleString()}` : '';
             return `<div class="search-thumb${inQueueClass}" id="thumb-${idx}"
-                     onclick="addSearchItemToQueue(${idx})" title="${esc(item.title)} (${esc(item.userName)})${queueTip}">
+                     onclick="addSearchItemToQueue(${idx})" title="${esc(item.title)} (${esc(item.userName)})${bookmarkTip}${queueTip}">
           <img id="thumb-img-${idx}" src="" alt="${esc(item.title)}" class="${blurClass}">
-          <div class="thumb-badge-stack">${r18Badge}${aiBadge}</div>
+          <div class="thumb-badge-stack">${r18Badge}${aiBadge}${typeBadge}</div>
           ${pagesLabel}
           <span class="thumb-in-queue-mark">✓</span>
           <div class="thumb-title">${esc(item.title)}</div>
@@ -2659,8 +3147,10 @@
             const el = document.getElementById(`thumb-${idx}`);
             if (!el) return;
             const isInQueue = inQueue.has(item.id);
+            const bookmarkCount = getSearchBookmarkCount(item);
+            const bookmarkTip = bookmarkCount !== null ? ` · 收藏 ${bookmarkCount.toLocaleString()}` : '';
             el.classList.toggle('in-queue', isInQueue);
-            el.title = `${item.title} (${item.userName || ''}) · ${isInQueue ? '点击移除' : '点击加入队列'}`;
+            el.title = `${item.title} (${item.userName || ''})${bookmarkTip} · ${isInQueue ? '点击移除' : '点击加入队列'}`;
         });
     }
 
@@ -2749,12 +3239,100 @@
         });
     }
 
+    function updateSearchFillUI() {
+        const note = document.getElementById('search-fill-note');
+        const input = document.getElementById('search-fill-pages');
+        if (!note || !input) return;
+        const loadedPart = searchState.lastFetchedPage > 1
+            ? `已加载至第 ${searchState.lastFetchedPage} 页 · ` : '';
+        if (appMode === 'solo' || multiModeLimitPage === 0) {
+            note.textContent = loadedPart + (appMode === 'solo' ? 'solo 模式：不限制' : 'multi 模式：不限制');
+            input.removeAttribute('max');
+        } else {
+            note.textContent = `${loadedPart}multi 模式：上限 ${multiModeLimitPage} 页/次`;
+            input.max = multiModeLimitPage;
+            const cur = parseInt(input.value, 10);
+            if (!Number.isFinite(cur) || cur > multiModeLimitPage) input.value = multiModeLimitPage;
+        }
+    }
+
+    function handleSearchFillInputChange() {
+        if (appMode !== 'solo' && multiModeLimitPage > 0) {
+            const input = document.getElementById('search-fill-pages');
+            let v = parseInt(input.value, 10);
+            if (!Number.isFinite(v) || v < 1) {
+                input.value = 1;
+                return;
+            }
+            if (v > multiModeLimitPage) input.value = multiModeLimitPage;
+        }
+    }
+
+    async function fillSearchResults() {
+        if (!searchState.currentWord) return;
+        const input = document.getElementById('search-fill-pages');
+        let extraPages = parseInt(input.value, 10);
+        if (!Number.isFinite(extraPages) || extraPages < 1) extraPages = 1;
+        if (appMode !== 'solo' && multiModeLimitPage > 0) {
+            extraPages = Math.min(extraPages, multiModeLimitPage);
+            input.value = extraPages;
+        }
+
+        const btn = document.getElementById('btn-search-fill');
+        btn.disabled = true;
+
+        const word = searchState.currentWord;
+        const order = searchState.currentOrder;
+        const r18Family = searchState.currentMode === 'r18' || searchState.currentMode === 'r18g' || searchState.currentMode === 'r18plus';
+        const mode = r18Family ? 'r18' : searchState.currentMode;
+        const sMode = searchState.currentSMode;
+        const page = searchState.lastFetchedPage;  // 从上次加载到的页继续
+
+        setStatus(`正在补充第 ${page + 1} 页起的内容...`, 'info');
+        try {
+            const params = new URLSearchParams({word, order, mode, sMode, page, extraPages});
+            const res = await fetch(`${BASE}/api/pixiv/search/fill?${params}`, {headers: pixivHeader()});
+            const data = await res.json();
+            if (!res.ok) {
+                setStatus(`补充失败：${esc(data.error || '未知错误')}`, 'error');
+                return;
+            }
+
+            const clientFilter = searchState.currentMode === 'r18' ? 1 : searchState.currentMode === 'r18g' ? 2 : 0;
+            let newItems = data.items || [];
+            if (clientFilter > 0) newItems = newItems.filter(it => Number(it.xRestrict ?? 0) === clientFilter);
+
+            const existingIds = new Set(searchState.rawResults.map(r => r.id));
+            const added = newItems.filter(it => !existingIds.has(it.id));
+            searchState.rawResults = [...searchState.rawResults, ...added];
+
+            if (data.fetchedPages > 0) {
+                searchState.lastFetchedPage = data.endPage;
+            }
+
+            const filterStats = await applyCurrentSearchFilters();
+            if (!filterStats) return;
+
+            const parts = [`新增 ${added.length} 个作品`, `获取第 ${data.startPage + 1}–${data.endPage} 页`];
+            if (data.acceptedPages < data.requestedPages) {
+                parts.push(`multi 模式上限 ${data.limitPage} 页，请求 ${data.requestedPages} 页已限制`);
+            }
+            setStatus(`补充完成：${parts.join('，')}`, 'success');
+            updateSearchFillUI();
+        } catch (e) {
+            setStatus(`补充请求失败：${esc(e.message)}`, 'error');
+        } finally {
+            btn.disabled = false;
+        }
+    }
+
     /* ============================================================
        初始化
     ============================================================ */
     async function init() {
         // 检测使用模式，solo 模式则从服务器加载状态
         await detectMode();
+        updateSearchFillUI();
         await detectAuthState();
         // 多人模式：初始化配额状态
         if (appMode === 'multi') {
@@ -2830,6 +3408,7 @@
                 document.getElementById('search-blur-r18').checked = searchState.blurR18;
             }
         }
+        loadSearchFilterPrefs();
 
         switchMode(savedMode);
 

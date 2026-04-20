@@ -8,4 +8,5 @@ import lombok.Getter;
 public class SetupStatusResponse {
     private final boolean setupComplete;
     private final String mode;
+    private final int multiModeLimitPage;
 }

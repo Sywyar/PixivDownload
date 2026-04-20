@@ -25,6 +25,7 @@ import org.springframework.web.util.UriComponentsBuilder;
 import java.io.IOException;
 import java.net.URI;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -43,6 +44,11 @@ public class PixivProxyController {
     private static final String PIXIV_REFERER = "https://www.pixiv.net/";
     private static final String USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36";
 
+    // TODO: 向后补充功能暂时禁用，等待后续决策后恢复。
+    // 恢复方法：将此常量改为 false，并在前端 pixiv-batch.html 中搜索 "TODO: 向后补充"，
+    // 将 search-fill-row 的 display:none 及注释包裹去掉。
+    private static final boolean SEARCH_FILL_DISABLED = true;
+
     private final ObjectMapper objectMapper;
     private final RestTemplate restTemplate;
     private final SetupService setupService;
@@ -60,16 +66,19 @@ public class PixivProxyController {
         if (!"multi".equals(setupService.getMode())) {
             return null; // solo 模式，AuthFilter 已验证 session
         }
+        if (setupService.isAdminLoggedIn(request)) {
+            return null; // multi 模式下管理员不受代理请求限制
+        }
         String uuid = UuidUtils.extractExistingUuid(request);
         if (uuid == null) {
             return ResponseEntity.status(401).body(new ErrorResponse("missing user UUID"));
         }
-        if (multiModeConfig.getQuota().isEnabled()
-                && !userQuotaService.checkAndReserveProxy(uuid)) {
-            int max = multiModeConfig.getQuota().getMaxArtworks();
+        if (!userQuotaService.checkAndReserveProxy(uuid)) {
+            int max = multiModeConfig.getQuota().getMaxProxyRequests();
             int hours = multiModeConfig.getQuota().getResetPeriodHours();
             return ResponseEntity.status(429).body(new ProxyRateLimitResponse(
-                    "proxy rate limit exceeded", max, hours));
+                    String.format("搜索/代理请求次数已达上限（每 %d 小时最多 %d 次），请稍后再试", hours, max),
+                    max, hours));
         }
         return null;
     }
@@ -159,6 +168,7 @@ public class PixivProxyController {
                 b.path("illustTitle").asText(""),
                 b.path("xRestrict").asInt(0),
                 b.path("aiType").asInt(0) >= 2,
+                b.path("bookmarkCount").asInt(-1),
                 b.path("description").asText(""),
                 extractTags(b)
         ));
@@ -234,27 +244,34 @@ public class PixivProxyController {
     private static final Set<String> VALID_MODES   = Set.of("all", "safe", "r18");
     private static final Set<String> VALID_S_MODES = Set.of("s_tag", "s_tc");
 
-    @GetMapping("/search")
-    public ResponseEntity<?> searchArtworks(
-            @RequestParam String word,
-            @RequestParam(defaultValue = "date_d") String order,
-            @RequestParam(defaultValue = "all") String mode,
-            @RequestParam(defaultValue = "s_tag") String sMode,
-            @RequestParam(defaultValue = "1") int page,
-            @RequestHeader(value = "X-Pixiv-Cookie", required = false) String cookie,
-            HttpServletRequest request) throws IOException {
-        ResponseEntity<?> deny = checkMultiModeAccess(request);
-        if (deny != null) return deny;
+    private String validateSearchParams(String order, String mode, String sMode) {
         if (!VALID_ORDERS.contains(order)) {
-            return ResponseEntity.badRequest().body(new ErrorResponse("invalid order parameter: " + order));
+            return "invalid order parameter: " + order;
         }
         if (!VALID_MODES.contains(mode)) {
-            return ResponseEntity.badRequest().body(new ErrorResponse("invalid mode parameter: " + mode));
+            return "invalid mode parameter: " + mode;
         }
         if (!VALID_S_MODES.contains(sMode)) {
-            return ResponseEntity.badRequest().body(new ErrorResponse("invalid sMode parameter: " + sMode));
+            return "invalid sMode parameter: " + sMode;
         }
-        if (page < 1) page = 1;
+        return null;
+    }
+
+    private int resolveSearchFillLimitPage() {
+        if (!"multi".equals(setupService.getMode())) {
+            return 0;
+        }
+        return Math.max(0, multiModeConfig.getLimitPage());
+    }
+
+    private SearchResponse fetchSearchPage(
+            String word,
+            String order,
+            String mode,
+            String sMode,
+            int page,
+            String cookie) throws IOException {
+        int safePage = Math.max(page, 1);
         URI searchUri = UriComponentsBuilder
                 .fromUriString("https://www.pixiv.net/ajax/search/artworks/{word}")
                 .queryParam("word", "{word}")
@@ -262,7 +279,7 @@ public class PixivProxyController {
                 .queryParam("mode", mode)
                 .queryParam("type", "illust_and_ugoira")
                 .queryParam("s_mode", sMode)
-                .queryParam("p", page)
+                .queryParam("p", safePage)
                 .queryParam("lang", "zh")
                 .buildAndExpand(Map.of("word", word))
                 .encode()
@@ -270,8 +287,7 @@ public class PixivProxyController {
         String body = proxyGetUri(searchUri, cookie);
         JsonNode root = objectMapper.readTree(body);
         if (root.path("error").asBoolean(false)) {
-            return ResponseEntity.badRequest()
-                    .body(new ErrorResponse(root.path("message").asText()));
+            throw new IllegalArgumentException(root.path("message").asText("pixiv search failed"));
         }
         JsonNode illustManga = root.path("body").path("illustManga");
         int total = illustManga.path("total").asInt(0);
@@ -289,7 +305,96 @@ public class PixivProxyController {
                     item.path("userName").asText("")
             ));
         }
-        return ResponseEntity.ok(new SearchResponse(items, total, page));
+        return new SearchResponse(items, total, safePage);
+    }
+
+    @GetMapping("/search")
+    public ResponseEntity<?> searchArtworks(
+            @RequestParam String word,
+            @RequestParam(defaultValue = "date_d") String order,
+            @RequestParam(defaultValue = "all") String mode,
+            @RequestParam(defaultValue = "s_tag") String sMode,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestHeader(value = "X-Pixiv-Cookie", required = false) String cookie,
+            HttpServletRequest request) throws IOException {
+        ResponseEntity<?> deny = checkMultiModeAccess(request);
+        if (deny != null) return deny;
+        String validationError = validateSearchParams(order, mode, sMode);
+        if (validationError != null) {
+            return ResponseEntity.badRequest().body(new ErrorResponse(validationError));
+        }
+        try {
+            return ResponseEntity.ok(fetchSearchPage(word, order, mode, sMode, page, cookie));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(new ErrorResponse(e.getMessage()));
+        }
+    }
+
+    // TODO: 向后补充功能暂时禁用，等待后续决策后恢复。
+    // 恢复方法：删除下方的 disabled 拦截块（return 503 那两行），并在前端 pixiv-batch.html
+    // 中找到 "TODO: 向后补充" 注释，将 search-fill-row 的 display:none 和注释包裹去掉。
+    @GetMapping("/search/fill")
+    public ResponseEntity<?> fillSearchArtworks(
+            @RequestParam String word,
+            @RequestParam(defaultValue = "date_d") String order,
+            @RequestParam(defaultValue = "all") String mode,
+            @RequestParam(defaultValue = "s_tag") String sMode,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "1") int extraPages,
+            @RequestHeader(value = "X-Pixiv-Cookie", required = false) String cookie,
+            HttpServletRequest request) throws IOException {
+        if (SEARCH_FILL_DISABLED) {
+            return ResponseEntity.status(503).body(new ErrorResponse("向后补充功能暂时不可用"));
+        }
+        ResponseEntity<?> deny = checkMultiModeAccess(request);
+        if (deny != null) return deny;
+
+        String validationError = validateSearchParams(order, mode, sMode);
+        if (validationError != null) {
+            return ResponseEntity.badRequest().body(new ErrorResponse(validationError));
+        }
+        if (extraPages < 1) {
+            return ResponseEntity.badRequest().body(new ErrorResponse("extraPages must be >= 1"));
+        }
+
+        int startPage = Math.max(page, 1);
+        int limitPage = resolveSearchFillLimitPage();
+        int acceptedPages = limitPage > 0 ? Math.min(extraPages, limitPage) : extraPages;
+
+        try {
+            LinkedHashMap<String, SearchResponse.SearchItem> deduped = new LinkedHashMap<>();
+            int total = 0;
+            int totalPages = Integer.MAX_VALUE;
+            int fetchedPages = 0;
+            int endPage = startPage;
+
+            for (int nextPage = startPage + 1; nextPage <= startPage + acceptedPages; nextPage++) {
+                if (nextPage > totalPages) break;
+                SearchResponse pageResponse = fetchSearchPage(word, order, mode, sMode, nextPage, cookie);
+                total = pageResponse.getTotal();
+                totalPages = Math.max(1, (int) Math.ceil(total / 60.0));
+                if (nextPage > totalPages) break;
+                for (SearchResponse.SearchItem item : pageResponse.getItems()) {
+                    deduped.putIfAbsent(item.getId(), item);
+                }
+                fetchedPages++;
+                endPage = nextPage;
+                if (nextPage >= totalPages) break;
+            }
+
+            return ResponseEntity.ok(new SearchFillResponse(
+                    new ArrayList<>(deduped.values()),
+                    total,
+                    startPage,
+                    endPage,
+                    extraPages,
+                    acceptedPages,
+                    fetchedPages,
+                    limitPage
+            ));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(new ErrorResponse(e.getMessage()));
+        }
     }
 
     @GetMapping("/thumbnail-proxy")

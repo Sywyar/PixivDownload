@@ -131,12 +131,16 @@ public class UserQuotaService {
 
     /**
      * 检查并预留代理请求次数。
-     * 在 resetPeriodHours 窗口内，同一用户最多发起 maxArtworks 次代理请求。
+     * 在 resetPeriodHours 窗口内，同一用户最多发起 maxProxyRequests 次搜索/代理请求。
+     * maxProxyRequests <= 0 时不限制，直接返回 true。
      * 返回 true 表示允许；返回 false 表示已达上限。
      */
     public boolean checkAndReserveProxy(String uuid) {
-        UserQuota quota = quotaMap.computeIfAbsent(uuid, UserQuota::new);
         MultiModeConfig.Quota cfg = config.getQuota();
+        if (cfg.getMaxProxyRequests() <= 0) {
+            return true;
+        }
+        UserQuota quota = quotaMap.computeIfAbsent(uuid, UserQuota::new);
 
         synchronized (quota) {
             long now = System.currentTimeMillis();
@@ -147,7 +151,7 @@ public class UserQuotaService {
                 quota.reset();
             }
 
-            if (quota.getProxyCount().get() >= cfg.getMaxArtworks()) {
+            if (quota.getProxyCount().get() >= cfg.getMaxProxyRequests()) {
                 return false;
             }
             quota.getProxyCount().incrementAndGet();

@@ -15,6 +15,7 @@ public class ArtworkMetaResponse {
     private final int xRestrict;
     @JsonProperty("isAi")
     private final boolean isAi;
+    private final int bookmarkCount;
     private final String description;
     private final List<TagDto> tags;
 }

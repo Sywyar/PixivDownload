@@ -11,6 +11,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 import top.sywyar.pixivdownload.common.SessionUtils;
+import top.sywyar.pixivdownload.quota.MultiModeConfig;
 import top.sywyar.pixivdownload.setup.request.LoginRequest;
 import top.sywyar.pixivdownload.setup.request.SetupInitRequest;
 import top.sywyar.pixivdownload.setup.response.AuthCheckResponse;
@@ -28,6 +29,7 @@ public class SetupController {
 
     private final SetupService setupService;
     private final LoginRateLimitService loginRateLimitService;
+    private final MultiModeConfig multiModeConfig;
 
     // ---- Setup endpoints -----------------------------------------------
 
@@ -35,7 +37,8 @@ public class SetupController {
     public SetupStatusResponse status() {
         return new SetupStatusResponse(
                 setupService.isSetupComplete(),
-                setupService.getMode() != null ? setupService.getMode() : ""
+                setupService.getMode() != null ? setupService.getMode() : "",
+                Math.max(0, multiModeConfig.getLimitPage())
         );
     }
 

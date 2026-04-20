@@ -49,6 +49,7 @@ public class AppConfigGenerator {
             multi-mode.quota.reset-period-hours: 24        # 配额重置周期（小时）
             multi-mode.quota.archive-expire-minutes: 60    # 压缩包下载链接有效时间（分钟）
             multi-mode.quota.limit-image: 0                # 单作品图片数上限（0=不限制）；超出后按 ceil(图片数/limit-image) 个作品计算配额
+            multi-mode.quota.max-proxy-requests: 200       # 每用户每重置周期内最多发起的搜索/代理请求次数（0=不限制）
 
             # 下载后处理模式（三选一）：
             #   pack-and-delete  打包后删除源文件（默认）
@@ -59,6 +60,7 @@ public class AppConfigGenerator {
             multi-mode.delete-after-hours: 72              # timed-delete 模式：下载后多少小时自动删除（小时）
 
             multi-mode.request-limit-minute: 300           # 每用户每分钟最大请求次数（0 表示不限制）
+            multi-mode.limit-page: 3                       # 搜索模式“向后补充 N 页”上限（0 表示不限制，仅多人模式生效）
 
             # ---- 登录安全配置 ----
 

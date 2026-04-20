@@ -27,6 +27,9 @@ public class MultiModeConfig {
     /** 多人模式下每用户每分钟最大请求次数（0 表示不限制） */
     private int requestLimitMinute = 300;
 
+    /** 搜索模式自动向后补页上限（0 表示不限制，仅多人模式生效） */
+    private int limitPage = 3;
+
     @Data
     public static class Quota {
         /** 是否启用配额限制 */
@@ -39,5 +42,7 @@ public class MultiModeConfig {
         private int archiveExpireMinutes = 60;
         /** 单作品图片数上限（0=不限制）；超出后按 ceil(count/limitImage) 个作品计算配额 */
         private int limitImage = 0;
+        /** 每用户每重置周期最多发起的搜索/代理请求次数（0=不限制） */
+        private int maxProxyRequests = 200;
     }
 }

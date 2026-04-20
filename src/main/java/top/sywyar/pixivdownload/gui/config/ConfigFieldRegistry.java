@@ -95,6 +95,19 @@ public final class ConfigFieldRegistry {
                     .enabledWhen(snap -> snap.isTrue("multi-mode.quota.enabled"))
                     .build(),
 
+            ConfigFieldSpec.builder("multi-mode.quota.max-proxy-requests", "搜索/代理请求次数上限", INT, "多人模式")
+                    .defaultValue("200")
+                    .help("每用户每重置周期内最多发起的搜索及代理请求次数（0 = 不限制，独立于下载配额）")
+                    .validator(v -> {
+                        try {
+                            int n = Integer.parseInt(v);
+                            return n >= 0 ? null : "请输入大于等于 0 的整数";
+                        } catch (NumberFormatException e) {
+                            return "请输入有效的整数";
+                        }
+                    })
+                    .build(),
+
             ConfigFieldSpec.builder("multi-mode.post-download-mode", "下载后处理模式", ENUM, "多人模式")
                     .defaultValue("pack-and-delete")
                     .enumValues("pack-and-delete", "never-delete", "timed-delete")
@@ -110,6 +123,19 @@ public final class ConfigFieldRegistry {
             ConfigFieldSpec.builder("multi-mode.request-limit-minute", "每分钟最大请求数", INT, "多人模式")
                     .defaultValue("300")
                     .help("每个用户每分钟最多允许的 API 请求次数（0 = 不限制）")
+                    .build(),
+
+            ConfigFieldSpec.builder("multi-mode.limit-page", "搜索模式自动补页上限", INT, "多人模式")
+                    .defaultValue("3")
+                    .help("限制搜索模式“向后补充 N 页”的最大 N 值；0 = 不限制，仅多人模式生效")
+                    .validator(v -> {
+                        try {
+                            int n = Integer.parseInt(v);
+                            return n >= 0 ? null : "请输入大于等于 0 的整数";
+                        } catch (NumberFormatException e) {
+                            return "请输入有效的整数";
+                        }
+                    })
                     .build(),
 
             // ── 安全 ───────────────────────────────────────────────────────────
