@@ -1453,10 +1453,41 @@
             });
     }
 
+    let _activePopup = null;
+    let _activeAnchor = null;
+    let _activePopupType = null; // 'filter' | 'grid'
+
     function positionFilterPopup(th, popup) {
         const rect = th.getBoundingClientRect();
         popup.style.top = (rect.bottom + 4) + 'px';
         popup.style.left = rect.left + 'px';
+        _activePopup = popup;
+        _activeAnchor = th;
+        _activePopupType = 'filter';
+    }
+
+    function _repositionActivePopup() {
+        if (!_activePopup || !_activePopup.classList.contains('show')) return;
+        if (_activePopupType === 'filter') {
+            const rect = _activeAnchor.getBoundingClientRect();
+            _activePopup.style.top = (rect.bottom + 4) + 'px';
+            _activePopup.style.left = rect.left + 'px';
+        } else if (_activePopupType === 'grid') {
+            const btn = _activeAnchor;
+            const bRect = btn.getBoundingClientRect();
+            const pRect = _activePopup.getBoundingClientRect();
+            const vw = window.innerWidth;
+            const vh = window.innerHeight;
+            let left = bRect.right - pRect.width;
+            if (left < 8) left = 8;
+            if (left + pRect.width > vw - 8) left = vw - pRect.width - 8;
+            let top = bRect.top - pRect.height - 6;
+            if (top < 8) top = bRect.bottom + 6;
+            if (top + pRect.height > vh - 8) top = vh - pRect.height - 8;
+            if (top < 8) top = 8;
+            _activePopup.style.left = left + 'px';
+            _activePopup.style.top = top + 'px';
+        }
     }
 
     // ===================== 初始化 =====================
@@ -1469,6 +1500,9 @@
             document.getElementById('formatFilterPopup')?.classList.remove('show');
             document.getElementById('pageGridPopup')?.classList.remove('show');
         });
+
+        // 滚动时跟随按钮重新定位弹出框
+        window.addEventListener('scroll', _repositionActivePopup, true);
 
         ['artworkModal', 'imageModal'].forEach(id => {
             document.getElementById(id).addEventListener('hidden.bs.modal', () => {
@@ -2525,6 +2559,9 @@
 
         // 定位：优先显示在按钮上方，空间不足则显示在下方，始终保持在视口内
         const btn   = document.getElementById('pageGridBtn');
+        _activePopup = popup;
+        _activeAnchor = btn;
+        _activePopupType = 'grid';
         const bRect = btn.getBoundingClientRect();
         const pRect = popup.getBoundingClientRect();
         const vw    = window.innerWidth;
