@@ -13,6 +13,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import top.sywyar.pixivdownload.GlobalExceptionHandler;
+import top.sywyar.pixivdownload.quota.MultiModeConfig;
 
 import java.util.Map;
 
@@ -32,10 +33,12 @@ class SetupControllerTest {
     private SetupService setupService;
     @Mock
     private LoginRateLimitService loginRateLimitService;
+    @Mock
+    private MultiModeConfig multiModeConfig;
 
     @BeforeEach
     void setUp() {
-        SetupController controller = new SetupController(setupService, loginRateLimitService);
+        SetupController controller = new SetupController(setupService, loginRateLimitService, multiModeConfig);
         mockMvc = MockMvcBuilders.standaloneSetup(controller)
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .build();
