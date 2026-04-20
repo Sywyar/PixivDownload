@@ -32,8 +32,8 @@ public class DownloadRequest {
         private String username;
         private Long authorId;
         private String authorName;
-        @JsonProperty("isR18")
-        private boolean isR18;
+        @JsonProperty("xRestrict")
+        private int xRestrict;
         @JsonProperty("isAi")
         private boolean isAi;
         @JsonProperty("isUgoira")

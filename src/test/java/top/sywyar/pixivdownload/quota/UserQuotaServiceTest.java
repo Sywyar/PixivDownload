@@ -330,7 +330,7 @@ class UserQuotaServiceTest {
                 true,
                 movedFolder.toString(),
                 200L,
-                false,
+                0,
                 null,
                 null,
                 null

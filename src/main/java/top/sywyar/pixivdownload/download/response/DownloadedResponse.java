@@ -21,8 +21,8 @@ public class DownloadedResponse {
     private final boolean moved;
     private final String moveFolder;
     private final Long moveTime;
-    @JsonProperty("R18")
-    private final Boolean isR18;
+    @JsonProperty("xRestrict")
+    private final Integer xRestrict;
     @JsonProperty("isAi")
     private final Boolean isAi;
     private final Long authorId;

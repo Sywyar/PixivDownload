@@ -20,8 +20,11 @@ public class GalleryQuery {
     public static final Set<String> ALLOWED_SORTS = Set.of(
             "date", "artworkId", "imgs", "status", "authorId", "tags");
 
-    /** 合法三态筛选值。 */
+    /** 合法三态筛选值（用于 AI 筛选）。 */
     public static final Set<String> ALLOWED_TRISTATE = Set.of("any", "yes", "no");
+
+    /** 合法 R18 筛选值：any=全部，r18plus=R-18 或 R-18G，r18=仅 R-18，r18g=仅 R-18G，no=排除 R-18/R-18G；兼容旧值 yes=r18。 */
+    public static final Set<String> ALLOWED_R18 = Set.of("any", "yes", "no", "r18", "r18g", "r18plus");
 
     private int page;
     private int size;
@@ -44,7 +47,7 @@ public class GalleryQuery {
                 .sort(normalizeSort(sort))
                 .order("asc".equalsIgnoreCase(order) ? "asc" : "desc")
                 .search(nullIfBlank(search))
-                .r18(normalizeTristate(r18))
+                .r18(normalizeR18(r18))
                 .ai(normalizeTristate(ai))
                 .formats(formats)
                 .collectionIds(collectionIds)
@@ -65,6 +68,12 @@ public class GalleryQuery {
         if (value == null) return "any";
         String lower = value.trim().toLowerCase(Locale.ROOT);
         return ALLOWED_TRISTATE.contains(lower) ? lower : "any";
+    }
+
+    private static String normalizeR18(String value) {
+        if (value == null) return "any";
+        String lower = value.trim().toLowerCase(Locale.ROOT);
+        return ALLOWED_R18.contains(lower) ? lower : "any";
     }
 
     private static String nullIfBlank(String s) {

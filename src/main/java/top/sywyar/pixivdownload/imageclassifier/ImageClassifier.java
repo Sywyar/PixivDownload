@@ -1032,8 +1032,8 @@ public class ImageClassifier extends JFrame {
                     String serverUrl = config.getProperty("server.url", "http://localhost:6999");
                     ResponseEntity<Map> resp = restTemplate.getForEntity(serverUrl + "/api/downloaded/" + artworkId, Map.class);
                     if (resp.getStatusCode() == HttpStatus.OK && resp.getBody() != null) {
-                        Object  r18Val   = resp.getBody().get("R18");
-                        Boolean isR18    = r18Val instanceof Boolean ? (Boolean) r18Val : null;
+                        Object  r18Val   = resp.getBody().get("xRestrict");
+                        Integer xRestrict = r18Val instanceof Number n ? n.intValue() : null;
                         Object  titleVal = resp.getBody().get("title");
                         String  title    = titleVal instanceof String s ? s : null;
                         SwingUtilities.invokeLater(() -> {
@@ -1041,10 +1041,13 @@ public class ImageClassifier extends JFrame {
                                 setTitle(String.format("图片分类工具 - 共%d个文件夹 - %d 张图片  |  %s",
                                         remainingFolders, imageCount, title));
                             }
-                            if (Boolean.TRUE.equals(isR18)) {
+                            if (xRestrict != null && xRestrict == 2) {
+                                statusLabel.setText(statusLabel.getText() + "   [R18G]");
+                                statusLabel.setForeground(C_DANGER);
+                            } else if (xRestrict != null && xRestrict == 1) {
                                 statusLabel.setText(statusLabel.getText() + "   [R18]");
                                 statusLabel.setForeground(C_DANGER);
-                            } else if (Boolean.FALSE.equals(isR18)) {
+                            } else if (xRestrict != null) {
                                 statusLabel.setText(statusLabel.getText() + "   [SFW]");
                                 statusLabel.setForeground(new Color(34, 139, 87));
                             } else {

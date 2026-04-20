@@ -8,7 +8,7 @@ import java.util.List;
 public interface PixivMapper {
 
     String SELECT_ARTWORK = "SELECT artwork_id, title, folder, count, extensions, time, moved,"
-            + " move_folder, move_time, \"R18\" AS is_r18, is_ai, author_id, description FROM artworks";
+            + " move_folder, move_time, \"R18\" AS x_restrict, is_ai, author_id, description FROM artworks";
 
     // ── DDL ────────────────────────────────────────────────────────────────────
 
@@ -74,14 +74,14 @@ public interface PixivMapper {
 
     @Insert("INSERT OR IGNORE INTO artworks"
             + " (artwork_id, title, folder, count, extensions, time, \"R18\", is_ai, author_id, description)"
-            + " VALUES (#{artworkId}, #{title}, #{folder}, #{count}, #{extensions}, #{time}, #{isR18}, #{isAi}, #{authorId}, #{description})")
+            + " VALUES (#{artworkId}, #{title}, #{folder}, #{count}, #{extensions}, #{time}, #{xRestrict}, #{isAi}, #{authorId}, #{description})")
     void insertOrIgnore(@Param("artworkId") long artworkId,
                         @Param("title") String title,
                         @Param("folder") String folder,
                         @Param("count") int count,
                         @Param("extensions") String extensions,
                         @Param("time") long time,
-                        @Param("isR18") Boolean isR18,
+                        @Param("xRestrict") Integer xRestrict,
                         @Param("isAi") Boolean isAi,
                         @Param("authorId") Long authorId,
                         @Param("description") String description);

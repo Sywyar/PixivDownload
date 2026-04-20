@@ -93,7 +93,9 @@ public class DownloadService {
             if (other.isUserDownload() && !downloadConfig.isUserFlatFolder()) {
                 downloadPath = Paths.get(downloadPath.toString(), other.getUsername());
 
-                if (other.isR18()) {
+                if (other.getXRestrict() == 2) {
+                    downloadPath = Paths.get(downloadPath.toString(), "R18G");
+                } else if (other.getXRestrict() == 1) {
                     downloadPath = Paths.get(downloadPath.toString(), "R18");
                 }
             }
@@ -156,7 +158,7 @@ public class DownloadService {
 
             // 记录下载信息
             recordDownload(artworkId, title, status.getDownloadPath(), fileExtensions,
-                    successCount.get(), other.isR18(), other.isAi(), other.getAuthorId(), other.getDescription(), other.getTags());
+                    successCount.get(), other.getXRestrict(), other.isAi(), other.getAuthorId(), other.getDescription(), other.getTags());
 
             recordStatistics(imageUrls.size());
             recordAuthorInfo(artworkId, other, cookie);
@@ -272,13 +274,13 @@ public class DownloadService {
     }
 
     private void recordDownload(Long artworkId, String title, String folderPath, HashSet<String> fileExtensions,
-                                int count, boolean isR18, boolean isAi, Long authorId, String description, List<TagDto> tags) {
+                                int count, int xRestrict, boolean isAi, Long authorId, String description, List<TagDto> tags) {
         try {
             long time = pixivDatabase.getUniqueTime();
             pixivDatabase.insertArtwork(
                     artworkId, title,
                     Path.of(folderPath).toAbsolutePath().toString(),
-                    count, String.join(",", fileExtensions), time, isR18, isAi, authorId, description
+                    count, String.join(",", fileExtensions), time, xRestrict, isAi, authorId, description
             );
             pixivDatabase.saveArtworkTags(artworkId, tags);
         } catch (Exception e) {

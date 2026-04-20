@@ -125,12 +125,17 @@ public class R18Backfill {
                     case R18 -> {
                         System.out.println("R18");
                         cntR18++;
-                        if (!dryRun) updateR18(conn, artworkId, true);
+                        if (!dryRun) updateR18(conn, artworkId, 1);
+                    }
+                    case R18G -> {
+                        System.out.println("R18G");
+                        cntR18++;
+                        if (!dryRun) updateR18(conn, artworkId, 2);
                     }
                     case SFW -> {
                         System.out.println("SFW");
                         cntSfw++;
-                        if (!dryRun) updateR18(conn, artworkId, false);
+                        if (!dryRun) updateR18(conn, artworkId, 0);
                     }
                     case DELETED -> {
                         System.out.println("已删除 — 跳过 (" + result.message() + ")");
@@ -182,7 +187,8 @@ public class R18Backfill {
 
                 if (!isError) {
                     int xRestrict = root.path("body").path("xRestrict").asInt(0);
-                    return new R18Result(xRestrict > 0 ? ResultType.R18 : ResultType.SFW, null);
+                    if (xRestrict == 2) return new R18Result(ResultType.R18G, null);
+                    return new R18Result(xRestrict == 1 ? ResultType.R18 : ResultType.SFW, null);
                 }
 
                 String message = root.path("message").asText("");
@@ -206,17 +212,17 @@ public class R18Backfill {
         }
     }
 
-    private static void updateR18(Connection conn, long artworkId, boolean isR18) throws Exception {
+    private static void updateR18(Connection conn, long artworkId, int xRestrict) throws Exception {
         try (PreparedStatement ps = conn.prepareStatement(
                 "UPDATE artworks SET \"R18\" = ? WHERE artwork_id = ?")) {
-            ps.setInt(1, isR18 ? 1 : 0);
+            ps.setInt(1, xRestrict);
             ps.setLong(2, artworkId);
             ps.executeUpdate();
         }
     }
 
     // ---- 数据类 ----
-    enum ResultType { R18, SFW, DELETED, SKIP, RATE_LIMITED }
+    enum ResultType { R18, R18G, SFW, DELETED, SKIP, RATE_LIMITED }
 
     record R18Result(ResultType type, String message) {}
 }

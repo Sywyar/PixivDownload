@@ -242,6 +242,7 @@
             padding: 0 6px; border-radius: 4px; font-size: 10px; font-weight: 700; letter-spacing: 0.02em;
         }
         .thumb-badge.r18 { color: #fff; background: rgba(220, 38, 38, 0.85); }
+        .thumb-badge.r18g { color: #fff; background: rgba(185, 28, 28, 0.9); border: 1px solid rgba(255,255,255,0.3); }
         .thumb-badge.ai { color: #fff; background: rgba(139, 92, 246, 0.85); }
         .thumb-badge.pages { color: #fff; background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(4px); }
         .thumb-heart {
@@ -472,7 +473,9 @@
             <div class="filter-row">
                 <span class="filter-row-label">R-18</span>
                 <button class="chip active" data-r18="any">全部</button>
-                <button class="chip" data-r18="yes">仅 R-18</button>
+                <button class="chip" data-r18="r18plus">R-18+</button>
+                <button class="chip" data-r18="r18">仅 R-18</button>
+                <button class="chip" data-r18="r18g">仅 R-18G</button>
                 <button class="chip" data-r18="no">排除</button>
             </div>
             <div class="filter-row">
@@ -965,7 +968,9 @@
             return;
         }
         grid.innerHTML = items.map(item => {
-            const isR18 = item.R18 === true;
+            const xRestrict = item.xRestrict;
+            const isR18 = xRestrict === 1;
+            const isR18G = xRestrict === 2;
             const isAi = item.isAi === true;
             const pages = item.count || 1;
             return `
@@ -975,7 +980,7 @@
                         <div class="thumb-veil"></div>
                         <div class="thumb-badges">
                             <div class="thumb-badge-group">
-                                ${isR18 ? '<span class="thumb-badge r18">R-18</span>' : ''}
+                                ${isR18G ? '<span class="thumb-badge r18g">R-18G</span>' : isR18 ? '<span class="thumb-badge r18">R-18</span>' : ''}
                                 ${isAi ? '<span class="thumb-badge ai">AI</span>' : ''}
                             </div>
                             ${pages > 1 ? `<span class="thumb-badge pages">${pages}P</span>` : ''}

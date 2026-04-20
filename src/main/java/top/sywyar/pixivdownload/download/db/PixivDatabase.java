@@ -44,26 +44,26 @@ public class PixivDatabase {
     }
 
     public void insertArtwork(long artworkId, String title, String folder, int count,
-                              String extensions, long time, Boolean isR18, Boolean isAi, Long authorId,
+                              String extensions, long time, Integer xRestrict, Boolean isAi, Long authorId,
                               String description) {
         pixivMapper.insertOrIgnore(artworkId, title, stripTrailingSlash(folder),
-                count, extensions, time, isR18, isAi, authorId, description);
+                count, extensions, time, xRestrict, isAi, authorId, description);
     }
 
     public void insertArtwork(long artworkId, String title, String folder, int count,
-                              String extensions, long time, Boolean isR18, Long authorId,
+                              String extensions, long time, Integer xRestrict, Long authorId,
                               String description) {
-        insertArtwork(artworkId, title, folder, count, extensions, time, isR18, null, authorId, description);
+        insertArtwork(artworkId, title, folder, count, extensions, time, xRestrict, null, authorId, description);
     }
 
     public void insertArtwork(long artworkId, String title, String folder, int count,
-                              String extensions, long time, Boolean isR18, Long authorId) {
-        insertArtwork(artworkId, title, folder, count, extensions, time, isR18, authorId, null);
+                              String extensions, long time, Integer xRestrict, Long authorId) {
+        insertArtwork(artworkId, title, folder, count, extensions, time, xRestrict, authorId, null);
     }
 
     public void insertArtwork(long artworkId, String title, String folder, int count,
-                              String extensions, long time, Boolean isR18) {
-        insertArtwork(artworkId, title, folder, count, extensions, time, isR18, null, null);
+                              String extensions, long time, Integer xRestrict) {
+        insertArtwork(artworkId, title, folder, count, extensions, time, xRestrict, null, null);
     }
 
     private static String stripTrailingSlash(String path) {

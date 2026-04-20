@@ -34,8 +34,12 @@ public class GalleryRepository {
             params.addValue("search", "%" + q.getSearch() + "%");
         }
 
-        if ("yes".equals(q.getR18())) {
+        if ("r18g".equals(q.getR18())) {
+            where.append(" AND a.\"R18\" = 2");
+        } else if ("r18".equals(q.getR18()) || "yes".equals(q.getR18())) {
             where.append(" AND a.\"R18\" = 1");
+        } else if ("r18plus".equals(q.getR18())) {
+            where.append(" AND a.\"R18\" >= 1");
         } else if ("no".equals(q.getR18())) {
             where.append(" AND (a.\"R18\" = 0 OR a.\"R18\" IS NULL)");
         }

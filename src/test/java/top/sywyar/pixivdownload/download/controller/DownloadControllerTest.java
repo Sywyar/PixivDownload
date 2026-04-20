@@ -240,7 +240,7 @@ class DownloadControllerTest {
         @DisplayName("已下载的作品应返回详情")
         void shouldReturnDownloadedArtwork() throws Exception {
             ArtworkRecord record = new ArtworkRecord(12345L, "测试作品", "/path/to/folder",
-                    3, "jpg", 1700000000L, false, null, null, false, true, null, null);
+                    3, "jpg", 1700000000L, false, null, null, 0, true, null, null);
             when(downloadService.getDownloadedRecord(12345L, false)).thenReturn(record);
 
             mockMvc.perform(get("/api/downloaded/12345"))
@@ -264,7 +264,7 @@ class DownloadControllerTest {
         @DisplayName("verifyFiles=true 时应透传实际目录校验参数")
         void shouldPassVerifyFilesFlag() throws Exception {
             ArtworkRecord record = new ArtworkRecord(12345L, "娴嬭瘯浣滃搧", "/path/to/folder",
-                    1, "jpg", 1700000000L, false, null, null, false, null, null, null);
+                    1, "jpg", 1700000000L, false, null, null, 0, null, null, null);
             when(downloadService.getDownloadedRecord(12345L, true)).thenReturn(record);
 
             mockMvc.perform(get("/api/downloaded/12345").param("verifyFiles", "true"))

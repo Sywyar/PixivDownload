@@ -93,7 +93,7 @@ public class GalleryService {
                 .moved(artwork.moved())
                 .moveFolder(artwork.moveFolder())
                 .moveTime(artwork.moveTime())
-                .isR18(artwork.isR18())
+                .xRestrict(artwork.xRestrict())
                 .isAi(artwork.isAi())
                 .authorId(artwork.authorId())
                 .authorName(artwork.authorId() == null ? null : authorNames.get(artwork.authorId()))

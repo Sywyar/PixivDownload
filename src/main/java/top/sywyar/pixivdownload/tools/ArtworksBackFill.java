@@ -122,7 +122,7 @@ public class ArtworksBackFill {
                             changes.add("author=" + result.authorName + "(#" + result.authorId + ")");
                         }
                         if (didR18) {
-                            changes.add("R18=" + (result.isR18 ? 1 : 0));
+                            changes.add("R18=" + result.xRestrict);
                         }
                         if (didAi) {
                             changes.add("AI=" + (result.isAi ? 1 : 0));
@@ -372,11 +372,11 @@ public class ArtworksBackFill {
                 if (authorId > 0 && authorName.isEmpty()) {
                     authorName = String.valueOf(authorId);
                 }
-                boolean isR18 = payload.path("xRestrict").asInt(0) > 0;
+                int xRestrict = payload.path("xRestrict").asInt(0);
                 boolean isAi = payload.path("aiType").asInt(0) >= 2;
                 String description = payload.path("description").asText("");
                 List<TagEntry> tags = extractTags(payload);
-                return LookupResult.found(authorId, authorName, isR18, isAi, description, tags);
+                return LookupResult.found(authorId, authorName, xRestrict, isAi, description, tags);
             });
         } catch (Exception e) {
             return LookupResult.skip("请求异常: " + e.getMessage());
@@ -397,7 +397,7 @@ public class ArtworksBackFill {
             try (PreparedStatement ps = conn.prepareStatement(sql)) {
                 int idx = 1;
                 if (updateAuthor) ps.setLong(idx++, result.authorId);
-                if (updateR18) ps.setInt(idx++, result.isR18 ? 1 : 0);
+                if (updateR18) ps.setInt(idx++, result.xRestrict);
                 if (updateAi) ps.setInt(idx++, result.isAi ? 1 : 0);
                 if (updateDescription) ps.setString(idx++, result.description);
                 ps.setLong(idx, c.artworkId);
@@ -603,43 +603,43 @@ public class ArtworksBackFill {
         final ResultType type;
         final long authorId;
         final String authorName;
-        final boolean isR18;
+        final int xRestrict;
         final boolean isAi;
         final String description;
         final List<TagEntry> tags;
         final String message;
 
-        private LookupResult(ResultType type, long authorId, String authorName, boolean isR18, boolean isAi,
+        private LookupResult(ResultType type, long authorId, String authorName, int xRestrict, boolean isAi,
                              String description, List<TagEntry> tags, String message) {
             this.type = type;
             this.authorId = authorId;
             this.authorName = authorName;
-            this.isR18 = isR18;
+            this.xRestrict = xRestrict;
             this.isAi = isAi;
             this.description = description;
             this.tags = tags;
             this.message = message;
         }
 
-        static LookupResult found(long authorId, String authorName, boolean isR18, boolean isAi,
+        static LookupResult found(long authorId, String authorName, int xRestrict, boolean isAi,
                                   String description, List<TagEntry> tags) {
-            return new LookupResult(ResultType.FOUND, authorId, authorName, isR18, isAi, description, tags, null);
+            return new LookupResult(ResultType.FOUND, authorId, authorName, xRestrict, isAi, description, tags, null);
         }
 
         static LookupResult r18Only(String message) {
-            return new LookupResult(ResultType.R18_ONLY, 0, null, true, false, null, null, message);
+            return new LookupResult(ResultType.R18_ONLY, 0, null, 1, false, null, null, message);
         }
 
         static LookupResult deleted(String message) {
-            return new LookupResult(ResultType.DELETED, 0, null, false, false, null, null, message);
+            return new LookupResult(ResultType.DELETED, 0, null, 0, false, null, null, message);
         }
 
         static LookupResult skip(String message) {
-            return new LookupResult(ResultType.SKIP, 0, null, false, false, null, null, message);
+            return new LookupResult(ResultType.SKIP, 0, null, 0, false, null, null, message);
         }
 
         static LookupResult rateLimited() {
-            return new LookupResult(ResultType.RATE_LIMITED, 0, null, false, false, null, null, "HTTP 429");
+            return new LookupResult(ResultType.RATE_LIMITED, 0, null, 0, false, null, null, "HTTP 429");
         }
     }
 

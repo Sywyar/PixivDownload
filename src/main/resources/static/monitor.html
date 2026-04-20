@@ -602,6 +602,11 @@
             color: var(--red);
             border-color: rgba(239,68,68,0.35);
         }
+        .R18-r18g {
+            background: rgba(220,38,38,0.18);
+            color: #dc2626;
+            border-color: rgba(220,38,38,0.5);
+        }
         .R18-no {
             background: rgba(0,255,136,0.08);
             color: var(--green);
@@ -1363,7 +1368,7 @@
     let formatFilter = new Set(); // 格式筛选，空=显示全部
     let authorFilter = new Set(); // 作者筛选，空=显示全部
     let authorFilterQuery = '';
-    let R18Filter = null; // null=全部, true=仅R18, false=仅SFW
+    let R18Filter = null; // null=全部, 'r18'=仅R-18, 'r18g'=仅R-18G, 'sfw'=仅SFW
     let aiFilter = null; // null=全部, true=仅AI, false=仅人工
 
     let downloadStatsChart = null;
@@ -1640,8 +1645,8 @@
                 vb = b.moved ? 1 : 0;
             }
             if (sortKey === 'isR18') {
-                va = a.R18 === true ? 1 : a.R18 === false ? 0 : -1;
-                vb = b.R18 === true ? 1 : b.R18 === false ? 0 : -1;
+                va = a.xRestrict != null ? a.xRestrict : -1;
+                vb = b.xRestrict != null ? b.xRestrict : -1;
             }
             if (sortKey === 'isAi') {
                 va = a.isAi === true ? 1 : a.isAi === false ? 0 : -1;
@@ -1702,7 +1707,13 @@
 
         // 应用 R18 筛选
         if (R18Filter !== null) {
-            sorted = sorted.filter(a => a.R18 !== null && a.R18 !== undefined && !!a.R18 === R18Filter);
+            sorted = sorted.filter(a => {
+                const x = a.xRestrict;
+                if (R18Filter === 'r18')  return x === 1;
+                if (R18Filter === 'r18g') return x === 2;
+                if (R18Filter === 'sfw')  return x === 0;
+                return true;
+            });
         }
 
         if (aiFilter !== null) {
@@ -1778,9 +1789,13 @@
                     <div class="time">${dt.time}</div>
                 </td>
                 <td><span class="status-badge ${statusClass}">${status}</span></td>
-                <td>${artwork.R18 === null || artwork.R18 === undefined
+                <td>${artwork.xRestrict == null
                     ? '<span class="R18-badge" style="background:rgba(100,116,139,.12);color:#64748b;border-color:rgba(100,116,139,.3)">未知</span>'
-                    : `<span class="R18-badge ${artwork.R18 ? 'R18-yes' : 'R18-no'}">${artwork.R18 ? 'R18' : 'SFW'}</span>`}</td>
+                    : artwork.xRestrict === 2
+                        ? '<span class="R18-badge R18-r18g">R-18G</span>'
+                        : artwork.xRestrict === 1
+                            ? '<span class="R18-badge R18-yes">R-18</span>'
+                            : '<span class="R18-badge R18-no">SFW</span>'}</td>
                 <td>${artwork.isAi === null || artwork.isAi === undefined
                     ? '<span class="ai-badge ai-unknown">未知</span>'
                     : `<span class="ai-badge ${artwork.isAi ? 'ai-yes' : 'ai-no'}">${artwork.isAi ? 'AI' : '人工'}</span>`}</td>
@@ -2461,7 +2476,8 @@
 
         const options = [
             { label: '全部', value: 'all' },
-            { label: '<span class="R18-badge R18-yes">R18</span>', value: 'R18' },
+            { label: '<span class="R18-badge R18-yes">R-18</span>', value: 'r18' },
+            { label: '<span class="R18-badge R18-r18g">R-18G</span>', value: 'r18g' },
             { label: '<span class="R18-badge R18-no">SFW</span>', value: 'sfw' },
         ];
 
@@ -2471,7 +2487,7 @@
                 ${options.map(o => `
                     <label class="fmt-filter-option">
                         <input type="radio" name="R18opt" value="${o.value}"
-                               ${(o.value === 'all' && R18Filter === null) || (o.value === 'R18' && R18Filter === true) || (o.value === 'sfw' && R18Filter === false) ? 'checked' : ''}
+                               ${(o.value === 'all' && R18Filter === null) || o.value === R18Filter ? 'checked' : ''}
                                onchange="onR18FilterChange(this.value)">
                         <span style="font-size:.75rem;">${o.label}</span>
                     </label>
@@ -2483,7 +2499,7 @@
     }
 
     function onR18FilterChange(value) {
-        R18Filter = value === 'all' ? null : value === 'R18';
+        R18Filter = value === 'all' ? null : value;
         currentPage = 1;
         updateR18FilterIcon();
         renderFromCache();

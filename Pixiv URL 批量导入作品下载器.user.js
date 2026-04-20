@@ -199,14 +199,14 @@
                 });
             });
         },
-        sendDownloadRequest(artworkId, imageUrls, title, authorId, authorName, isR18, isAi, ugoiraData, delayMs, bookmark, description, tags) {
+        sendDownloadRequest(artworkId, imageUrls, title, authorId, authorName, xRestrict, isAi, ugoiraData, delayMs, bookmark, description, tags) {
             return new Promise((resolve, reject) => {
                 const parsedAuthorId = Number.parseInt(String(authorId ?? ''), 10);
                 const other = {
                     userDownload: false,
                     authorId: Number.isFinite(parsedAuthorId) ? parsedAuthorId : null,
                     authorName: authorName || null,
-                    isR18: !!isR18,
+                    xRestrict: Number(xRestrict) || 0,
                     isAi: !!isAi,
                     delayMs: delayMs || 0,
                     bookmark: !!bookmark,
@@ -785,7 +785,7 @@
                 item.title = (meta && meta.illustTitle) || item.title || `作品 ${item.id}`;
                 const authorId = meta?.userId ?? null;
                 const authorName = meta?.userName || null;
-                const isR18 = Number(meta?.xRestrict ?? meta?.xrestrict ?? 0) > 0;
+                const xRestrict = Number(meta?.xRestrict ?? meta?.xrestrict ?? 0);
                 const isAi = Number(meta?.aiType ?? 0) >= 2;
                 const description = meta?.description || '';
                 const tagsArr = meta && meta.tags && Array.isArray(meta.tags.tags) ? meta.tags.tags : [];
@@ -796,7 +796,7 @@
                         translatedName: (t.translation && t.translation.en) ? String(t.translation.en) : null
                     }));
 
-                if (this.r18Only && !isR18) {
+                if (this.r18Only && xRestrict < 1) {
                     item.status = 'skipped';
                     item.lastMessage = '跳过 — 非 R18 内容';
                     item.endTime = new Date().toISOString();
@@ -838,7 +838,7 @@
                 this.saveToStorage();
                 this.ui.renderQueue(this.queue);
 
-                const dlData = await Api.sendDownloadRequest(item.id, urls, item.title, authorId, authorName, isR18, isAi, ugoiraData, this.getImageDelayMs(), this.bookmark, description, tags);
+                const dlData = await Api.sendDownloadRequest(item.id, urls, item.title, authorId, authorName, xRestrict, isAi, ugoiraData, this.getImageDelayMs(), this.bookmark, description, tags);
                 if (dlData && dlData.alreadyDownloaded) {
                     item.status = 'skipped';
                     item.lastMessage = '跳过 — 已下载（服务器确认）';

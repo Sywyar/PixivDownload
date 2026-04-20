@@ -922,7 +922,9 @@
             <span>内容:</span>
             <label><input type="radio" name="search-mode" value="all" checked> 全部</label>
             <label><input type="radio" name="search-mode" value="safe"> 全年龄</label>
-            <label><input type="radio" name="search-mode" value="r18"> R18</label>
+            <label title="Pixiv 原生的 R-18 搜索结果（包含 R-18G）"><input type="radio" name="search-mode" value="r18plus"> R-18+</label>
+            <label title="R-18+ 结果中剔除 R-18G 后的纯 R-18（客户端过滤）"><input type="radio" name="search-mode" value="r18"> R-18 ⚠</label>
+            <label title="R-18+ 结果中仅保留 R-18G（客户端过滤）"><input type="radio" name="search-mode" value="r18g"> R-18G ⚠</label>
             <span style="margin-left:12px;">搜索方式:</span>
             <label><input type="radio" name="search-smode" value="s_tag" checked> 标签</label>
             <label><input type="radio" name="search-smode" value="s_tc"> 标题/描述</label>
@@ -1614,14 +1616,14 @@
         return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
     }
 
-    async function sendDownload(artworkId, imageUrls, title, isUserDownload, username, authorId, authorName, isR18, isAi, ugoiraData, description, tags) {
+    async function sendDownload(artworkId, imageUrls, title, isUserDownload, username, authorId, authorName, xRestrict, isAi, ugoiraData, description, tags) {
         const delayMs = getImageDelayMs();
         const other = {
             userDownload: isUserDownload,
             username: username || '',
             authorId: normalizeAuthorId(authorId),
             authorName: authorName || null,
-            isR18: !!isR18,
+            xRestrict: Number(xRestrict) || 0,
             isAi: !!isAi,
             delayMs,
             bookmark: !!state.settings.bookmark,
@@ -1865,9 +1867,9 @@
             const meta = await getArtworkMeta(item.id);
             item.title = meta.illustTitle || item.title || `作品 ${item.id}`;
 
-            const isR18 = Number(meta.xRestrict ?? meta.xrestrict ?? 0) > 0;
+            const xRestrict = Number(meta.xRestrict ?? meta.xrestrict ?? 0);
             const isAi = meta?.isAi === true || Number(meta?.aiType ?? 0) >= 2;
-            if (state.settings.R18Only && !isR18) {
+            if (state.settings.R18Only && xRestrict < 1) {
                 item.status = 'skipped';
                 item.lastMessage = '跳过 — 非 R18 内容';
                 item.endTime = new Date().toISOString();
@@ -1877,7 +1879,7 @@
                 return;
             }
 
-            item.isR18 = isR18;
+            item.xRestrict = xRestrict;
             item.isAi = isAi;
             const isUserMode = item.source === 'user';
             let urls, ugoiraData = null;
@@ -1908,7 +1910,7 @@
                 isUserMode, item.username || state.username || state.userId,
                 item.authorId ?? fallbackAuthorId,
                 item.authorName || fallbackAuthorName,
-                isR18, isAi, ugoiraData,
+                xRestrict, isAi, ugoiraData,
                 meta.description || '',
                 Array.isArray(meta.tags) ? meta.tags : []
             );
@@ -2339,11 +2341,13 @@
                 : q.source === 'search'
                     ? `<span style="background:#28a745;color:white;border-radius:3px;padding:1px 5px;font-size:10px;margin-left:5px;vertical-align:middle;">Search</span>`
                     : `<span style="background:#6610f2;color:white;border-radius:3px;padding:1px 5px;font-size:10px;margin-left:5px;vertical-align:middle;">导入</span>`;
-            const R18Label = q.isR18 === true
-                ? `<span style="background:#dc3545;color:white;border-radius:3px;padding:1px 5px;font-size:10px;margin-left:3px;vertical-align:middle;">R18</span>`
-                : q.isR18 === false
-                    ? `<span style="background:#198754;color:white;border-radius:3px;padding:1px 5px;font-size:10px;margin-left:3px;vertical-align:middle;">SFW</span>`
-                    : `<span style="background:rgba(100,116,139,.15);color:#64748b;border-radius:3px;padding:1px 5px;font-size:10px;margin-left:3px;vertical-align:middle;">未知</span>`;
+            const R18Label = q.xRestrict == null
+                ? `<span style="background:rgba(100,116,139,.15);color:#64748b;border-radius:3px;padding:1px 5px;font-size:10px;margin-left:3px;vertical-align:middle;">未知</span>`
+                : q.xRestrict === 2
+                    ? `<span style="background:#b91c1c;color:white;border-radius:3px;padding:1px 5px;font-size:10px;margin-left:3px;vertical-align:middle;">R-18G</span>`
+                    : q.xRestrict === 1
+                        ? `<span style="background:#dc3545;color:white;border-radius:3px;padding:1px 5px;font-size:10px;margin-left:3px;vertical-align:middle;">R-18</span>`
+                        : `<span style="background:#198754;color:white;border-radius:3px;padding:1px 5px;font-size:10px;margin-left:3px;vertical-align:middle;">SFW</span>`;
             const AILabel = q.isAi === true
                 ? `<span style="background:#d946ef;color:white;border-radius:3px;padding:1px 5px;font-size:10px;margin-left:3px;vertical-align:middle;">AI</span>`
                 : '';
@@ -2524,16 +2528,19 @@
             return;
         }
 
-        const mode = document.querySelector('input[name="search-mode"]:checked').value;
+        const uiMode = document.querySelector('input[name="search-mode"]:checked').value;
         const sMode = document.querySelector('input[name="search-smode"]:checked').value;
         const order = document.querySelector('input[name="search-order"]:checked').value;
+        const r18Family = uiMode === 'r18' || uiMode === 'r18g' || uiMode === 'r18plus';
+        const mode = r18Family ? 'r18' : uiMode;
+        const clientFilter = uiMode === 'r18' ? 1 : uiMode === 'r18g' ? 2 : 0;
 
         document.getElementById('search-premium-tip').style.display = order === 'popular_d' ? 'block' : 'none';
 
         cleanupBlobUrls();
 
         searchState.currentWord = word;
-        searchState.currentMode = mode;
+        searchState.currentMode = uiMode;
         searchState.currentOrder = order;
         searchState.currentSMode = sMode;
         searchState.currentPage = page;
@@ -2552,13 +2559,21 @@
                     `<div style="color:#dc3545;text-align:center;padding:24px 0;">搜索失败：${esc(data.error || '未知错误')}</div>`;
                 return;
             }
-            searchState.results = data.items || [];
+            let items = data.items || [];
+            const rawCount = items.length;
+            if (clientFilter > 0) items = items.filter(it => Number(it.xRestrict ?? 0) === clientFilter);
+            searchState.results = items;
             searchState.total = data.total || 0;
             searchState.noCookie = !hasPixivCookie();
             renderSearchResults();
             renderSearchPagination();
             document.getElementById('btn-add-all').disabled = searchState.results.length === 0;
-            setStatus(`搜索完成：共 ${searchState.total.toLocaleString()} 个结果`, 'success');
+            if (clientFilter > 0) {
+                const label = clientFilter === 2 ? 'R-18G' : 'R-18';
+                setStatus(`搜索完成：R-18+ 原始结果 ${rawCount} 个，筛选后 ${label} ${items.length} 个（总数为 Pixiv 返回的 R-18+ 总数）`, 'success');
+            } else {
+                setStatus(`搜索完成：共 ${searchState.total.toLocaleString()} 个结果`, 'success');
+            }
         } catch (e) {
             document.getElementById('search-results-area').innerHTML =
                 `<div style="color:#dc3545;text-align:center;padding:24px 0;">请求失败：${esc(e.message)}</div>`;
@@ -2579,10 +2594,13 @@
     </div>
     <div class="search-grid">
       ${searchState.results.map((item, idx) => {
-            const isR18 = item.xRestrict > 0;
+            const xr = Number(item.xRestrict ?? 0);
+            const isR18 = xr >= 1;
             const isAi = Number(item.aiType ?? 0) >= 2;
             const blurClass = (isR18 && searchState.blurR18) ? 'blur-r18' : '';
-            const r18Badge = isR18 ? '<span class="thumb-badge">R18</span>' : '';
+            const r18Badge = xr === 2
+                ? '<span class="thumb-badge" style="background:#b91c1c;">R-18G</span>'
+                : xr === 1 ? '<span class="thumb-badge">R-18</span>' : '';
             const aiBadge = isAi ? '<span class="thumb-badge thumb-badge-ai">AI</span>' : '';
             const pagesLabel = item.pageCount > 1 ? `<span class="thumb-pages">${item.pageCount}P</span>` : '';
             const inQueueClass = inQueue.has(item.id) ? ' in-queue' : '';

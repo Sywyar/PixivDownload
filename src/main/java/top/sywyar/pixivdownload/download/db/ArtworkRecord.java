@@ -10,7 +10,7 @@ public record ArtworkRecord(
         boolean moved,
         String moveFolder,
         Long moveTime,
-        Boolean isR18,
+        Integer xRestrict,
         Boolean isAi,
         Long authorId,
         String description
