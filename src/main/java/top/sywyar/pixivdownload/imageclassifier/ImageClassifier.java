@@ -62,6 +62,7 @@ public class ImageClassifier extends JFrame {
     private List<String> targetFolders;
     private List<String> folderRemarks;
     private final File   configFile;
+    private final int    closeOperation;
 
     // =========================================================================
     // UI 组件
@@ -97,10 +98,15 @@ public class ImageClassifier extends JFrame {
     // =========================================================================
 
     public ImageClassifier() {
+        this(true);
+    }
+
+    public ImageClassifier(boolean exitOnClose) {
         String rootFolder = RuntimeFiles.readDownloadRootFromConfig(
                 RuntimeFiles.resolveConfigYamlPath(),
                 RuntimeFiles.DEFAULT_DOWNLOAD_ROOT);
         this.configFile = RuntimeFiles.resolveImageClassifierPath(rootFolder).toFile();
+        this.closeOperation = exitOnClose ? JFrame.EXIT_ON_CLOSE : JFrame.DISPOSE_ON_CLOSE;
         loadConfig();
         initUI();
         checkServerStatus();
@@ -202,7 +208,7 @@ public class ImageClassifier extends JFrame {
         }
 
         setTitle("图片分类工具");
-        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        setDefaultCloseOperation(closeOperation);
         setSize(1340, 800);
         setLocationRelativeTo(null);
 

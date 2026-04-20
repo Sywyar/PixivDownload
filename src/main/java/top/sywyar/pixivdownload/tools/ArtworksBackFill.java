@@ -2,6 +2,7 @@ package top.sywyar.pixivdownload.tools;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.hc.client5.http.classic.methods.HttpGet;
 import org.apache.hc.client5.http.config.RequestConfig;
 import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
@@ -43,6 +44,7 @@ import java.util.List;
  *   --dry-run               只打印结果，不写入数据库
  * </pre>
  */
+@Slf4j
 public class ArtworksBackFill {
 
     private static final String PIXIV_AJAX = "https://www.pixiv.net/ajax/illust/";
@@ -57,66 +59,39 @@ public class ArtworksBackFill {
     };
 
     public static void main(String[] args) throws Exception {
-        String dbPath = RuntimeFiles.dataDirectory().resolve(RuntimeFiles.PIXIV_DOWNLOAD_DB).toString();
-        String proxyHost = "127.0.0.1";
-        int proxyPort = 7890;
-        boolean useProxy = true;
-        long delayMs = 800;
-        int limit = 0;
-        boolean dryRun = false;
-
-        for (int i = 0; i < args.length; i++) {
-            switch (args[i]) {
-                case "--db" -> dbPath = args[++i];
-                case "--proxy" -> {
-                    String[] parts = args[++i].split(":");
-                    proxyHost = parts[0];
-                    proxyPort = Integer.parseInt(parts[1]);
-                }
-                case "--no-proxy" -> useProxy = false;
-                case "--delay" -> delayMs = Long.parseLong(args[++i]);
-                case "--limit" -> limit = Integer.parseInt(args[++i]);
-                case "--dry-run" -> dryRun = true;
-                default -> {
-                    printUsage();
-                    return;
-                }
-            }
+        Options options;
+        try {
+            options = Options.parse(args);
+        } catch (IllegalArgumentException e) {
+            printUsage();
+            return;
         }
+        run(options);
+    }
 
-        System.out.printf("DB: %s | 代理: %s | 延迟: %dms | 限制: %s | 试运行: %s%n",
-                dbPath,
-                useProxy ? proxyHost + ":" + proxyPort : "无",
-                delayMs,
-                limit > 0 ? limit : "ALL",
-                dryRun);
-        System.out.println("提示：运行 ArtworksBackFill 前请先停止后端服务，避免与 SQLite 同时写入。");
+    public static Summary run(Options options) throws Exception {
+        log.info("回填开始: db={} 代理={} 延迟={}ms 限制={} 试运行={}",
+                options.dbPath(),
+                options.useProxy() ? options.proxyHost() + ":" + options.proxyPort() : "无",
+                options.delayMs(),
+                options.limit() > 0 ? options.limit() : "ALL",
+                options.dryRun());
+        log.info("提示：运行 ArtworksBackFill 前请先停止后端服务，避免与 SQLite 同时写入。");
 
         SQLiteConfig sqliteConfig = new SQLiteConfig();
         sqliteConfig.setBusyTimeout(5000);
         sqliteConfig.setJournalMode(SQLiteConfig.JournalMode.WAL);
-        String jdbcUrl = "jdbc:sqlite:" + dbPath;
 
-        RequestConfig reqConfig = RequestConfig.custom()
-                .setConnectTimeout(Timeout.ofSeconds(15))
-                .setResponseTimeout(Timeout.ofSeconds(15))
-                .setConnectionRequestTimeout(Timeout.ofSeconds(5))
-                .build();
-        var clientBuilder = HttpClients.custom()
-                .setDefaultRequestConfig(reqConfig)
-                .disableCookieManagement();
-        if (useProxy) {
-            clientBuilder.setProxy(new HttpHost("http", proxyHost, proxyPort));
-        }
-
-        try (CloseableHttpClient http = clientBuilder.build();
-             Connection conn = DriverManager.getConnection(jdbcUrl, sqliteConfig.toProperties())) {
+        try (CloseableHttpClient http = buildHttpClient(options);
+             Connection conn = DriverManager.getConnection("jdbc:sqlite:" + options.dbPath(), sqliteConfig.toProperties())) {
 
             ensureSchema(conn);
-            List<Candidate> candidates = findCandidates(conn, limit);
-            System.out.printf("共 %d 条记录需要补全%n", candidates.size());
+            List<Candidate> candidates = findCandidates(conn, options.limit());
+            log.info("共 {} 条记录需要补全", candidates.size());
             if (candidates.isEmpty()) {
-                return;
+                Summary summary = new Summary(0, 0, 0, 0, 0, 0, 0, 0, 0, options.dryRun(), false);
+                logSummary(summary);
+                return summary;
             }
 
             ObjectMapper mapper = new ObjectMapper();
@@ -129,28 +104,28 @@ public class ArtworksBackFill {
             int skipped = 0;
 
             for (int i = 0; i < candidates.size(); i++) {
-                Candidate c = candidates.get(i);
-                System.out.printf("[%d/%d] 查询 %d [%s] ... ",
-                        i + 1, candidates.size(), c.artworkId, describeMissing(c));
+                Candidate candidate = candidates.get(i);
+                LookupResult result = queryPixiv(http, mapper, candidate.artworkId);
+                String prefix = "[" + (i + 1) + "/" + candidates.size() + "] artwork="
+                        + candidate.artworkId + " missing=[" + describeMissing(candidate) + "]";
 
-                LookupResult result = queryPixiv(http, mapper, c.artworkId);
                 switch (result.type) {
                     case FOUND -> {
-                        boolean didAuthor = c.authorMissing && result.authorId > 0;
-                        boolean didR18 = c.r18Missing;
-                        boolean didAi = c.aiMissing;
-                        boolean didDesc = c.descriptionMissing && result.description != null;
-                        boolean didTags = c.tagsMissing && result.tags != null;
+                        boolean didAuthor = candidate.authorMissing && result.authorId > 0;
+                        boolean didR18 = candidate.r18Missing;
+                        boolean didAi = candidate.aiMissing;
+                        boolean didDesc = candidate.descriptionMissing && result.description != null;
+                        boolean didTags = candidate.tagsMissing && result.tags != null;
 
                         List<String> changes = new ArrayList<>();
                         if (didAuthor) {
                             changes.add("author=" + result.authorName + "(#" + result.authorId + ")");
                         }
                         if (didR18) {
-                            changes.add("R18=" + (result.isR18 ? "1" : "0"));
+                            changes.add("R18=" + (result.isR18 ? 1 : 0));
                         }
                         if (didAi) {
-                            changes.add("AI=" + (result.isAi ? "1" : "0"));
+                            changes.add("AI=" + (result.isAi ? 1 : 0));
                         }
                         if (didDesc) {
                             changes.add("desc=" + result.description.length() + "字符");
@@ -160,12 +135,12 @@ public class ArtworksBackFill {
                         }
 
                         if (changes.isEmpty()) {
-                            System.out.println("无可补全数据");
+                            log.info("{} 无可补全数据", prefix);
                             skipped++;
                         } else {
-                            System.out.println(String.join(", ", changes));
-                            if (!dryRun) {
-                                applyUpdates(conn, c, result, didAuthor, didR18, didAi, didDesc, didTags);
+                            log.info("{} {}", prefix, String.join(", ", changes));
+                            if (!options.dryRun()) {
+                                applyUpdates(conn, candidate, result, didAuthor, didR18, didAi, didDesc, didTags);
                             }
                             if (didAuthor) filledAuthor++;
                             if (didR18) filledR18++;
@@ -175,47 +150,100 @@ public class ArtworksBackFill {
                         }
                     }
                     case R18_ONLY -> {
-                        if (c.r18Missing) {
-                            System.out.println("R18 (via error msg: " + result.message + ")");
+                        if (candidate.r18Missing) {
+                            log.info("{} R18 (via error msg: {})", prefix, result.message);
                             filledR18++;
-                            if (!dryRun) {
-                                applyR18Only(conn, c.artworkId);
+                            if (!options.dryRun()) {
+                                applyR18Only(conn, candidate.artworkId);
                             }
                         } else {
-                            System.out.println("跳过 (" + result.message + "，R18 已有值)");
+                            log.info("{} 跳过 ({}，R18 已有值)", prefix, result.message);
                             skipped++;
                         }
                     }
                     case DELETED -> {
-                        System.out.println("已删除/不可访问 — 跳过 (" + result.message + ")");
+                        log.info("{} 已删除/不可访问 — 跳过 ({})", prefix, result.message);
                         deletedCount++;
                     }
                     case SKIP -> {
-                        System.out.println("跳过 (" + result.message + ")");
+                        log.info("{} 跳过 ({})", prefix, result.message);
                         skipped++;
                     }
                     case RATE_LIMITED -> {
-                        System.out.println("触发限流（429），已停止");
-                        System.out.printf("%n已处理 %d/%d 条：author=%d  R18=%d  AI=%d  desc=%d  tags=%d  已删除=%d  跳过=%d%n",
+                        log.warn("{} 触发限流（429），已停止", prefix);
+                        log.info("已处理 {}/{} 条：author={}  R18={}  AI={}  desc={}  tags={}  已删除={}  跳过={}",
                                 i, candidates.size(), filledAuthor, filledR18, filledAi, filledDescription, filledTags, deletedCount, skipped);
-                        if (dryRun) {
-                            System.out.println("（试运行模式，未写入数据库）");
+                        if (options.dryRun()) {
+                            log.info("（试运行模式，未写入数据库）");
                         }
-                        return;
+                        Summary summary = new Summary(
+                                candidates.size(),
+                                i,
+                                filledAuthor,
+                                filledR18,
+                                filledAi,
+                                filledDescription,
+                                filledTags,
+                                deletedCount,
+                                skipped,
+                                options.dryRun(),
+                                true
+                        );
+                        logSummary(summary);
+                        return summary;
                     }
                 }
 
                 if (i < candidates.size() - 1) {
-                    Thread.sleep(delayMs);
+                    Thread.sleep(options.delayMs());
                 }
             }
 
-            System.out.printf("%n完成：扫描=%d  author=%d  R18=%d  AI=%d  desc=%d  tags=%d  已删除=%d  跳过=%d%n",
-                    candidates.size(), filledAuthor, filledR18, filledAi, filledDescription, filledTags, deletedCount, skipped);
-            if (dryRun) {
-                System.out.println("（试运行模式，未写入数据库）");
-            }
+            Summary summary = new Summary(
+                    candidates.size(),
+                    candidates.size(),
+                    filledAuthor,
+                    filledR18,
+                    filledAi,
+                    filledDescription,
+                    filledTags,
+                    deletedCount,
+                    skipped,
+                    options.dryRun(),
+                    false
+            );
+            logSummary(summary);
+            return summary;
         }
+    }
+
+    private static CloseableHttpClient buildHttpClient(Options options) {
+        RequestConfig reqConfig = RequestConfig.custom()
+                .setConnectTimeout(Timeout.ofSeconds(15))
+                .setResponseTimeout(Timeout.ofSeconds(15))
+                .setConnectionRequestTimeout(Timeout.ofSeconds(5))
+                .build();
+
+        var clientBuilder = HttpClients.custom()
+                .setDefaultRequestConfig(reqConfig)
+                .disableCookieManagement();
+        if (options.useProxy()) {
+            clientBuilder.setProxy(new HttpHost("http", options.proxyHost(), options.proxyPort()));
+        }
+        return clientBuilder.build();
+    }
+
+    private static void logSummary(Summary summary) {
+        log.info("完成：扫描={}  author={}  R18={}  AI={}  desc={}  tags={}  已删除={}  跳过={}",
+                summary.totalCandidates(), summary.filledAuthor(), summary.filledR18(), summary.filledAi(),
+                summary.filledDescription(), summary.filledTags(), summary.deletedCount(), summary.skipped());
+        if (summary.dryRun()) {
+            log.info("（试运行模式，未写入数据库）");
+        }
+    }
+
+    private static String safeMessage(String value) {
+        return value == null || value.isBlank() ? "-" : value;
     }
 
     private static String describeMissing(Candidate c) {
@@ -278,6 +306,7 @@ public class ArtworksBackFill {
         if (limit > 0) {
             sql += " LIMIT ?";
         }
+
         List<Candidate> list = new ArrayList<>();
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             if (limit > 0) {
@@ -343,8 +372,7 @@ public class ArtworksBackFill {
                 if (authorId > 0 && authorName.isEmpty()) {
                     authorName = String.valueOf(authorId);
                 }
-                int xRestrict = payload.path("xRestrict").asInt(0);
-                boolean isR18 = xRestrict > 0;
+                boolean isR18 = payload.path("xRestrict").asInt(0) > 0;
                 boolean isAi = payload.path("aiType").asInt(0) >= 2;
                 String description = payload.path("description").asText("");
                 List<TagEntry> tags = extractTags(payload);
@@ -391,15 +419,20 @@ public class ArtworksBackFill {
         if (!tagsArr.isArray() || tagsArr.isEmpty()) {
             return List.of();
         }
+
         List<TagEntry> out = new ArrayList<>();
         for (JsonNode t : tagsArr) {
             String tag = t.path("tag").asText("");
-            if (tag.isEmpty()) continue;
+            if (tag.isEmpty()) {
+                continue;
+            }
             String translated = null;
             JsonNode translation = t.path("translation");
             if (translation.isObject()) {
                 String en = translation.path("en").asText("");
-                if (!en.isEmpty()) translated = en;
+                if (!en.isEmpty()) {
+                    translated = en;
+                }
             }
             out.add(new TagEntry(tag, translated));
         }
@@ -426,7 +459,9 @@ public class ArtworksBackFill {
 
                 selectTag.setString(1, tag.name);
                 try (ResultSet rs = selectTag.executeQuery()) {
-                    if (!rs.next()) continue;
+                    if (!rs.next()) {
+                        continue;
+                    }
                     long tagId = rs.getLong(1);
                     linkTag.setLong(1, artworkId);
                     linkTag.setLong(2, tagId);
@@ -467,6 +502,76 @@ public class ArtworksBackFill {
         System.out.println("用法: ArtworksBackFill [--db <path>] [--proxy <host:port>] [--no-proxy] [--delay <ms>] [--limit <n>] [--dry-run]");
     }
 
+    public record Options(String dbPath,
+                          String proxyHost,
+                          int proxyPort,
+                          boolean useProxy,
+                          long delayMs,
+                          int limit,
+                          boolean dryRun) {
+
+        public static Options defaults() {
+            return new Options(
+                    RuntimeFiles.dataDirectory().resolve(RuntimeFiles.PIXIV_DOWNLOAD_DB).toString(),
+                    "127.0.0.1",
+                    7890,
+                    true,
+                    800L,
+                    0,
+                    false
+            );
+        }
+
+        public static Options parse(String[] args) {
+            String dbPath = defaults().dbPath;
+            String proxyHost = defaults().proxyHost;
+            int proxyPort = defaults().proxyPort;
+            boolean useProxy = defaults().useProxy;
+            long delayMs = defaults().delayMs;
+            int limit = defaults().limit;
+            boolean dryRun = defaults().dryRun;
+
+            for (int i = 0; i < args.length; i++) {
+                switch (args[i]) {
+                    case "--db" -> dbPath = requireValue(args, ++i, "--db");
+                    case "--proxy" -> {
+                        String[] parts = requireValue(args, ++i, "--proxy").split(":");
+                        if (parts.length != 2) {
+                            throw new IllegalArgumentException("Invalid proxy");
+                        }
+                        proxyHost = parts[0];
+                        proxyPort = Integer.parseInt(parts[1]);
+                    }
+                    case "--no-proxy" -> useProxy = false;
+                    case "--delay" -> delayMs = Long.parseLong(requireValue(args, ++i, "--delay"));
+                    case "--limit" -> limit = Integer.parseInt(requireValue(args, ++i, "--limit"));
+                    case "--dry-run" -> dryRun = true;
+                    default -> throw new IllegalArgumentException("Unknown option: " + args[i]);
+                }
+            }
+            return new Options(dbPath, proxyHost, proxyPort, useProxy, delayMs, limit, dryRun);
+        }
+
+        private static String requireValue(String[] args, int index, String option) {
+            if (index >= args.length) {
+                throw new IllegalArgumentException("Missing value for " + option);
+            }
+            return args[index];
+        }
+    }
+
+    public record Summary(int totalCandidates,
+                          int processed,
+                          int filledAuthor,
+                          int filledR18,
+                          int filledAi,
+                          int filledDescription,
+                          int filledTags,
+                          int deletedCount,
+                          int skipped,
+                          boolean dryRun,
+                          boolean rateLimited) {}
+
     private static final class Candidate {
         final long artworkId;
         final boolean authorMissing;
@@ -475,8 +580,8 @@ public class ArtworksBackFill {
         final boolean descriptionMissing;
         final boolean tagsMissing;
 
-        Candidate(long artworkId, boolean authorMissing, boolean r18Missing, boolean aiMissing,
-                  boolean descriptionMissing, boolean tagsMissing) {
+        private Candidate(long artworkId, boolean authorMissing, boolean r18Missing, boolean aiMissing,
+                          boolean descriptionMissing, boolean tagsMissing) {
             this.artworkId = artworkId;
             this.authorMissing = authorMissing;
             this.r18Missing = r18Missing;
@@ -516,7 +621,8 @@ public class ArtworksBackFill {
             this.message = message;
         }
 
-        static LookupResult found(long authorId, String authorName, boolean isR18, boolean isAi, String description, List<TagEntry> tags) {
+        static LookupResult found(long authorId, String authorName, boolean isR18, boolean isAi,
+                                  String description, List<TagEntry> tags) {
             return new LookupResult(ResultType.FOUND, authorId, authorName, isR18, isAi, description, tags, null);
         }
 
@@ -533,7 +639,7 @@ public class ArtworksBackFill {
         }
 
         static LookupResult rateLimited() {
-            return new LookupResult(ResultType.RATE_LIMITED, 0, null, false, false, null, null, "HTTP 429 Too Many Requests");
+            return new LookupResult(ResultType.RATE_LIMITED, 0, null, false, false, null, null, "HTTP 429");
         }
     }
 

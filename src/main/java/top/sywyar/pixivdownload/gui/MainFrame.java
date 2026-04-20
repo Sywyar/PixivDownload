@@ -3,6 +3,7 @@ package top.sywyar.pixivdownload.gui;
 import top.sywyar.pixivdownload.gui.panel.AboutPanel;
 import top.sywyar.pixivdownload.gui.panel.ConfigPanel;
 import top.sywyar.pixivdownload.gui.panel.StatusPanel;
+import top.sywyar.pixivdownload.gui.panel.ToolsPanel;
 
 import javax.swing.*;
 import java.awt.*;
@@ -19,15 +20,16 @@ import java.util.List;
 public class MainFrame extends JFrame {
 
     private final StatusPanel statusPanel;
+    private final ToolsPanel toolsPanel;
 
     public MainFrame(int serverPort, String rootFolder, Path configPath) {
         super("PixivDownload");
         setSize(800, 600);
         setMinimumSize(new Dimension(640, 480));
         setLocationRelativeTo(null);
+        // 关闭按钮 = 缩回托盘
         setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
 
-        // 关闭按钮 = 缩回托盘
         addWindowListener(new WindowAdapter() {
             @Override
             public void windowClosing(WindowEvent e) {
@@ -47,11 +49,12 @@ public class MainFrame extends JFrame {
             ));
         }
 
-        // 标签页
         JTabbedPane tabs = new JTabbedPane();
         statusPanel = new StatusPanel(serverPort, rootFolder, configPath);
+        toolsPanel = new ToolsPanel(configPath);
         tabs.addTab("状态", statusPanel);
         tabs.addTab("配置", new ConfigPanel(configPath));
+        tabs.addTab("工具", toolsPanel);
         tabs.addTab("关于", new AboutPanel());
 
         setContentPane(tabs);
@@ -80,6 +83,7 @@ public class MainFrame extends JFrame {
     @Override
     public void dispose() {
         statusPanel.dispose();
+        toolsPanel.dispose();
         super.dispose();
     }
 
@@ -96,7 +100,8 @@ public class MainFrame extends JFrame {
                     return img;
                 }
             }
-        } catch (Exception ignored) {}
+        } catch (Exception ignored) {
+        }
         return null;
     }
 

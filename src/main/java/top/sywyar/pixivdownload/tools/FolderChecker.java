@@ -10,6 +10,8 @@ import javax.swing.table.DefaultTableModel;
 import javax.swing.table.TableCellRenderer;
 import java.awt.*;
 import java.awt.datatransfer.StringSelection;
+import java.awt.event.WindowAdapter;
+import java.awt.event.WindowEvent;
 import java.io.File;
 import java.sql.*;
 import java.util.ArrayList;
@@ -46,6 +48,8 @@ public class FolderChecker {
     private Connection conn;
     private final List<ArtworkInfo> brokenArtworks = new ArrayList<>();
     private int selectedRow = -1;
+    private final int closeOperation;
+    private final Runnable onClose;
 
     // ---- 表格列索引 ----
     private static final int COL_ID     = 0;
@@ -55,18 +59,43 @@ public class FolderChecker {
     private static final int COL_STATUS = 4;
     private static final int COL_COPY   = 5;
 
+    public FolderChecker() {
+        this(JFrame.EXIT_ON_CLOSE, null);
+    }
+
+    public FolderChecker(int closeOperation, Runnable onClose) {
+        this.closeOperation = closeOperation;
+        this.onClose = onClose;
+    }
+
     public static void main(String[] args) {
         try {
             UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
         } catch (Exception ignored) {}
-        SwingUtilities.invokeLater(() -> new FolderChecker().buildUI());
+        SwingUtilities.invokeLater(() -> new FolderChecker().showWindow());
     }
 
-    private void buildUI() {
+    public void showWindow() {
+        if (frame != null) {
+            frame.setVisible(true);
+            frame.toFront();
+            frame.requestFocus();
+            return;
+        }
+
         frame = new JFrame("Pixiv Folder Checker");
-        frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        frame.setDefaultCloseOperation(closeOperation);
         frame.setSize(1000, 600);
         frame.setLayout(new BorderLayout(5, 5));
+        frame.addWindowListener(new WindowAdapter() {
+            @Override
+            public void windowClosed(WindowEvent e) {
+                closeConnection();
+                if (onClose != null) {
+                    SwingUtilities.invokeLater(onClose);
+                }
+            }
+        });
 
         frame.add(buildTopPanel(), BorderLayout.NORTH);
         frame.add(buildTablePanel(), BorderLayout.CENTER);
@@ -352,6 +381,20 @@ public class FolderChecker {
 
     private void copyToClipboard(String text) {
         Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(text), null);
+    }
+
+    private void closeConnection() {
+        if (conn == null) {
+            return;
+        }
+        try {
+            if (!conn.isClosed()) {
+                conn.close();
+            }
+        } catch (SQLException ignored) {
+        } finally {
+            conn = null;
+        }
     }
 
     private void showError(String msg) {

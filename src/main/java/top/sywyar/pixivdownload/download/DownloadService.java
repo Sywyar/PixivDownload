@@ -59,7 +59,7 @@ public class DownloadService {
                            PixivDatabase pixivDatabase,
                            @Nullable UserQuotaService userQuotaService,
                            @Qualifier("downloadRestTemplate") RestTemplate downloadRestTemplate,
-                           TaskScheduler taskScheduler,
+                           @Qualifier("taskScheduler") TaskScheduler taskScheduler,
                            PixivBookmarkService pixivBookmarkService,
                            UgoiraService ugoiraService,
                            AuthorService authorService) {

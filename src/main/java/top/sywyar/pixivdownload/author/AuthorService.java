@@ -41,7 +41,7 @@ public class AuthorService {
     public AuthorService(AuthorMapper authorMapper,
                          PixivDatabase pixivDatabase,
                          @Qualifier("downloadRestTemplate") RestTemplate downloadRestTemplate,
-                         TaskScheduler taskScheduler) {
+                         @Qualifier("taskScheduler") TaskScheduler taskScheduler) {
         this.authorMapper = authorMapper;
         this.pixivDatabase = pixivDatabase;
         this.downloadRestTemplate = downloadRestTemplate;

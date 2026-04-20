@@ -6,6 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import top.sywyar.pixivdownload.ffmpeg.FfmpegInstallation;
 import top.sywyar.pixivdownload.ffmpeg.FfmpegInstaller;
 import top.sywyar.pixivdownload.ffmpeg.FfmpegLocator;
+import top.sywyar.pixivdownload.gui.BackendLifecycleManager;
 import top.sywyar.pixivdownload.gui.config.ConfigFileEditor;
 
 import javax.net.ssl.HttpsURLConnection;
@@ -58,12 +59,14 @@ public class StatusPanel extends JPanel {
     private volatile String serverScheme = "http";
     private volatile boolean ffmpegInstalling;
     private Timer pollTimer;
+    private final BackendLifecycleManager.Listener backendListener = this::applyBackendSnapshot;
 
     public StatusPanel(int serverPort, String rootFolder, Path configPath) {
         this.serverPort = serverPort;
         this.rootFolder = rootFolder;
         this.configPath = configPath;
         buildUi();
+        BackendLifecycleManager.addListener(backendListener);
         startPolling();
         refreshFfmpegState();
     }
@@ -242,6 +245,7 @@ public class StatusPanel extends JPanel {
             String[] schemes = "https".equals(currentScheme)
                     ? new String[]{"https", "http"}
                     : new String[]{"http", "https"};
+            boolean success = false;
 
             for (String scheme : schemes) {
                 try {
@@ -256,6 +260,7 @@ public class StatusPanel extends JPanel {
                     conn.setRequestMethod("GET");
 
                     if (conn.getResponseCode() == 200) {
+                        success = true;
                         currentScheme = scheme;
                         try (InputStream is = conn.getInputStream()) {
                             JsonNode node = MAPPER.readTree(is);
@@ -265,6 +270,9 @@ public class StatusPanel extends JPanel {
                     }
                 } catch (Exception ignored) {
                 }
+            }
+            if (!success) {
+                SwingUtilities.invokeLater(() -> applyOfflineState(BackendLifecycleManager.snapshot()));
             }
         }, "gui-status-poll");
         worker.setDaemon(true);
@@ -291,6 +299,57 @@ public class StatusPanel extends JPanel {
         if (!"--".equals(scheme)) {
             serverScheme = scheme;
         }
+    }
+
+    private void applyBackendSnapshot(BackendLifecycleManager.Snapshot snapshot) {
+        switch (snapshot.state()) {
+            case STARTING -> {
+                statusBadge.setText("正在启动...");
+                statusBadge.setForeground(new Color(180, 100, 0));
+            }
+            case STOPPING -> {
+                statusBadge.setText("正在停止...");
+                statusBadge.setForeground(new Color(180, 100, 0));
+            }
+            case STOPPED -> applyOfflineState(snapshot);
+            case FAILED -> {
+                statusBadge.setText("启动失败");
+                statusBadge.setForeground(new Color(180, 60, 60));
+                clearStatusValues();
+            }
+            case RUNNING -> {
+                statusBadge.setText("连接中...");
+                statusBadge.setForeground(new Color(180, 100, 0));
+            }
+        }
+    }
+
+    private void applyOfflineState(BackendLifecycleManager.Snapshot snapshot) {
+        if (snapshot.state() == BackendLifecycleManager.State.RUNNING) {
+            statusBadge.setText("连接失败");
+            statusBadge.setForeground(new Color(180, 60, 60));
+        } else if (snapshot.state() == BackendLifecycleManager.State.STOPPED) {
+            statusBadge.setText("已停止");
+            statusBadge.setForeground(Color.GRAY);
+        } else if (snapshot.state() == BackendLifecycleManager.State.STOPPING) {
+            statusBadge.setText("正在停止...");
+            statusBadge.setForeground(new Color(180, 100, 0));
+        } else if (snapshot.state() == BackendLifecycleManager.State.STARTING) {
+            statusBadge.setText("正在启动...");
+            statusBadge.setForeground(new Color(180, 100, 0));
+        } else {
+            statusBadge.setText("启动失败");
+            statusBadge.setForeground(new Color(180, 60, 60));
+        }
+        clearStatusValues();
+    }
+
+    private void clearStatusValues() {
+        portLabel.setText("--");
+        modeLabel.setText("--");
+        uptimeLabel.setText("--");
+        httpsLabel.setText("--");
+        httpsLabel.setForeground(Color.GRAY);
     }
 
     private static String textOf(JsonNode node, String field) {
@@ -510,16 +569,12 @@ public class StatusPanel extends JPanel {
 
         Thread worker = new Thread(() -> {
             try {
-                URL url = new URI(currentScheme + "://localhost:" + serverPort + "/api/gui/restart").toURL();
-                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-                if (conn instanceof HttpsURLConnection https && TRUST_ALL_SSL != null) {
-                    https.setSSLSocketFactory(TRUST_ALL_SSL.getSocketFactory());
-                    https.setHostnameVerifier((h, s) -> true);
+                if (!BackendLifecycleManager.restartAsync()) {
+                    SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(StatusPanel.this,
+                            "后端当前正在启动或停止，请稍后再试。",
+                            "请稍后", JOptionPane.INFORMATION_MESSAGE));
+                    return;
                 }
-                conn.setRequestMethod("POST");
-                conn.setConnectTimeout(3000);
-                conn.setReadTimeout(3000);
-                conn.getResponseCode();
             } catch (Exception e) {
                 log.warn("重启请求失败: {}", e.getMessage());
             }
@@ -540,6 +595,7 @@ public class StatusPanel extends JPanel {
         if (pollTimer != null) {
             pollTimer.stop();
         }
+        BackendLifecycleManager.removeListener(backendListener);
     }
 
     private static SSLContext buildTrustAllSslContext() {

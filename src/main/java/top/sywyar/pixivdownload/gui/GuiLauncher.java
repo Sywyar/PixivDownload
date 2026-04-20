@@ -88,6 +88,7 @@ public class GuiLauncher {
             showSingleInstanceInitError(e);
             throw e;
         }
+
         if (singleInstanceManager == null) {
             boolean activated = SingleInstanceManager.signalExistingInstance();
             log.info("检测到已有运行实例，是否已发出激活请求: {}", activated);
@@ -141,6 +142,9 @@ public class GuiLauncher {
 
         final int port = serverPort;
         final String root = rootFolder;
+        String[] backendArgs = filterArgs(args);
+
+        BackendLifecycleManager.configure(backendArgs, GuiLauncher::showBackendStartupFailure);
 
         // ── 3. 初始化 Swing + FlatLaf，展示主窗口 ────────────────────────────────
         SwingUtilities.invokeLater(() -> {
@@ -152,21 +156,7 @@ public class GuiLauncher {
         });
 
         // ── 4. 在后台线程启动 Spring Boot ─────────────────────────────────────────
-        Thread springThread = new Thread(() -> {
-            try {
-                PixivDownloadApplication.main(filterArgs(args));
-            } catch (Throwable t) {
-                String diag = diagnoseStartupError(t);
-                String userMsg = (diag != null) ? diag : ("后端服务启动失败：" + safeMessage(t));
-                logStartupFailure(t);
-                SwingUtilities.invokeLater(() ->
-                        JOptionPane.showMessageDialog(null,
-                                userMsg + "\n\n详细日志见：" + Path.of(LOG_LATEST).toAbsolutePath(),
-                                "启动错误", JOptionPane.ERROR_MESSAGE));
-            }
-        }, "spring-main");
-        springThread.setDaemon(false);
-        springThread.start();
+        BackendLifecycleManager.startAsync();
     }
 
     // ────────────────────────────────────────────────────────────────────────
@@ -238,9 +228,17 @@ public class GuiLauncher {
         }
     }
 
-    // ────────────────────────────────────────────────────────────────────────
-    // 启动错误诊断
-    // ────────────────────────────────────────────────────────────────────────
+    private static void showBackendStartupFailure(Throwable error) {
+        String diag = diagnoseStartupError(error);
+        String userMessage = diag != null ? diag : ("后端服务启动失败：" + safeMessage(error));
+        logStartupFailure(error);
+        SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(
+                null,
+                userMessage + "\n\n详细日志见：" + Path.of(LOG_LATEST).toAbsolutePath(),
+                "启动错误",
+                JOptionPane.ERROR_MESSAGE
+        ));
+    }
 
     private static void logStartupFailure(Throwable t) {
         String diag = diagnoseStartupError(t);
@@ -261,7 +259,6 @@ public class GuiLauncher {
             String msg = cause.getMessage() == null ? "" : cause.getMessage();
             String low = msg.toLowerCase();
 
-            // 端口被占用
             if (cause instanceof BindException
                     || name.endsWith("PortInUseException")
                     || low.contains("address already in use")
@@ -276,7 +273,6 @@ public class GuiLauncher {
                         + "原始信息：" + msg;
             }
 
-            // SSL 证书 / 密钥库文件不存在
             if ((cause instanceof NoSuchFileException
                     || cause instanceof FileNotFoundException
                     || low.contains("nosuchfileexception"))
@@ -288,7 +284,6 @@ public class GuiLauncher {
                         + "建议使用绝对路径，避免相对路径在不同工作目录下解析出错。";
             }
 
-            // 密钥库 / 私钥密码错误
             if (name.endsWith("UnrecoverableKeyException")
                     || low.contains("keystore password was incorrect")
                     || low.contains("password was incorrect")
@@ -299,7 +294,6 @@ public class GuiLauncher {
                         + "server.ssl.key-password 是否正确。";
             }
 
-            // SSL 证书 / 私钥格式无效
             if (name.endsWith("CertificateException")
                     || name.endsWith("SSLException")
                     || low.contains("derinputstream")
@@ -314,15 +308,16 @@ public class GuiLauncher {
                         + "  - JKS 类型与 server.ssl.key-store-type 匹配（默认 JKS，PKCS12 需显式指定）。";
             }
 
-            // YAML 配置解析错误
-            if (name.contains("yaml") || name.contains("Yaml")
-                    || msg.contains("YAML") || msg.contains("ScannerException")
-                    || msg.contains("ParserException") || msg.contains("mapping values")) {
+            if (name.contains("yaml")
+                    || name.contains("Yaml")
+                    || msg.contains("YAML")
+                    || msg.contains("ScannerException")
+                    || msg.contains("ParserException")
+                    || msg.contains("mapping values")) {
                 return "[config.yaml 格式错误] " + msg + "\n"
                         + "请检查缩进（仅空格、不要 Tab）、冒号后空格、引号是否成对。";
             }
 
-            // 权限不足（低端口需管理员、目录不可写等）
             if (cause instanceof AccessDeniedException
                     || low.contains("permission denied")
                     || msg.contains("拒绝访问")) {
@@ -335,17 +330,25 @@ public class GuiLauncher {
 
     /** 从 "Port 6999 was already in use" / ":6999" 等消息中提取端口号。 */
     private static String extractPort(String msg) {
-        if (msg == null) return null;
-        Matcher m = Pattern.compile("(?i)port[^0-9]{0,10}(\\d{2,5})").matcher(msg);
-        if (m.find()) return m.group(1);
-        m = Pattern.compile(":(\\d{2,5})\\b").matcher(msg);
-        if (m.find()) return m.group(1);
+        if (msg == null) {
+            return null;
+        }
+        Matcher portMatcher = Pattern.compile("(?i)port[^0-9]{0,10}(\\d{2,5})").matcher(msg);
+        if (portMatcher.find()) {
+            return portMatcher.group(1);
+        }
+        Matcher colonMatcher = Pattern.compile(":(\\d{2,5})\\b").matcher(msg);
+        if (colonMatcher.find()) {
+            return colonMatcher.group(1);
+        }
         return null;
     }
 
-    private static boolean hasAny(String s, String... needles) {
-        for (String n : needles) {
-            if (s.contains(n)) return true;
+    private static boolean hasAny(String text, String... needles) {
+        for (String needle : needles) {
+            if (text.contains(needle)) {
+                return true;
+            }
         }
         return false;
     }
@@ -379,7 +382,7 @@ public class GuiLauncher {
     /** 从参数列表中过滤掉 GUI 专用参数，避免传入 Spring。 */
     private static String[] filterArgs(String[] args) {
         return Arrays.stream(args)
-                .filter(a -> !a.equals("--no-gui"))
+                .filter(arg -> !arg.equals("--no-gui"))
                 .toArray(String[]::new);
     }
 }
