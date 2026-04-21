@@ -4,6 +4,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -39,13 +40,13 @@ public class GalleryQuery {
     private List<Long> collectionIds;
     /** 标签 ID 过滤（AND 语义，需同时命中所有标签），空表示不限。 */
     private List<Long> tagIds;
-    /** 作者 ID 过滤，null 表示不限。 */
-    private Long authorId;
+    /** 作者 ID 过滤（OR 语义，命中任一作者即纳入），空表示不限。 */
+    private List<Long> authorIds;
 
     public static GalleryQuery normalize(Integer page, Integer size, String sort, String order,
                                          String search, String r18, String ai,
                                          List<String> formats, List<Long> collectionIds,
-                                         List<Long> tagIds, Long authorId) {
+                                         List<Long> tagIds, List<Long> authorIds) {
         return GalleryQuery.builder()
                 .page(Math.max(0, page == null ? 0 : page))
                 .size(clamp(size == null ? 24 : size, 1, 200))
@@ -57,8 +58,17 @@ public class GalleryQuery {
                 .formats(formats)
                 .collectionIds(collectionIds)
                 .tagIds(tagIds)
-                .authorId(authorId != null && authorId > 0 ? authorId : null)
+                .authorIds(normalizeIdList(authorIds))
                 .build();
+    }
+
+    private static List<Long> normalizeIdList(List<Long> ids) {
+        if (ids == null || ids.isEmpty()) return null;
+        List<Long> out = new ArrayList<>();
+        for (Long id : ids) {
+            if (id != null && id > 0) out.add(id);
+        }
+        return out.isEmpty() ? null : out;
     }
 
     private static int clamp(int v, int min, int max) {

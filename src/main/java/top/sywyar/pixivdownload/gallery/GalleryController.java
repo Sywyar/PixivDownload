@@ -27,12 +27,18 @@ public class GalleryController {
             @RequestParam(required = false) String format,
             @RequestParam(required = false) String collectionIds,
             @RequestParam(required = false) String tagIds,
+            @RequestParam(required = false) String authorIds,
             @RequestParam(required = false) Long authorId) {
 
+        List<Long> authorIdList = parseLongList(authorIds);
+        if (authorId != null && authorId > 0) {
+            if (authorIdList == null) authorIdList = new ArrayList<>();
+            if (!authorIdList.contains(authorId)) authorIdList.add(authorId);
+        }
         GalleryQuery query = GalleryQuery.normalize(
                 page, size, sort, order, search, r18, ai,
                 parseFormats(format), parseLongList(collectionIds), parseLongList(tagIds),
-                authorId);
+                authorIdList);
         return galleryService.query(query);
     }
 

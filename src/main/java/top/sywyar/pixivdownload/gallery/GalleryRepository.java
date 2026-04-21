@@ -68,9 +68,10 @@ public class GalleryRepository {
             params.addValue("collectionIds", collectionIds);
         }
 
-        if (q.getAuthorId() != null) {
-            where.append(" AND a.author_id = :authorId");
-            params.addValue("authorId", q.getAuthorId());
+        List<Long> authorIds = q.getAuthorIds();
+        if (authorIds != null && !authorIds.isEmpty()) {
+            where.append(" AND a.author_id IN (:authorIds)");
+            params.addValue("authorIds", authorIds);
         }
 
         List<Long> tagIds = q.getTagIds();
