@@ -26,6 +26,7 @@ PixivDownload is a local Pixiv batch image downloader that supports multiple dow
 - `pixiv-batch.html` [one-stop download page](#4-web-batch-download), supporting bulk artwork import, user batch download, and search batch download; with the page scraping userscript, you usually do not need other scripts
 - Page batch download — scrape all artworks from Pixiv pages such as search results, following feed, rankings, and more
 - `monitor.html` [one-stop management page](#5-download-monitor), with multi-dimensional filtering/sorting and download history filtering by author
+- The `pixiv-gallery.html` gallery page supports multiple viewing formats, various filters, and a **favorites list**. It can be used in conjunction with `pixiv-artwork.html` to view artwork.
 - Single artwork download — one-click download on artwork pages
 - User homepage batch download — download all works from a specified user
 - Bulk artwork import — paste artwork link lists in `url | title` format; compatible with export formats from OneTab, N-Tab, and similar tab manager extensions
@@ -37,8 +38,19 @@ PixivDownload is a local Pixiv batch image downloader that supports multiple dow
 
 ### Screenshots
 
+> [!NOTE]
+> Some screenshot devices have HDR enabled, so the color effect may differ.
+
 <details>
 <summary><strong>Expand to view screenshots</strong></summary>
+
+#### Screenshots used in the pixiv-gallery.html gallery
+
+![](./image/9.png)
+
+#### Screenshots of the artwork details page in pixiv-artwork.html
+
+![](./image/10.png)
 
 #### Screenshot of monitor.html
 
