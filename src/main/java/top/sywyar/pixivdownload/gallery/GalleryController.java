@@ -26,11 +26,13 @@ public class GalleryController {
             @RequestParam(required = false, defaultValue = "any") String ai,
             @RequestParam(required = false) String format,
             @RequestParam(required = false) String collectionIds,
-            @RequestParam(required = false) String tagIds) {
+            @RequestParam(required = false) String tagIds,
+            @RequestParam(required = false) Long authorId) {
 
         GalleryQuery query = GalleryQuery.normalize(
                 page, size, sort, order, search, r18, ai,
-                parseFormats(format), parseLongList(collectionIds), parseLongList(tagIds));
+                parseFormats(format), parseLongList(collectionIds), parseLongList(tagIds),
+                authorId);
         return galleryService.query(query);
     }
 

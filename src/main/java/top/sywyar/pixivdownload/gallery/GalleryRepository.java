@@ -68,6 +68,11 @@ public class GalleryRepository {
             params.addValue("collectionIds", collectionIds);
         }
 
+        if (q.getAuthorId() != null) {
+            where.append(" AND a.author_id = :authorId");
+            params.addValue("authorId", q.getAuthorId());
+        }
+
         List<Long> tagIds = q.getTagIds();
         if (tagIds != null && !tagIds.isEmpty()) {
             // AND 语义：作品需同时命中所有选中的标签

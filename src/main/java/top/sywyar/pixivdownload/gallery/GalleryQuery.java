@@ -39,11 +39,13 @@ public class GalleryQuery {
     private List<Long> collectionIds;
     /** 标签 ID 过滤（AND 语义，需同时命中所有标签），空表示不限。 */
     private List<Long> tagIds;
+    /** 作者 ID 过滤，null 表示不限。 */
+    private Long authorId;
 
     public static GalleryQuery normalize(Integer page, Integer size, String sort, String order,
                                          String search, String r18, String ai,
                                          List<String> formats, List<Long> collectionIds,
-                                         List<Long> tagIds) {
+                                         List<Long> tagIds, Long authorId) {
         return GalleryQuery.builder()
                 .page(Math.max(0, page == null ? 0 : page))
                 .size(clamp(size == null ? 24 : size, 1, 200))
@@ -55,6 +57,7 @@ public class GalleryQuery {
                 .formats(formats)
                 .collectionIds(collectionIds)
                 .tagIds(tagIds)
+                .authorId(authorId != null && authorId > 0 ? authorId : null)
                 .build();
     }
 

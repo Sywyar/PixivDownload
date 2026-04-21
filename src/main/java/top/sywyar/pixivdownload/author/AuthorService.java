@@ -57,6 +57,23 @@ public class AuthorService {
         return authorMapper.findAll();
     }
 
+    public PagedAuthors getPagedAuthorsWithArtworks(int page, int size, String search, String sort) {
+        int safePage = Math.max(0, page);
+        int safeSize = Math.min(Math.max(1, size), 200);
+        String normalizedSearch = StringUtils.hasText(search) ? "%" + search.trim() + "%" : "%";
+        String normalizedSort = "artworks".equals(sort) || "authorId".equals(sort) ? sort : "name";
+        long total = authorMapper.countAuthorsWithArtworks(normalizedSearch);
+        List<AuthorSummary> rows = total == 0
+                ? Collections.emptyList()
+                : authorMapper.findAuthorsWithArtworks(
+                        normalizedSearch, normalizedSort, safeSize, safePage * safeSize);
+        int totalPages = (int) Math.ceil((double) total / safeSize);
+        return new PagedAuthors(rows, total, safePage, safeSize, totalPages);
+    }
+
+    public record PagedAuthors(List<AuthorSummary> content, long totalElements,
+                               int page, int size, int totalPages) {}
+
     public Map<Long, String> getAuthorNames(Collection<Long> authorIds) {
         if (authorIds == null || authorIds.isEmpty()) {
             return Collections.emptyMap();

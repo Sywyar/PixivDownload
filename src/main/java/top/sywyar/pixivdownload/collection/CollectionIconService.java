@@ -13,7 +13,7 @@ import java.util.Locale;
 import java.util.Set;
 
 /**
- * 收藏夹图标文件管理。图标存在工作目录下的 {@code ./_collection_icons/{id}.{ext}}，
+ * 收藏夹图标文件管理。图标存在工作目录下的 {@code ./collection_icons/{id}.{ext}}，
  * 与 {@code config.yaml} 同级。支持 png/jpg/jpeg/webp，最大 {@value #MAX_ICON_BYTES} 字节。
  */
 @Slf4j
@@ -23,7 +23,7 @@ public class CollectionIconService {
     public static final Set<String> ALLOWED_EXTENSIONS = Set.of("png", "jpg", "jpeg", "webp");
     public static final long MAX_ICON_BYTES = 1024L * 1024L;
 
-    private static final Path ICON_DIR = Paths.get("_collection_icons");
+    private static final Path ICON_DIR = Paths.get("collection_icons");
 
     @PostConstruct
     public void init() throws IOException {

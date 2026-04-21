@@ -82,6 +82,9 @@
         .nav-item.active { background: #f0f4ff; }
         .nav-item.active .nav-icon { color: #4a6cf7; }
         .nav-item.active .nav-label { color: #4a6cf7; font-weight: 500; }
+        .nav-item.current { cursor: default; pointer-events: none; }
+        .nav-item.current .nav-icon { color: var(--brand); }
+        .nav-item.current .nav-label { color: var(--brand); font-weight: 600; }
         .nav-icon { width: 28px; height: 28px; border-radius: 6px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; color: #666; }
         .nav-icon svg { width: 16px; height: 16px; }
         .nav-label { font-size: 14px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; }
@@ -229,8 +232,15 @@
         .tag-search-box input::placeholder { color: var(--muted); }
         .chip .tag-trans { color: var(--muted); margin-left: 4px; font-size: 11px; }
         .chip-count { color: var(--muted); margin-left: 4px; font-size: 11px; }
-        #filterTagChips { max-height: 88px; overflow: hidden; transition: max-height 0.2s ease; }
-        #filterTagChips.expanded { max-height: 600px; overflow-y: auto; }
+        #filterTagChips, #filterAuthorChips { max-height: 64px; overflow: hidden; position: relative; transition: max-height 0.2s ease; }
+        #filterTagChips.expanded, #filterAuthorChips.expanded { max-height: 600px; overflow-y: auto; }
+        #filterTagChips:not(.expanded).has-overflow::after,
+        #filterAuthorChips:not(.expanded).has-overflow::after {
+            content: '…'; position: absolute; right: 0; bottom: 0;
+            padding: 2px 10px 2px 24px; font-size: 14px; color: var(--muted);
+            background: linear-gradient(90deg, rgba(250,250,250,0) 0%, #fafafa 40%, #fafafa 100%);
+            pointer-events: none;
+        }
         .filter-reset {
             margin-left: auto; height: 28px; padding: 0 12px; border-radius: 999px;
             border: 1px solid var(--line); background: transparent; color: var(--muted);
@@ -397,6 +407,102 @@
         .mobile-overlay { display: none; position: fixed; inset: 0; background: rgba(0, 0, 0, 0.3); z-index: 99; }
         .mobile-overlay.active { display: block; }
 
+        .author-filter-bar {
+            display: none; align-items: center; gap: 10px;
+            padding: 10px 14px; margin-bottom: 16px;
+            border: 1px solid var(--line); border-radius: 10px;
+            background: #f7fbff;
+        }
+        .author-filter-bar.visible { display: flex; }
+        .author-filter-bar .label { font-size: 12px; color: var(--muted); }
+        .author-filter-bar .name { font-size: 14px; font-weight: 600; color: var(--brand); }
+        .author-filter-bar .clear {
+            margin-left: auto; height: 28px; padding: 0 12px; border-radius: 999px;
+            border: 1px solid var(--line); background: #fff; color: var(--text-secondary);
+            font-size: 12px; cursor: pointer;
+        }
+        .author-filter-bar .clear:hover { border-color: var(--danger); color: var(--danger); }
+
+        .author-view { display: none; flex-direction: column; gap: 0; }
+        .author-view.active { display: flex; }
+        .author-row {
+            display: flex; gap: 20px; padding: 20px 0;
+            border-bottom: 1px solid var(--line);
+        }
+        .author-row:last-child { border-bottom: none; }
+        .author-row-info {
+            width: 25%; min-width: 180px; max-width: 280px; flex-shrink: 0;
+            display: flex; flex-direction: column; gap: 6px; padding-right: 16px;
+        }
+        .author-row-name {
+            font-size: 16px; font-weight: 600; color: var(--text);
+            cursor: pointer; word-break: break-all;
+            transition: color 0.15s;
+        }
+        .author-row-name:hover { color: var(--brand); }
+        .author-row-count { font-size: 12px; color: var(--muted); }
+        .author-row-actions {
+            margin-top: 4px; display: flex; gap: 6px; flex-wrap: wrap;
+        }
+        .author-row-btn {
+            display: inline-flex; align-items: center; gap: 4px;
+            height: 26px; padding: 0 10px; border-radius: 999px;
+            border: 1px solid var(--line); background: #fff;
+            font-size: 11px; color: var(--text-secondary); cursor: pointer;
+            transition: all 0.15s;
+        }
+        .author-row-btn:hover { border-color: var(--brand); color: var(--brand); }
+        .author-row-works { flex: 1; min-width: 0; position: relative; }
+        .author-works-strip {
+            display: flex; gap: 10px; overflow-x: auto; overflow-y: hidden;
+            scroll-behavior: smooth; scroll-snap-type: x mandatory;
+            padding: 2px 40px; /* leave space for arrow overlay */
+            scrollbar-width: thin;
+        }
+        .author-works-strip::-webkit-scrollbar { height: 6px; }
+        .author-works-strip::-webkit-scrollbar-thumb { background: #ddd; border-radius: 3px; }
+        .author-work-card {
+            flex: 0 0 auto; width: 140px; cursor: pointer;
+            scroll-snap-align: start;
+        }
+        .author-work-thumb {
+            position: relative; width: 140px; height: 140px;
+            border-radius: 8px; overflow: hidden; background: #f5f5f5;
+            transition: transform 0.15s, box-shadow 0.15s;
+        }
+        .author-work-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+        .author-work-card:hover .author-work-thumb { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(0,0,0,0.12); }
+        .author-work-title {
+            margin-top: 6px; font-size: 12px; line-height: 1.3; color: var(--text);
+            overflow: hidden; text-overflow: ellipsis; display: -webkit-box;
+            -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+        }
+        .author-work-pages {
+            position: absolute; top: 6px; right: 6px;
+            padding: 2px 6px; border-radius: 4px;
+            background: rgba(0,0,0,0.6); color: #fff; font-size: 10px; font-weight: 700;
+        }
+        .author-works-arrow {
+            position: absolute; top: 50%; transform: translateY(-50%);
+            width: 32px; height: 32px; border-radius: 50%;
+            border: 1px solid var(--line); background: #fff;
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer; z-index: 2; color: var(--text-secondary);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            transition: all 0.15s;
+        }
+        .author-works-arrow:hover:not(:disabled) { color: var(--brand); border-color: var(--brand); }
+        .author-works-arrow:disabled { opacity: 0.3; cursor: not-allowed; }
+        .author-works-arrow svg { width: 16px; height: 16px; }
+        .author-works-arrow.left { left: 0; }
+        .author-works-arrow.right { right: 0; }
+        .author-works-empty {
+            padding: 24px; font-size: 13px; color: var(--muted); text-align: center;
+        }
+        .author-works-loading {
+            padding: 24px; font-size: 13px; color: var(--muted); text-align: center;
+        }
+
         @media (max-width: 768px) {
             .sidebar { position: fixed; left: 0; top: 0; transform: translateX(-100%); z-index: 100; }
             .sidebar.mobile-open { transform: translateX(0); }
@@ -404,6 +510,8 @@
             .topbar { padding: 12px 16px; }
             .filter-panel { padding: 14px 16px; }
             .mobile-menu-btn { display: flex !important; }
+            .author-row { flex-direction: column; gap: 10px; }
+            .author-row-info { width: 100%; max-width: none; padding-right: 0; }
         }
     </style>
 </head>
@@ -420,24 +528,21 @@
             </button>
         </div>
 
+        <div class="section-header">
+            <span class="section-title">视图</span>
+        </div>
         <nav class="sidebar-nav">
-            <a class="nav-item active" href="/pixiv-gallery.html">
+            <a class="nav-item active" data-view="all" href="#">
                 <div class="nav-icon">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
                 </div>
-                <span class="nav-label">看图</span>
+                <span class="nav-label">全部图片</span>
             </a>
-            <a class="nav-item" href="/pixiv-batch.html" target="_blank" rel="noopener">
+            <a class="nav-item" data-view="authors" href="#">
                 <div class="nav-icon">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
                 </div>
-                <span class="nav-label">下载</span>
-            </a>
-            <a class="nav-item" href="/monitor.html" target="_blank" rel="noopener">
-                <div class="nav-icon">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-                </div>
-                <span class="nav-label">监控</span>
+                <span class="nav-label">按作者查看图片</span>
             </a>
         </nav>
 
@@ -451,6 +556,32 @@
         </div>
 
         <div class="sidebar-nav" id="collectionList"></div>
+
+        <div class="sidebar-divider"></div>
+
+        <div class="section-header">
+            <span class="section-title">导航</span>
+        </div>
+        <nav class="sidebar-nav">
+            <div class="nav-item current" aria-current="page" title="当前页面">
+                <div class="nav-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                </div>
+                <span class="nav-label">画廊</span>
+            </div>
+            <a class="nav-item" href="/pixiv-batch.html" target="_blank" rel="noopener">
+                <div class="nav-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                </div>
+                <span class="nav-label">下载</span>
+            </a>
+            <a class="nav-item" href="/monitor.html" target="_blank" rel="noopener">
+                <div class="nav-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                </div>
+                <span class="nav-label">监控</span>
+            </a>
+        </nav>
 
         <div class="sidebar-footer">
             <div class="user-card">
@@ -529,14 +660,34 @@
                     </div>
                     <div class="filter-chip-list" id="filterTagChips"></div>
                 </div>
+            </div>
+            <div class="filter-row filter-tags-row" id="filterAuthorsRow">
+                <span class="filter-row-label">作者</span>
+                <div class="filter-tags-main">
+                    <div class="filter-tags-controls">
+                        <label class="tag-search-box">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                            <input type="text" id="authorSearchInput" placeholder="搜索作者...">
+                        </label>
+                        <button class="chip" id="authorExpandToggle" type="button">展开全部</button>
+                    </div>
+                    <div class="filter-chip-list" id="filterAuthorChips"></div>
+                </div>
                 <button class="filter-reset" id="filterReset">重置筛选</button>
             </div>
         </div>
 
         <div class="gallery-wrapper">
+            <div class="author-filter-bar" id="authorFilterBar">
+                <span class="label">仅显示作者：</span>
+                <span class="name" id="authorFilterName"></span>
+                <button class="clear" id="authorFilterClear">清除筛选</button>
+            </div>
             <div class="gallery-status" id="galleryStatus">加载中...</div>
             <section class="gallery-grid" id="galleryGrid"></section>
             <nav class="pagination" id="pagination"></nav>
+            <section class="author-view" id="authorView"></section>
+            <nav class="pagination" id="authorPagination"></nav>
         </div>
     </main>
 </div>
@@ -605,6 +756,7 @@
 
 <script>
     const state = {
+        view: 'all', // 'all' | 'authors'
         page: 0,
         size: 24,
         sort: 'date',
@@ -615,20 +767,71 @@
         formats: new Set(),
         collectionIds: new Set(),
         tagIds: new Set(),
+        authorId: null,
+        authorName: null,
         totalPages: 0,
         totalElements: 0,
         collections: [],
         tags: [],
         tagFilterText: '',
         tagsExpanded: false,
+        authorOptions: [],
+        authorFilterText: '',
+        authorsExpanded: false,
         activeArtworkId: null,
         collectionMembership: new Map(),
         editingCollection: null,
         pendingIconFile: null,
         pendingIconClear: false,
+        authors: {
+            page: 0,
+            size: 10,
+            totalPages: 0,
+            totalElements: 0,
+            content: [],
+        },
     };
 
-    const TAG_COLLAPSED_LIMIT = 24;
+    const AUTHOR_WORKS_PER_ROW = 30;
+
+    const TAG_COLLAPSED_MAX_HEIGHT = 64;
+    const AUTHOR_CHIPS_COLLAPSED_MAX_HEIGHT = 64;
+    const AUTHOR_FILTER_OPTIONS_SIZE = 200;
+
+    // ---------- Image cache (in-memory + sessionStorage for thumbs) ----------
+    const ImageCache = (() => {
+        const PREFIX = 'pxImg:';
+        const mem = new Map();
+        const isThumb = url => url.includes('/thumbnail/');
+        function get(url) {
+            if (mem.has(url)) return mem.get(url);
+            if (isThumb(url)) {
+                try {
+                    const v = sessionStorage.getItem(PREFIX + url);
+                    if (v) { mem.set(url, v); return v; }
+                } catch (_) {}
+            }
+            return null;
+        }
+        function put(url, dataUri) {
+            mem.set(url, dataUri);
+            if (!isThumb(url)) return;
+            try {
+                sessionStorage.setItem(PREFIX + url, dataUri);
+            } catch (_) {
+                // Quota exceeded — evict half of stored thumbs and retry once
+                const keys = [];
+                for (let i = 0; i < sessionStorage.length; i++) {
+                    const k = sessionStorage.key(i);
+                    if (k && k.startsWith(PREFIX)) keys.push(k);
+                }
+                keys.slice(0, Math.max(1, Math.floor(keys.length / 2)))
+                    .forEach(k => { try { sessionStorage.removeItem(k); } catch (_) {} });
+                try { sessionStorage.setItem(PREFIX + url, dataUri); } catch (_) {}
+            }
+        }
+        return { get, put };
+    })();
 
     const HEART_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>';
 
@@ -891,6 +1094,10 @@
         const panel = document.getElementById('filterPanel');
         const open = panel.classList.toggle('open');
         document.getElementById('filterToggle').classList.toggle('active', open);
+        if (open) {
+            renderTagChips();
+            renderAuthorChips();
+        }
     });
 
     document.querySelectorAll('.chip[data-sort]').forEach(chip => {
@@ -941,12 +1148,15 @@
     document.getElementById('filterReset').addEventListener('click', () => {
         state.r18 = 'any'; state.ai = 'any';
         state.formats.clear(); state.collectionIds.clear(); state.tagIds.clear();
+        state.authorId = null; state.authorName = null;
         document.querySelectorAll('.chip[data-r18]').forEach(c => c.classList.toggle('active', c.dataset.r18 === 'any'));
         document.querySelectorAll('.chip[data-ai]').forEach(c => c.classList.toggle('active', c.dataset.ai === 'any'));
         document.querySelectorAll('.chip[data-format]').forEach(c => c.classList.remove('active'));
         state.page = 0;
+        document.getElementById('authorFilterBar').classList.remove('visible');
         renderCollections();
         renderTagChips();
+        renderAuthorChips();
         updateFilterBadge();
         loadGallery();
     });
@@ -958,6 +1168,7 @@
         n += state.formats.size;
         n += state.collectionIds.size;
         n += state.tagIds.size;
+        if (state.authorId) n++;
         const badge = document.getElementById('filterBadge');
         badge.textContent = n;
         badge.classList.toggle('visible', n > 0);
@@ -998,38 +1209,42 @@
         });
 
         const expanded = state.tagsExpanded || kw.length > 0;
-        const display = expanded ? filtered : filtered.slice(0, TAG_COLLAPSED_LIMIT);
-        const hidden = filtered.length - display.length;
 
-        if (display.length === 0) {
+        if (filtered.length === 0) {
             box.innerHTML = '<span class="chip-empty">没有匹配的标签</span>';
-        } else {
-            box.innerHTML = display.map(t => {
-                const active = state.tagIds.has(t.tagId);
-                const trans = t.translatedName
-                    ? `<span class="tag-trans">${escapeHtml(t.translatedName)}</span>`
-                    : '';
-                return `<button class="chip ${active ? 'active' : ''}" type="button" data-tag-id="${t.tagId}">
-                    ${escapeHtml(t.name || '')}
-                    ${trans}
-                    <span class="chip-count">${t.artworkCount}</span>
-                </button>`;
-            }).join('');
-            box.querySelectorAll('.chip[data-tag-id]').forEach(chip => {
-                chip.addEventListener('click', () => toggleTagFilter(Number(chip.dataset.tagId)));
-            });
+            box.classList.remove('has-overflow');
+            box.classList.toggle('expanded', expanded);
+            toggleBtn.style.display = 'none';
+            return;
         }
+
+        box.innerHTML = filtered.map(t => {
+            const active = state.tagIds.has(t.tagId);
+            const trans = t.translatedName
+                ? `<span class="tag-trans">${escapeHtml(t.translatedName)}</span>`
+                : '';
+            return `<button class="chip ${active ? 'active' : ''}" type="button" data-tag-id="${t.tagId}">
+                ${escapeHtml(t.name || '')}
+                ${trans}
+                <span class="chip-count">${t.artworkCount}</span>
+            </button>`;
+        }).join('');
+        box.querySelectorAll('.chip[data-tag-id]').forEach(chip => {
+            chip.addEventListener('click', () => toggleTagFilter(Number(chip.dataset.tagId)));
+        });
         box.classList.toggle('expanded', expanded);
 
-        if (filtered.length > TAG_COLLAPSED_LIMIT) {
-            toggleBtn.style.display = '';
-            toggleBtn.textContent = state.tagsExpanded
-                ? '收起'
-                : `展开全部（还有 ${hidden}）`;
-            toggleBtn.classList.toggle('active', state.tagsExpanded);
-        } else {
-            toggleBtn.style.display = 'none';
-        }
+        requestAnimationFrame(() => {
+            const hasOverflow = box.scrollHeight > TAG_COLLAPSED_MAX_HEIGHT + 2;
+            box.classList.toggle('has-overflow', hasOverflow && !expanded);
+            if (hasOverflow || expanded) {
+                toggleBtn.style.display = '';
+                toggleBtn.textContent = state.tagsExpanded ? '收起' : '展开全部';
+                toggleBtn.classList.toggle('active', state.tagsExpanded);
+            } else {
+                toggleBtn.style.display = 'none';
+            }
+        });
     }
 
     function toggleTagFilter(tagId) {
@@ -1056,6 +1271,118 @@
         renderTagChips();
     });
 
+    // ---------- Author filter ----------
+    async function loadAuthorOptions() {
+        try {
+            const params = new URLSearchParams();
+            params.set('page', 0);
+            params.set('size', AUTHOR_FILTER_OPTIONS_SIZE);
+            params.set('sort', 'artworks');
+            const resp = await api('/api/authors/paged?' + params.toString());
+            state.authorOptions = resp.content || [];
+        } catch (e) {
+            console.error('load author options failed', e);
+            state.authorOptions = [];
+        }
+        renderAuthorChips();
+    }
+
+    function renderAuthorChips() {
+        const box = document.getElementById('filterAuthorChips');
+        const toggleBtn = document.getElementById('authorExpandToggle');
+        if (!state.authorOptions.length) {
+            box.innerHTML = '<span class="chip-empty">暂无作者</span>';
+            toggleBtn.style.display = 'none';
+            return;
+        }
+        const kw = state.authorFilterText.trim().toLowerCase();
+        let filtered = kw
+            ? state.authorOptions.filter(a =>
+                (a.name && a.name.toLowerCase().includes(kw)) ||
+                String(a.authorId).includes(kw))
+            : state.authorOptions.slice();
+
+        // 已选作者置顶
+        filtered.sort((a, b) => {
+            const sa = state.authorId === a.authorId ? 0 : 1;
+            const sb = state.authorId === b.authorId ? 0 : 1;
+            return sa - sb;
+        });
+
+        // 若选中的作者不在加载的前 N 个里，确保它显示在首位
+        if (state.authorId && !filtered.some(a => a.authorId === state.authorId)) {
+            filtered.unshift({
+                authorId: state.authorId,
+                name: state.authorName || ('画师 ' + state.authorId),
+                artworkCount: 0,
+            });
+        }
+
+        const expanded = state.authorsExpanded || kw.length > 0;
+
+        if (filtered.length === 0) {
+            box.innerHTML = '<span class="chip-empty">没有匹配的作者</span>';
+            box.classList.remove('has-overflow');
+            box.classList.toggle('expanded', expanded);
+            toggleBtn.style.display = 'none';
+            return;
+        }
+
+        box.innerHTML = filtered.map(a => {
+            const active = state.authorId === a.authorId;
+            const count = a.artworkCount > 0
+                ? `<span class="chip-count">${a.artworkCount}</span>`
+                : '';
+            return `<button class="chip ${active ? 'active' : ''}" type="button" data-author-id="${a.authorId}" title="#${a.authorId}">
+                ${escapeHtml(a.name || ('画师 ' + a.authorId))}
+                ${count}
+            </button>`;
+        }).join('');
+        box.querySelectorAll('.chip[data-author-id]').forEach(chip => {
+            chip.addEventListener('click', () => {
+                const id = Number(chip.dataset.authorId);
+                const opt = state.authorOptions.find(a => a.authorId === id);
+                toggleAuthorFilter(id, opt ? opt.name : (state.authorId === id ? state.authorName : null));
+            });
+        });
+        box.classList.toggle('expanded', expanded);
+
+        requestAnimationFrame(() => {
+            const hasOverflow = box.scrollHeight > AUTHOR_CHIPS_COLLAPSED_MAX_HEIGHT + 2;
+            box.classList.toggle('has-overflow', hasOverflow && !expanded);
+            if (hasOverflow || expanded) {
+                toggleBtn.style.display = '';
+                toggleBtn.textContent = state.authorsExpanded ? '收起' : '展开全部';
+                toggleBtn.classList.toggle('active', state.authorsExpanded);
+            } else {
+                toggleBtn.style.display = 'none';
+            }
+        });
+    }
+
+    function toggleAuthorFilter(authorId, authorName) {
+        if (state.authorId === authorId) {
+            applyAuthorFilter(null, null);
+        } else {
+            applyAuthorFilter(authorId, authorName);
+        }
+    }
+
+    let authorSearchTimer = null;
+    document.getElementById('authorSearchInput').addEventListener('input', e => {
+        const v = e.target.value;
+        clearTimeout(authorSearchTimer);
+        authorSearchTimer = setTimeout(() => {
+            state.authorFilterText = v;
+            renderAuthorChips();
+        }, 150);
+    });
+
+    document.getElementById('authorExpandToggle').addEventListener('click', () => {
+        state.authorsExpanded = !state.authorsExpanded;
+        renderAuthorChips();
+    });
+
     // ---------- Search (debounced) ----------
     let searchTimer = null;
     document.getElementById('searchInput').addEventListener('input', e => {
@@ -1064,7 +1391,12 @@
         searchTimer = setTimeout(() => {
             state.search = v.trim();
             state.page = 0;
-            loadGallery();
+            state.authors.page = 0;
+            if (state.view === 'authors') {
+                loadAuthorsView();
+            } else {
+                loadGallery();
+            }
         }, 350);
     });
 
@@ -1081,6 +1413,7 @@
         if (state.formats.size) params.set('format', [...state.formats].join(','));
         if (state.collectionIds.size) params.set('collectionIds', [...state.collectionIds].join(','));
         if (state.tagIds.size) params.set('tagIds', [...state.tagIds].join(','));
+        if (state.authorId) params.set('authorId', state.authorId);
 
         document.getElementById('galleryStatus').textContent = '加载中...';
         try {
@@ -1185,11 +1518,15 @@
     async function loadThumbnail(img) {
         const url = img.dataset.src;
         img.removeAttribute('data-src');
+        const cached = ImageCache.get(url);
+        if (cached) { img.src = cached; return; }
         try {
             const resp = await api(url);
             if (resp && resp.success && resp.image) {
                 const ext = (resp.extension || 'jpg').toLowerCase();
-                img.src = `data:image/${ext === 'jpg' ? 'jpeg' : ext};base64,${resp.image}`;
+                const src = `data:image/${ext === 'jpg' ? 'jpeg' : ext};base64,${resp.image}`;
+                img.src = src;
+                ImageCache.put(url, src);
             }
         } catch (e) {
             // Silently leave placeholder
@@ -1326,10 +1663,211 @@
         if (backdrop) e.target.classList.remove('open');
     });
 
+    // ---------- View switch ----------
+    document.querySelectorAll('.nav-item[data-view]').forEach(el => {
+        el.addEventListener('click', e => {
+            e.preventDefault();
+            switchView(el.dataset.view);
+        });
+    });
+
+    function switchView(view) {
+        const prev = state.view;
+        state.view = view;
+        document.querySelectorAll('.nav-item[data-view]').forEach(el => {
+            el.classList.toggle('active', el.dataset.view === view);
+        });
+        const showAll = view === 'all';
+        document.getElementById('galleryGrid').style.display = showAll ? '' : 'none';
+        document.getElementById('pagination').style.display = showAll ? '' : 'none';
+        document.getElementById('galleryStatus').style.display = showAll ? '' : 'none';
+        document.getElementById('authorFilterBar').classList.toggle('visible',
+            showAll && !!state.authorId);
+        document.getElementById('authorView').classList.toggle('active', !showAll);
+        document.getElementById('authorPagination').style.display = showAll ? 'none' : '';
+        if (view === 'authors') {
+            loadAuthorsView();
+        } else if (prev !== 'all') {
+            loadGallery();
+        }
+    }
+
+    document.getElementById('authorFilterClear').addEventListener('click', () => {
+        applyAuthorFilter(null, null);
+    });
+
+    function applyAuthorFilter(authorId, authorName) {
+        state.authorId = authorId;
+        state.authorName = authorName;
+        state.page = 0;
+        const bar = document.getElementById('authorFilterBar');
+        if (authorId) {
+            document.getElementById('authorFilterName').textContent =
+                authorName ? `${authorName}（#${authorId}）` : `#${authorId}`;
+        }
+        renderAuthorChips();
+        updateFilterBadge();
+        if (state.view !== 'all') {
+            switchView('all');
+        } else {
+            bar.classList.toggle('visible', !!authorId);
+            loadGallery();
+        }
+    }
+
+    // ---------- Authors view ----------
+    async function loadAuthorsView() {
+        const container = document.getElementById('authorView');
+        container.innerHTML = '<div class="author-works-loading">加载作者列表…</div>';
+        try {
+            const params = new URLSearchParams();
+            params.set('page', state.authors.page);
+            params.set('size', state.authors.size);
+            params.set('sort', 'artworks');
+            if (state.search) params.set('search', state.search);
+            const resp = await api('/api/authors/paged?' + params.toString());
+            state.authors.totalPages = resp.totalPages || 0;
+            state.authors.totalElements = resp.totalElements || 0;
+            state.authors.content = resp.content || [];
+            renderAuthorsView();
+            renderAuthorsPagination();
+        } catch (e) {
+            container.innerHTML = `<div class="author-works-loading">加载失败：${escapeHtml(e.message)}</div>`;
+        }
+    }
+
+    function renderAuthorsView() {
+        const container = document.getElementById('authorView');
+        if (!state.authors.content.length) {
+            container.innerHTML = '<div class="empty-state">暂无作者</div>';
+            return;
+        }
+        container.innerHTML = state.authors.content.map(a => `
+            <div class="author-row" data-author-id="${a.authorId}">
+                <div class="author-row-info">
+                    <div class="author-row-name" data-filter-author="${a.authorId}" title="${escapeHtml(a.name || '')}">${escapeHtml(a.name || '未命名')}</div>
+                    <div class="author-row-count">${a.artworkCount} 张作品 · #${a.authorId}</div>
+                    <div class="author-row-actions">
+                        <button class="author-row-btn" data-filter-author="${a.authorId}" type="button">查看全部</button>
+                    </div>
+                </div>
+                <div class="author-row-works">
+                    <button class="author-works-arrow left" data-arrow="left" type="button" title="上一组">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+                    </button>
+                    <div class="author-works-strip" data-strip-for="${a.authorId}">
+                        <div class="author-works-loading">加载中…</div>
+                    </div>
+                    <button class="author-works-arrow right" data-arrow="right" type="button" title="下一组">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+                    </button>
+                </div>
+            </div>
+        `).join('');
+
+        container.querySelectorAll('[data-filter-author]').forEach(el => {
+            el.addEventListener('click', e => {
+                e.stopPropagation();
+                const id = Number(el.dataset.filterAuthor);
+                const author = state.authors.content.find(a => a.authorId === id);
+                applyAuthorFilter(id, author ? author.name : null);
+            });
+        });
+
+        container.querySelectorAll('.author-row').forEach(row => {
+            const authorId = Number(row.dataset.authorId);
+            const strip = row.querySelector('.author-works-strip');
+            const leftBtn = row.querySelector('[data-arrow="left"]');
+            const rightBtn = row.querySelector('[data-arrow="right"]');
+
+            loadAuthorWorks(authorId, strip).then(() => updateArrowState(strip, leftBtn, rightBtn));
+
+            leftBtn.addEventListener('click', () => {
+                strip.scrollBy({ left: -strip.clientWidth * 0.8, behavior: 'smooth' });
+            });
+            rightBtn.addEventListener('click', () => {
+                strip.scrollBy({ left: strip.clientWidth * 0.8, behavior: 'smooth' });
+            });
+            strip.addEventListener('scroll', () => updateArrowState(strip, leftBtn, rightBtn));
+        });
+    }
+
+    function updateArrowState(strip, leftBtn, rightBtn) {
+        const atStart = strip.scrollLeft <= 1;
+        const atEnd = strip.scrollLeft + strip.clientWidth >= strip.scrollWidth - 1;
+        leftBtn.disabled = atStart;
+        rightBtn.disabled = atEnd || strip.scrollWidth <= strip.clientWidth;
+    }
+
+    async function loadAuthorWorks(authorId, strip) {
+        try {
+            const params = new URLSearchParams();
+            params.set('page', 0);
+            params.set('size', AUTHOR_WORKS_PER_ROW);
+            params.set('sort', 'date');
+            params.set('order', 'desc');
+            params.set('authorId', authorId);
+            const resp = await api('/api/gallery/artworks?' + params.toString());
+            const items = resp.content || [];
+            if (!items.length) {
+                strip.innerHTML = '<div class="author-works-empty">暂无作品</div>';
+                return;
+            }
+            strip.innerHTML = items.map(item => {
+                const pages = item.count || 1;
+                return `
+                    <div class="author-work-card" data-id="${item.artworkId}">
+                        <div class="author-work-thumb">
+                            <img data-src="/api/downloaded/thumbnail/${item.artworkId}/0" alt="${escapeHtml(item.title || '')}" loading="lazy">
+                            ${pages > 1 ? `<div class="author-work-pages">${pages}P</div>` : ''}
+                        </div>
+                        <div class="author-work-title">${escapeHtml(item.title || '无标题')}</div>
+                    </div>
+                `;
+            }).join('');
+            strip.querySelectorAll('.author-work-card').forEach(card => {
+                card.addEventListener('click', () => {
+                    window.location.href = `/pixiv-artwork.html?id=${card.dataset.id}`;
+                });
+            });
+            strip.querySelectorAll('img[data-src]').forEach(img => loadThumbnail(img));
+        } catch (e) {
+            strip.innerHTML = `<div class="author-works-empty">加载失败：${escapeHtml(e.message)}</div>`;
+        }
+    }
+
+    function renderAuthorsPagination() {
+        const pag = document.getElementById('authorPagination');
+        const totalPages = state.authors.totalPages;
+        if (totalPages <= 1) { pag.innerHTML = ''; return; }
+        const pages = buildPageWindow(state.authors.page, totalPages);
+        const parts = [];
+        const cur = state.authors.page;
+        parts.push(`<button class="page-btn" data-page="${cur - 1}" ${cur === 0 ? 'disabled' : ''}>上一页</button>`);
+        for (const p of pages) {
+            if (p === '...') parts.push('<span class="page-ellipsis">…</span>');
+            else parts.push(`<button class="page-btn ${p === cur ? 'active' : ''}" data-page="${p}">${p + 1}</button>`);
+        }
+        parts.push(`<button class="page-btn" data-page="${cur + 1}" ${cur >= totalPages - 1 ? 'disabled' : ''}>下一页</button>`);
+        pag.innerHTML = parts.join('');
+        pag.querySelectorAll('.page-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                if (btn.disabled) return;
+                const p = Number(btn.dataset.page);
+                if (p < 0 || p >= totalPages) return;
+                state.authors.page = p;
+                loadAuthorsView();
+                document.querySelector('.gallery-wrapper').scrollTop = 0;
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            });
+        });
+    }
+
     // ---------- Boot ----------
     (async function init() {
         await loadCollections();
         await loadTagOptions();
+        await loadAuthorOptions();
         await loadGallery();
     })();
 </script>

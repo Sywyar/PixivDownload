@@ -42,4 +42,32 @@ public interface AuthorMapper {
             "</script>"
     })
     List<Author> findByIds(@Param("ids") Collection<Long> ids);
+
+    @Select("SELECT COUNT(*) FROM ("
+            + " SELECT a.author_id FROM artworks a"
+            + " LEFT JOIN authors au ON au.author_id = a.author_id"
+            + " WHERE a.author_id IS NOT NULL"
+            + " AND (au.name LIKE #{search} OR CAST(a.author_id AS TEXT) LIKE #{search})"
+            + " GROUP BY a.author_id)")
+    long countAuthorsWithArtworks(@Param("search") String search);
+
+    @Select("SELECT a.author_id AS authorId,"
+            + " COALESCE(au.name, CAST(a.author_id AS TEXT)) AS name,"
+            + " COUNT(*) AS artworkCount"
+            + " FROM artworks a"
+            + " LEFT JOIN authors au ON au.author_id = a.author_id"
+            + " WHERE a.author_id IS NOT NULL"
+            + " AND (au.name LIKE #{search} OR CAST(a.author_id AS TEXT) LIKE #{search})"
+            + " GROUP BY a.author_id, au.name"
+            + " ORDER BY"
+            + " CASE WHEN #{sort} = 'artworks' THEN -COUNT(*) END,"
+            + " CASE WHEN #{sort} = 'authorId' THEN a.author_id END,"
+            + " CASE WHEN #{sort} NOT IN ('artworks','authorId')"
+            + "      THEN LOWER(COALESCE(au.name, CAST(a.author_id AS TEXT))) END,"
+            + " a.author_id"
+            + " LIMIT #{limit} OFFSET #{offset}")
+    List<AuthorSummary> findAuthorsWithArtworks(@Param("search") String search,
+                                                @Param("sort") String sort,
+                                                @Param("limit") int limit,
+                                                @Param("offset") int offset);
 }

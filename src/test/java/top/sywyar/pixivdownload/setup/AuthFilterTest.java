@@ -585,6 +585,7 @@ class AuthFilterTest {
         @DisplayName("非 intro 模式下应重定向到 pixiv-batch.html")
         void shouldRedirectToPixivBatchWhenNotInIntroMode() throws Exception {
             when(setupService.isIntroMode()).thenReturn(false);
+            when(setupService.getMode()).thenReturn("multi");
 
             request.setMethod("GET");
             request.setRequestURI("/redirect");
@@ -599,6 +600,7 @@ class AuthFilterTest {
         @DisplayName("无 canvas 参数时非 intro 模式也应重定向到 pixiv-batch.html")
         void shouldRedirectToPixivBatchWithoutCanvasParam() throws Exception {
             when(setupService.isIntroMode()).thenReturn(false);
+            when(setupService.getMode()).thenReturn("multi");
 
             request.setMethod("GET");
             request.setRequestURI("/redirect");
