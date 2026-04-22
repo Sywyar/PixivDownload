@@ -67,41 +67,44 @@ public class GalleryRepository {
             params.addValue("collectionIds", collectionIds);
         }
 
-        List<Long> positiveAuthorIds = unionIds(q.getAuthorIds(), q.getOptionalAuthorIds());
-        if (!positiveAuthorIds.isEmpty()) {
-            where.append(" AND a.author_id IN (:positiveAuthorIds)");
-            params.addValue("positiveAuthorIds", positiveAuthorIds);
-        }
-
-        List<Long> excludedAuthorIds = q.getExcludedAuthorIds();
-        if (excludedAuthorIds != null && !excludedAuthorIds.isEmpty()) {
-            where.append(" AND (a.author_id IS NULL OR a.author_id NOT IN (:excludedAuthorIds))");
-            params.addValue("excludedAuthorIds", excludedAuthorIds);
-        }
-
-        List<String> positiveTagClauses = new ArrayList<>();
+        List<String> requiredTagOrOptionalAuthorClauses = new ArrayList<>();
         List<Long> tagIds = q.getTagIds();
         if (tagIds != null && !tagIds.isEmpty()) {
-            positiveTagClauses.add("a.artwork_id IN (SELECT artwork_id FROM artwork_tags"
+            requiredTagOrOptionalAuthorClauses.add("a.artwork_id IN (SELECT artwork_id FROM artwork_tags"
                     + " WHERE tag_id IN (:tagIds)"
                     + " GROUP BY artwork_id HAVING COUNT(DISTINCT tag_id) = :tagIdCount)");
             params.addValue("tagIds", tagIds);
             params.addValue("tagIdCount", tagIds.size());
         }
 
+        List<Long> optionalAuthorIds = q.getOptionalAuthorIds();
+        if (optionalAuthorIds != null && !optionalAuthorIds.isEmpty()) {
+            requiredTagOrOptionalAuthorClauses.add("a.author_id IN (:optionalAuthorIds)");
+            params.addValue("optionalAuthorIds", optionalAuthorIds);
+        }
+
+        appendOrGroup(where, requiredTagOrOptionalAuthorClauses);
+
+        List<String> requiredAuthorOrOptionalTagClauses = new ArrayList<>();
+        List<Long> authorIds = q.getAuthorIds();
+        if (authorIds != null && !authorIds.isEmpty()) {
+            requiredAuthorOrOptionalTagClauses.add("a.author_id IN (:authorIds)");
+            params.addValue("authorIds", authorIds);
+        }
+
         List<Long> optionalTagIds = q.getOptionalTagIds();
         if (optionalTagIds != null && !optionalTagIds.isEmpty()) {
-            positiveTagClauses.add("a.artwork_id IN (SELECT DISTINCT artwork_id FROM artwork_tags"
+            requiredAuthorOrOptionalTagClauses.add("a.artwork_id IN (SELECT DISTINCT artwork_id FROM artwork_tags"
                     + " WHERE tag_id IN (:optionalTagIds))");
             params.addValue("optionalTagIds", optionalTagIds);
         }
 
-        if (!positiveTagClauses.isEmpty()) {
-            if (positiveTagClauses.size() == 1) {
-                where.append(" AND ").append(positiveTagClauses.get(0));
-            } else {
-                where.append(" AND (").append(String.join(" OR ", positiveTagClauses)).append(")");
-            }
+        appendOrGroup(where, requiredAuthorOrOptionalTagClauses);
+
+        List<Long> excludedAuthorIds = q.getExcludedAuthorIds();
+        if (excludedAuthorIds != null && !excludedAuthorIds.isEmpty()) {
+            where.append(" AND (a.author_id IS NULL OR a.author_id NOT IN (:excludedAuthorIds))");
+            params.addValue("excludedAuthorIds", excludedAuthorIds);
         }
 
         List<Long> excludedTagIds = q.getExcludedTagIds();
@@ -179,15 +182,15 @@ public class GalleryRepository {
         };
     }
 
-    private List<Long> unionIds(List<Long> left, List<Long> right) {
-        List<Long> out = new ArrayList<>();
-        if (left != null && !left.isEmpty()) out.addAll(left);
-        if (right != null && !right.isEmpty()) {
-            for (Long id : right) {
-                if (!out.contains(id)) out.add(id);
-            }
+    private void appendOrGroup(StringBuilder where, List<String> clauses) {
+        if (clauses == null || clauses.isEmpty()) {
+            return;
         }
-        return out;
+        if (clauses.size() == 1) {
+            where.append(" AND ").append(clauses.get(0));
+            return;
+        }
+        where.append(" AND (").append(String.join(" OR ", clauses)).append(")");
     }
 
     public record QueryResult(List<Long> ids, long totalElements) {}

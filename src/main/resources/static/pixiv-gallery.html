@@ -2369,6 +2369,18 @@
         return bucket.must.size + bucket.not.size + bucket.or.size;
     }
 
+    function clearFilterSearch(kind) {
+        if (kind === 'tag') {
+            clearTimeout(tagSearchTimer);
+            state.tagFilterText = '';
+            document.getElementById('tagSearchInput').value = '';
+            return;
+        }
+        clearTimeout(authorSearchTimer);
+        state.authorFilterText = '';
+        document.getElementById('authorSearchInput').value = '';
+    }
+
     function clearFilterSelections(kind) {
         const bucket = getFilterBucket(kind);
         bucket.must.clear();
@@ -2381,6 +2393,7 @@
 
     function resetFilterKind(kind) {
         clearFilterSelections(kind);
+        clearFilterSearch(kind);
         getFilterBucket(kind).mode = 'must';
         renderFilterModeButtons(kind);
         state.page = 0;
@@ -2868,6 +2881,8 @@
         state.collectionIds.clear();
         clearFilterSelections('tag');
         clearFilterSelections('author');
+        clearFilterSearch('tag');
+        clearFilterSearch('author');
         state.tagFilters.mode = 'must';
         state.authorFilters.mode = 'must';
         state.authorNames.clear();

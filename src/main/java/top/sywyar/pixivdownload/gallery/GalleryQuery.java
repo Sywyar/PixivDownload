@@ -43,13 +43,13 @@ public class GalleryQuery {
     private List<Long> tagIds;
     /** 不能命中的标签 ID（命中任一即排除）。 */
     private List<Long> excludedTagIds;
-    /** 可选命中的标签 ID（OR 语义，与必须标签形成并集）。 */
+    /** 可选命中的标签 ID（OR 语义，参与“必须作者 OR 可选标签”子句）。 */
     private List<Long> optionalTagIds;
-    /** 必须命中的作者 ID（当前语义为 OR，与可选作者形成并集）。 */
+    /** 必须命中的作者 ID（列表内 OR 语义，参与“必须作者 OR 可选标签”子句）。 */
     private List<Long> authorIds;
     /** 不能命中的作者 ID（命中任一即排除）。 */
     private List<Long> excludedAuthorIds;
-    /** 可选命中的作者 ID（OR 语义，与必须作者形成并集）。 */
+    /** 可选命中的作者 ID（OR 语义，参与“必须标签 OR 可选作者”子句）。 */
     private List<Long> optionalAuthorIds;
 
     public static GalleryQuery normalize(Integer page, Integer size, String sort, String order,
