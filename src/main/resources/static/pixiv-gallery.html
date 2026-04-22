@@ -2153,6 +2153,20 @@
         }
     }
 
+    function clearNavigationFilterQuery() {
+        const url = new URL(location.href);
+        let changed = false;
+        GALLERY_FILTER_QUERY_KEYS.forEach(key => {
+            if (url.searchParams.has(key)) {
+                url.searchParams.delete(key);
+                changed = true;
+            }
+        });
+        if (!changed) return;
+        const nextUrl = url.pathname + (url.search ? url.search : '') + url.hash;
+        history.replaceState(history.state, '', nextUrl);
+    }
+
     function syncAuthorFilterBar() {
         const bar = document.getElementById('authorFilterBar');
         if (state.authorIds.size === 0 || state.view !== 'all') {
@@ -2183,14 +2197,12 @@
             if (loaded) return loaded;
         }
 
-        if (normalizedTagName || normalizedTranslatedName) {
-            const loaded = state.tags.find(t =>
-                normalizeFilterText(t.name) === normalizedTagName
-                || normalizeFilterText(t.translatedName) === normalizedTagName
-                || normalizeFilterText(t.name) === normalizedTranslatedName
-                || normalizeFilterText(t.translatedName) === normalizedTranslatedName);
-            if (loaded) return loaded;
+        if (normalizedTagName) {
+            const loadedByName = state.tags.find(t => normalizeFilterText(t.name) === normalizedTagName);
+            if (loadedByName) return loadedByName;
+        }
 
+        if (normalizedTagName || normalizedTranslatedName) {
             try {
                 const lookupParams = new URLSearchParams();
                 if (tagName) lookupParams.set('name', tagName);
@@ -2247,6 +2259,8 @@
             renderAuthorChips();
             updateFilterBadge();
         }
+
+        clearNavigationFilterQuery();
     }
 
     // ---------- Sidebar ----------

@@ -151,7 +151,7 @@ public interface PixivMapper {
     @Delete("DELETE FROM artwork_tags WHERE artwork_id = #{artworkId}")
     void deleteArtworkTags(@Param("artworkId") long artworkId);
 
-    @Select("SELECT t.name AS name, t.translated_name AS translatedName"
+    @Select("SELECT t.tag_id AS tagId, t.name AS name, t.translated_name AS translatedName"
             + " FROM artwork_tags at JOIN tags t ON t.tag_id = at.tag_id"
             + " WHERE at.artwork_id = #{artworkId}"
             + " ORDER BY t.tag_id")

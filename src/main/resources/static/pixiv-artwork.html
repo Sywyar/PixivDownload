@@ -1041,8 +1041,9 @@
         return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
     }
 
-    function buildGalleryFilterHref({tagName, tagTranslatedName, authorId, authorName} = {}) {
+    function buildGalleryFilterHref({tagId, tagName, tagTranslatedName, authorId, authorName} = {}) {
         const params = new URLSearchParams();
+        if (tagId != null) params.set('filterTagId', String(tagId));
         if (tagName) params.set('filterTag', tagName);
         if (tagTranslatedName) params.set('filterTagTranslated', tagTranslatedName);
         if (authorId != null) params.set('filterAuthorId', String(authorId));
@@ -1215,6 +1216,7 @@
         if (tags.length) {
             tagList.innerHTML = tags.map(t => `
                 <a class="tag tag-link" href="${buildGalleryFilterHref({
+                    tagId: t.tagId,
                     tagName: t.name,
                     tagTranslatedName: t.translatedName
                 })}">

@@ -12,6 +12,11 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 public class TagDto {
+    private Long tagId;
     private String name;
     private String translatedName;
+
+    public TagDto(String name, String translatedName) {
+        this(null, name, translatedName);
+    }
 }
