@@ -59,22 +59,68 @@
     let userUUID = GM_getValue(CONFIG.KEY_USER_UUID, null);
     const VERIFY_HISTORY_FILES_TOOLTIP = '通过检查记录的目录是否存在、文件夹是否为空、文件夹中的文件是否包含图片来判断是否有效，如果无效则会重新下载';
 
-    /* ========== 初始化提示 ========== */
+    /* ========== PromptGuard：跨脚本一次性弹窗协调 ========== */
+    // localStorage + BroadcastChannel 在同源页面下被所有用户脚本共享，借此让多个脚本
+    // （或 All-in-One bundle 的多个模块）相同的弹窗只触发一次。
+    const PromptGuard = (() => {
+        const LS_KEY = '__pixiv_prompt_state_v1__';
+        const CHAN_NAME = '__pixiv_prompt_channel_v1__';
+        const ownerId = Math.random().toString(36).slice(2) + Date.now().toString(36);
+        const claimed = new Set();
+        let bc = null;
+        try { if (typeof BroadcastChannel !== 'undefined') bc = new BroadcastChannel(CHAN_NAME); } catch (e) {}
+        if (bc) bc.addEventListener('message', ev => {
+            if (ev && ev.data && ev.data.type === 'claim' && ev.data.id) claimed.add(ev.data.id);
+        });
+        const readState = () => {
+            try { return JSON.parse(localStorage.getItem(LS_KEY) || '{}') || {}; } catch (e) { return {}; }
+        };
+        const writeState = s => {
+            try { localStorage.setItem(LS_KEY, JSON.stringify(s)); } catch (e) {}
+        };
+        const isFresh = (entry, opts) => {
+            if (!entry) return false;
+            if (opts.persist) return true;
+            return Date.now() - (entry.t || 0) < (opts.ttlMs || 60000);
+        };
+        function once(id, opts, fn) {
+            opts = opts || {};
+            if (claimed.has(id)) return false;
+            const state = readState();
+            if (isFresh(state[id], opts)) { claimed.add(id); return false; }
+            claimed.add(id);
+            state[id] = { t: Date.now(), owner: ownerId };
+            writeState(state);
+            if (bc) { try { bc.postMessage({ type: 'claim', id }); } catch (e) {} }
+            // 30ms jitter：让同帧启动的对端有机会覆盖 owner，最终只有一个 ownerId 留存并执行 fn
+            setTimeout(() => {
+                const cur = readState()[id];
+                if (!cur || cur.owner !== ownerId) return;
+                try { fn(); } catch (e) { console.error('[PromptGuard]', e); }
+            }, 30);
+            return true;
+        }
+        return { once };
+    })();
+
+    /* ========== 初始化提示（跨脚本只显示一次）========== */
     function checkExternalServerNotice() {
-        const key = 'pixiv_connect_notice_shown';
-        if (GM_getValue(key, false)) return;
-        GM_setValue(key, true);
-        alert(
-            'Pixiv 下载脚本初始化提示\n\n' +
-            '如果您使用外部服务器（非 localhost），需将三个脚本头部的：\n' +
-            '  // @connect      YOUR_SERVER_HOST\n' +
-            '替换为实际的服务器 IP 或域名，例如：\n' +
-            '  // @connect      192.168.1.100\n\n' +
-            '修改路径：Tampermonkey 管理面板 → 对应脚本 → 编辑 → 保存\n\n' +
-            '或者直接通过网页端下载作品（无需脚本）：\n' +
-            serverBase + '/login.html\n\n' +
-            '（此提示只显示一次）'
-        );
+        // 兼容旧的 GM_setValue 标记：历史用户已看过则继续跳过
+        if (GM_getValue('pixiv_connect_notice_shown', false)) return;
+        PromptGuard.once('connect-notice', { persist: true }, () => {
+            GM_setValue('pixiv_connect_notice_shown', true);
+            alert(
+                'Pixiv 下载脚本初始化提示\n\n' +
+                '如果您使用外部服务器（非 localhost），需将三个脚本头部的：\n' +
+                '  // @connect      YOUR_SERVER_HOST\n' +
+                '替换为实际的服务器 IP 或域名，例如：\n' +
+                '  // @connect      192.168.1.100\n\n' +
+                '修改路径：Tampermonkey 管理面板 → 对应脚本 → 编辑 → 保存\n\n' +
+                '或者直接通过网页端下载作品（无需脚本）：\n' +
+                serverBase + '/login.html\n\n' +
+                '（此提示只显示一次）'
+            );
+        });
     }
 
     function checkLoginStatus() {
@@ -93,12 +139,12 @@
         });
     }
 
-    let _unauthorizedHandled = false;
+    // 处理 solo 模式未登录（401）：跨脚本去重交给 PromptGuard
     function handleUnauthorized() {
-        if (_unauthorizedHandled) return;
-        _unauthorizedHandled = true;
-        alert('后端服务需要登录验证，即将为您打开登录页面...');
-        window.open(serverBase + '/login.html', '_blank');
+        PromptGuard.once('unauthorized', { ttlMs: 60000 }, () => {
+            alert('后端服务需要登录验证，即将为您打开登录页面...');
+            window.open(serverBase + '/login.html', '_blank');
+        });
     }
 
     /* ========== DOM 帮助函数 ========== */
