@@ -13,6 +13,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import top.sywyar.pixivdownload.GlobalExceptionHandler;
 import top.sywyar.pixivdownload.author.AuthorService;
+import top.sywyar.pixivdownload.i18n.TestI18nBeans;
 import top.sywyar.pixivdownload.download.DownloadService;
 import top.sywyar.pixivdownload.download.DownloadStatus;
 import top.sywyar.pixivdownload.download.db.ArtworkRecord;
@@ -57,7 +58,7 @@ class DownloadControllerTest {
         DownloadController controller = new DownloadController(
                 downloadService, setupService, userQuotaService, multiModeConfig, pixivDatabase, authorService);
         mockMvc = MockMvcBuilders.standaloneSetup(controller)
-                .setControllerAdvice(new GlobalExceptionHandler())
+                .setControllerAdvice(new GlobalExceptionHandler(TestI18nBeans.appMessages()))
                 .build();
     }
 

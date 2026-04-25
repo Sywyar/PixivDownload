@@ -14,6 +14,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import top.sywyar.pixivdownload.GlobalExceptionHandler;
 import top.sywyar.pixivdownload.download.db.ArtworkRecord;
 import top.sywyar.pixivdownload.download.db.PixivDatabase;
+import top.sywyar.pixivdownload.i18n.TestI18nBeans;
 import top.sywyar.pixivdownload.setup.SetupService;
 
 import java.nio.file.Files;
@@ -55,7 +56,7 @@ class ArchiveControllerTest {
         ArchiveController controller = new ArchiveController(
                 userQuotaService, multiModeConfig, setupService, pixivDatabase);
         mockMvc = MockMvcBuilders.standaloneSetup(controller)
-                .setControllerAdvice(new GlobalExceptionHandler())
+                .setControllerAdvice(new GlobalExceptionHandler(TestI18nBeans.appMessages()))
                 .build();
     }
 

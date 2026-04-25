@@ -1,5 +1,6 @@
 package top.sywyar.pixivdownload.gui;
 
+import top.sywyar.pixivdownload.gui.i18n.GuiMessages;
 import top.sywyar.pixivdownload.gui.panel.AboutPanel;
 import top.sywyar.pixivdownload.gui.panel.ConfigPanel;
 import top.sywyar.pixivdownload.gui.panel.StatusPanel;
@@ -13,8 +14,8 @@ import java.nio.file.Path;
 import java.util.List;
 
 /**
- * GUI 主窗口（800×600，可调整大小）。
- * 包含三个标签页：状态、配置、关于。
+ * GUI 主窗口（800x600，可调整大小）。
+ * 包含四个标签页：状态、配置、工具、关于。
  * 关闭窗口时缩回系统托盘，不退出进程。
  */
 public class MainFrame extends JFrame {
@@ -23,11 +24,10 @@ public class MainFrame extends JFrame {
     private final ToolsPanel toolsPanel;
 
     public MainFrame(int serverPort, String rootFolder, Path configPath) {
-        super("PixivDownload");
+        super(GuiMessages.get("app.name"));
         setSize(800, 600);
         setMinimumSize(new Dimension(640, 480));
         setLocationRelativeTo(null);
-        // 关闭按钮 = 缩回托盘
         setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
 
         addWindowListener(new WindowAdapter() {
@@ -37,7 +37,6 @@ public class MainFrame extends JFrame {
             }
         });
 
-        // 应用图标：需使用 MediaTracker 等待图像解码完成，否则 Swing 会拒绝未就绪的图像
         Image appIcon = loadAppIcon();
         if (appIcon != null) {
             setIconImages(List.of(
@@ -52,15 +51,14 @@ public class MainFrame extends JFrame {
         JTabbedPane tabs = new JTabbedPane();
         statusPanel = new StatusPanel(serverPort, rootFolder, configPath);
         toolsPanel = new ToolsPanel(configPath);
-        tabs.addTab("状态", statusPanel);
-        tabs.addTab("配置", new ConfigPanel(configPath));
-        tabs.addTab("工具", toolsPanel);
-        tabs.addTab("关于", new AboutPanel());
+        tabs.addTab(GuiMessages.get("gui.tab.status"), statusPanel);
+        tabs.addTab(GuiMessages.get("gui.tab.config"), new ConfigPanel(configPath));
+        tabs.addTab(GuiMessages.get("gui.tab.tools"), toolsPanel);
+        tabs.addTab(GuiMessages.get("gui.tab.about"), new AboutPanel());
 
         setContentPane(tabs);
     }
 
-    /** 返回当前生效的 Web 控制台 URL，供托盘菜单等延迟调用。 */
     public String getMonitorUrl() {
         return statusPanel.getMonitorUrl();
     }
@@ -79,7 +77,6 @@ public class MainFrame extends JFrame {
         requestFocus();
     }
 
-    /** 释放资源（关闭轮询 Timer）。 */
     @Override
     public void dispose() {
         statusPanel.dispose();

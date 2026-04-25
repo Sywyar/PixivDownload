@@ -14,6 +14,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 
+import top.sywyar.pixivdownload.i18n.AppLocaleResolver;
+import top.sywyar.pixivdownload.i18n.AppMessages;
 import top.sywyar.pixivdownload.quota.RateLimitService;
 
 import static org.assertj.core.api.Assertions.*;
@@ -28,6 +30,10 @@ class AuthFilterTest {
     @Mock
     private RateLimitService rateLimitService;
     @Mock
+    private AppLocaleResolver localeResolver;
+    @Mock
+    private AppMessages appMessages;
+    @Mock
     private FilterChain filterChain;
 
     private AuthFilter authFilter;
@@ -36,7 +42,7 @@ class AuthFilterTest {
 
     @BeforeEach
     void setUp() {
-        authFilter = new AuthFilter(setupService, rateLimitService);
+        authFilter = new AuthFilter(setupService, rateLimitService, localeResolver, appMessages);
         request = new MockHttpServletRequest();
         response = new MockHttpServletResponse();
     }

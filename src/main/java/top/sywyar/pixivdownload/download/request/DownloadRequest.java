@@ -10,13 +10,13 @@ import java.util.List;
 
 @Data
 public class DownloadRequest {
-    @NotNull(message = "作品ID不能为空")
+    @NotNull(message = "{validation.download.artwork-id.required}")
     private Long artworkId;
 
-    @NotNull(message = "作品名称不能为空")
+    @NotNull(message = "{validation.download.title.required}")
     private String title;
 
-    @NotEmpty(message = "图片URL列表不能为空")
+    @NotEmpty(message = "{validation.download.image-urls.required}")
     private List<String> imageUrls;
 
     private String referer = "https://www.pixiv.net/";

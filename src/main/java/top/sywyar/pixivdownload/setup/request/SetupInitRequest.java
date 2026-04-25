@@ -7,14 +7,14 @@ import lombok.Data;
 
 @Data
 public class SetupInitRequest {
-    @NotBlank(message = "用户名不能为空")
+    @NotBlank(message = "{validation.setup.username.required}")
     private String username;
 
-    @NotBlank(message = "密码不能为空")
-    @Size(min = 6, message = "密码长度至少 6 位")
+    @NotBlank(message = "{validation.setup.password.required}")
+    @Size(min = 6, message = "{validation.setup.password.size}")
     private String password;
 
-    @NotBlank(message = "使用模式不能为空")
-    @Pattern(regexp = "solo|multi", message = "无效的使用模式")
+    @NotBlank(message = "{validation.setup.mode.required}")
+    @Pattern(regexp = "solo|multi", message = "{validation.setup.mode.pattern}")
     private String mode;
 }

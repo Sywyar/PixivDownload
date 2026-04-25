@@ -6,9 +6,9 @@ import lombok.Data;
 
 @Data
 public class MoveArtworkRequest {
-    @NotBlank(message = "移动路径不能为空")
+    @NotBlank(message = "{validation.move.path.required}")
     private String movePath;
 
-    @NotNull(message = "移动时间不能为空")
+    @NotNull(message = "{validation.move.time.required}")
     private Long moveTime;
 }

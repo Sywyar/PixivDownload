@@ -2,6 +2,7 @@ package top.sywyar.pixivdownload.setup;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.Cookie;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -9,12 +10,16 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.MessageSource;
+import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import top.sywyar.pixivdownload.GlobalExceptionHandler;
+import top.sywyar.pixivdownload.i18n.TestI18nBeans;
 import top.sywyar.pixivdownload.quota.MultiModeConfig;
 
+import java.util.Locale;
 import java.util.Map;
 
 import static org.hamcrest.Matchers.*;
@@ -38,10 +43,19 @@ class SetupControllerTest {
 
     @BeforeEach
     void setUp() {
+        LocaleContextHolder.setLocale(Locale.SIMPLIFIED_CHINESE);
+        MessageSource messageSource = TestI18nBeans.messageSource();
         SetupController controller = new SetupController(setupService, loginRateLimitService, multiModeConfig);
         mockMvc = MockMvcBuilders.standaloneSetup(controller)
-                .setControllerAdvice(new GlobalExceptionHandler())
+                .setControllerAdvice(new GlobalExceptionHandler(TestI18nBeans.appMessages(messageSource)))
+                .setValidator(TestI18nBeans.validator(messageSource))
+                .defaultRequest(get("/").header("Accept-Language", "zh-CN"))
                 .build();
+    }
+
+    @AfterEach
+    void tearDown() {
+        LocaleContextHolder.resetLocaleContext();
     }
 
     // ========== GET /api/setup/status ==========
