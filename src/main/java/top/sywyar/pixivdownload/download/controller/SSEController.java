@@ -1,21 +1,24 @@
 package top.sywyar.pixivdownload.download.controller;
 
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.web.bind.annotation.*;
+import top.sywyar.pixivdownload.common.UuidUtils;
 import top.sywyar.pixivdownload.download.DownloadProgressEvent;
 import top.sywyar.pixivdownload.download.DownloadStatus;
 import top.sywyar.pixivdownload.download.response.DownloadResponse;
 import top.sywyar.pixivdownload.download.response.SseStatusData;
+import top.sywyar.pixivdownload.setup.SetupService;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
 import java.time.Duration;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledFuture;
 
@@ -26,9 +29,19 @@ import java.util.concurrent.ScheduledFuture;
 public class SSEController {
 
     private final TaskScheduler taskScheduler;
+    private final SetupService setupService;
 
     private final ConcurrentHashMap<Long, SseEmitter> emitters = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<Long, ScheduledFuture<?>> heartbeatTasks = new ConcurrentHashMap<>();
+
+    /** 聚合订阅：key 为该连接的随机 ID，value 持有 emitter 和该连接的归属信息。
+     *  单条连接接收所有作品的 download-status 事件，前端按 artworkId 路由。
+     *  在多人模式下，会按 owner UUID 过滤，避免跨用户事件泄漏。 */
+    private final ConcurrentHashMap<String, AggregatedSubscription> aggregatedEmitters = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, ScheduledFuture<?>> aggregatedHeartbeats = new ConcurrentHashMap<>();
+
+    /** 聚合连接的归属信息：admin 可见所有事件；非 admin 仅可见自己 UUID 的事件。 */
+    private record AggregatedSubscription(SseEmitter emitter, String ownerUuid, boolean admin) {}
 
     /**
      * 为特定作品创建SSE连接，实时推送下载进度
@@ -80,6 +93,72 @@ public class SSEController {
     }
 
     /**
+     * 聚合 SSE 端点：单条连接接收所有进行中作品的下载状态事件，
+     * 前端根据事件载荷里的 artworkId 自行路由分发。
+     * 用于解决浏览器对每作品 1 条 SSE 时的连接数瓶颈。
+     *
+     * 多人模式下按 owner UUID 过滤事件，避免跨用户进度泄漏；
+     * 已登录的 admin（含 solo 模式下的登录用户）可看到所有事件。
+     */
+    @GetMapping(value = "/download", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter createAggregatedSSEConnection(HttpServletRequest request) {
+        // 使用一个长得多的超时（24h），让前端在批量下载期间始终保持单条连接
+        SseEmitter emitter = new SseEmitter(86_400_000L);
+        String connectionId = UUID.randomUUID().toString();
+        boolean admin = setupService.isAdminLoggedIn(request);
+        // 与 AuthFilter.ensureUserUuidCookie 保持一致：当请求尚未携带 pixiv_user_id cookie 时
+        // （首次连接时 AuthFilter 通过 Set-Cookie 设置的值不会出现在当前 request 上），
+        // 用同样的 fingerprint 算法兜底，确保 owner UUID 与 DownloadController 看到的 UUID 一致
+        String ownerUuid = admin ? null : UuidUtils.extractOrGenerateUuid(request);
+        aggregatedEmitters.put(connectionId, new AggregatedSubscription(emitter, ownerUuid, admin));
+
+        emitter.onCompletion(() -> {
+            cancelAggregatedHeartbeat(connectionId);
+            aggregatedEmitters.remove(connectionId);
+            log.debug("聚合 SSE 连接完成: {}", connectionId);
+        });
+        emitter.onTimeout(() -> {
+            cancelAggregatedHeartbeat(connectionId);
+            safeRemoveAggregatedEmitter(connectionId);
+            log.debug("聚合 SSE 连接超时: {}", connectionId);
+        });
+        emitter.onError((e) -> {
+            cancelAggregatedHeartbeat(connectionId);
+            aggregatedEmitters.remove(connectionId);
+            log.debug("聚合 SSE 连接错误: {} - {}", connectionId, e.getMessage());
+        });
+
+        // 立即发送一个握手事件，便于前端确认连接成功
+        try {
+            emitter.send(SseEmitter.event()
+                    .id(String.valueOf(System.currentTimeMillis()))
+                    .name("aggregated-ready")
+                    .data(connectionId));
+        } catch (IOException e) {
+            aggregatedEmitters.remove(connectionId);
+            log.warn("聚合 SSE 初始事件发送失败: {} - {}", connectionId, e.getMessage());
+        }
+
+        ScheduledFuture<?> heartbeat = taskScheduler.scheduleAtFixedRate(() -> {
+            try {
+                AggregatedSubscription sub = aggregatedEmitters.get(connectionId);
+                if (sub != null) {
+                    sub.emitter().send(SseEmitter.event()
+                            .id(String.valueOf(System.currentTimeMillis()))
+                            .name("heartbeat")
+                            .data("ping"));
+                }
+            } catch (IOException e) {
+                cancelAggregatedHeartbeat(connectionId);
+                aggregatedEmitters.remove(connectionId);
+            }
+        }, Duration.ofSeconds(30));
+        aggregatedHeartbeats.put(connectionId, heartbeat);
+
+        return emitter;
+    }
+
+    /**
      * 安全关闭SSE连接
      */
     @PostMapping("/close/{artworkId}")
@@ -94,6 +173,11 @@ public class SSEController {
         if (task != null) task.cancel(false);
     }
 
+    private void cancelAggregatedHeartbeat(String connectionId) {
+        ScheduledFuture<?> task = aggregatedHeartbeats.remove(connectionId);
+        if (task != null) task.cancel(false);
+    }
+
     private void safeRemoveEmitter(Long artworkId) {
         SseEmitter emitter = emitters.remove(artworkId);
         if (emitter != null) {
@@ -101,6 +185,17 @@ public class SSEController {
                 emitter.complete();
             } catch (IllegalStateException ignored) {
                 // emitter 已经完成或关闭，无需再次完成，属于预期情况
+            }
+        }
+    }
+
+    private void safeRemoveAggregatedEmitter(String connectionId) {
+        AggregatedSubscription sub = aggregatedEmitters.remove(connectionId);
+        if (sub != null) {
+            try {
+                sub.emitter().complete();
+            } catch (IllegalStateException ignored) {
+                // 已完成，属于预期情况
             }
         }
     }
@@ -133,41 +228,71 @@ public class SSEController {
     @EventListener
     public void handleDownloadProgressEvent(DownloadProgressEvent event) {
         Long artworkId = event.getArtworkId();
-        SseEmitter emitter = emitters.get(artworkId);
-        if (emitter != null) {
+        DownloadStatus downloadStatus = event.getDownloadStatus();
+
+        SseStatusData.SseStatusDataBuilder builder = SseStatusData.builder()
+                .artworkId(artworkId)
+                .status("进度更新")
+                .message("下载进度已更新")
+                .success(true);
+
+        if (downloadStatus != null) {
+            builder.currentImageIndex(downloadStatus.getCurrentImageIndex())
+                    .totalImages(downloadStatus.getTotalImages())
+                    .downloadedCount(downloadStatus.getDownloadedCount())
+                    .completed(downloadStatus.isCompleted())
+                    .failed(downloadStatus.isFailed())
+                    .cancelled(downloadStatus.isCancelled())
+                    .folderName(downloadStatus.getFolderName());
+
+            if (downloadStatus.getTotalImages() > 0) {
+                int progress = (int) ((double) downloadStatus.getDownloadedCount()
+                        / downloadStatus.getTotalImages() * 100);
+                builder.progress(progress);
+            }
+        }
+
+        SseStatusData payload = builder.build();
+        SseEmitter.SseEventBuilder eventBuilder = SseEmitter.event()
+                .id(String.valueOf(System.currentTimeMillis()))
+                .name("download-status")
+                .data(payload);
+
+        // 1) 发送给订阅了该作品的旧式 per-artwork emitter（向后兼容）
+        SseEmitter perArtworkEmitter = emitters.get(artworkId);
+        if (perArtworkEmitter != null) {
             try {
-                DownloadStatus downloadStatus = event.getDownloadStatus();
-
-                SseStatusData.SseStatusDataBuilder builder = SseStatusData.builder()
-                        .artworkId(artworkId)
-                        .status("进度更新")
-                        .message("下载进度已更新")
-                        .success(true);
-
-                if (downloadStatus != null) {
-                    builder.currentImageIndex(downloadStatus.getCurrentImageIndex())
-                            .totalImages(downloadStatus.getTotalImages())
-                            .downloadedCount(downloadStatus.getDownloadedCount())
-                            .completed(downloadStatus.isCompleted())
-                            .failed(downloadStatus.isFailed())
-                            .cancelled(downloadStatus.isCancelled())
-                            .folderName(downloadStatus.getFolderName());
-
-                    if (downloadStatus.getTotalImages() > 0) {
-                        int progress = (int) ((double) downloadStatus.getDownloadedCount()
-                                / downloadStatus.getTotalImages() * 100);
-                        builder.progress(progress);
-                    }
-                }
-
-                emitter.send(SseEmitter.event()
-                        .id(String.valueOf(System.currentTimeMillis()))
-                        .name("download-status")
-                        .data(builder.build()));
+                perArtworkEmitter.send(eventBuilder);
             } catch (IOException e) {
                 emitters.remove(artworkId);
             }
         }
+
+        // 2) 按 owner UUID 过滤后发送给聚合 emitter
+        //    admin 订阅看到全部；非 admin 仅看到自己 UUID 的事件；事件无 owner 时回退为全员可见
+        if (!aggregatedEmitters.isEmpty()) {
+            String eventOwner = event.getUserUuid();
+            for (var entry : aggregatedEmitters.entrySet()) {
+                String connectionId = entry.getKey();
+                AggregatedSubscription sub = entry.getValue();
+                if (!shouldDeliverToSubscription(sub, eventOwner)) continue;
+                try {
+                    sub.emitter().send(SseEmitter.event()
+                            .id(String.valueOf(System.currentTimeMillis()))
+                            .name("download-status")
+                            .data(payload));
+                } catch (IOException e) {
+                    cancelAggregatedHeartbeat(connectionId);
+                    aggregatedEmitters.remove(connectionId);
+                }
+            }
+        }
+    }
+
+    private boolean shouldDeliverToSubscription(AggregatedSubscription sub, String eventOwnerUuid) {
+        if (sub.admin()) return true;          // admin 看全部
+        if (eventOwnerUuid == null) return true; // 事件无归属信息时回退为全员可见（向后兼容）
+        return eventOwnerUuid.equals(sub.ownerUuid());
     }
 
     /**

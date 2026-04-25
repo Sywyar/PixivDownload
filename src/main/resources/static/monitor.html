@@ -1373,7 +1373,8 @@
 
     let downloadStatsChart = null;
     let activeDownloads = [];
-    let sseConnections = {};
+    let sharedSse = null;        // 共享 EventSource 单例
+    let sseSubscribed = new Set(); // 当前关注的 artworkId 集合（数字）
 
     let updateInterval;
     let activeUpdateTimer = null;
@@ -1538,7 +1539,8 @@
     window.addEventListener('beforeunload', () => {
         clearInterval(updateInterval);
         clearTimeout(activeUpdateTimer);
-        Object.keys(sseConnections).forEach(id => closeSSE(Number(id)));
+        sseSubscribed.clear();
+        closeSharedSSE();
     });
 
     function initDashboard() {
@@ -1909,20 +1911,38 @@
         });
     }
 
-    // ===================== SSE 管理 =====================
-    function openSSE(artworkId) {
-        if (sseConnections[artworkId]) return;
-        const src = new EventSource(`/api/sse/download/${artworkId}`);
+    // ===================== SSE 管理（共享单连接版） =====================
+    function ensureSharedSSE() {
+        if (sharedSse) return;
+        const src = new EventSource(`/api/sse/download`);
         src.addEventListener('download-status', e => {
-            try { handleSseEvent(artworkId, JSON.parse(e.data)); } catch {}
+            try {
+                const data = JSON.parse(e.data);
+                if (!data || data.artworkId === undefined || data.artworkId === null) return;
+                const aid = Number(data.artworkId);
+                if (!sseSubscribed.has(aid)) return; // 仅处理我们关注的作品
+                handleSseEvent(aid, data);
+            } catch {}
         });
-        src.onerror = () => closeSSE(artworkId);
-        sseConnections[artworkId] = src;
+        // EventSource 自动重连
+        sharedSse = src;
+    }
+
+    function closeSharedSSE() {
+        if (sharedSse) {
+            try { sharedSse.close(); } catch {}
+            sharedSse = null;
+        }
+    }
+
+    function openSSE(artworkId) {
+        sseSubscribed.add(Number(artworkId));
+        ensureSharedSSE();
     }
 
     function closeSSE(artworkId) {
-        const src = sseConnections[artworkId];
-        if (src) { src.close(); delete sseConnections[artworkId]; }
+        sseSubscribed.delete(Number(artworkId));
+        if (sseSubscribed.size === 0) closeSharedSSE();
     }
 
     function handleSseEvent(artworkId, data) {
@@ -1981,9 +2001,10 @@
             const prevCount = activeDownloads.length;
             activeDownloads.filter(d => !currentIds.has(d.artworkId)).forEach(d => closeSSE(d.artworkId));
             activeDownloads = activeDownloads.filter(d => currentIds.has(d.artworkId));
-            Object.keys(sseConnections).forEach(id => {
-                if (!currentIds.has(Number(id))) closeSSE(Number(id));
-            });
+            // 清理掉已不在活跃列表里的订阅
+            for (const id of Array.from(sseSubscribed)) {
+                if (!currentIds.has(id)) closeSSE(id);
+            }
 
             // 添加新条目并建立 SSE
             const existingIds = new Set(activeDownloads.map(d => d.artworkId));

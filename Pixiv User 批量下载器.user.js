@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Pixiv User 批量下载器
 // @namespace    http://tampermonkey.net/
-// @version      2.0.7
+// @version      2.0.8
 // @description  适配 Pixiv 用户页面，自动获取所有作品 ID，对接本地 Java 后端。
 // @author       Rewritten by ChatGPT,Claude,Sywyar
 // @match        https://www.pixiv.net/*
@@ -443,95 +443,145 @@
         }
     };
 
-    /* ========== SSE 管理器（基于 GM_xmlhttpRequest + ReadableStream，绕过 CORS / 混合内容限制） ========== */
+    /* ========== SSE 管理器（共享单连接版：所有作品复用同一条聚合 SSE，按 artworkId 路由） ========== */
     class SSEManager {
         constructor() {
-            this.sources = new Map();   // artworkId -> GM_xmlhttpRequest abort handle
-            this.listeners = new Map();
-            this._buffers = new Map();  // artworkId -> 未解析完的 SSE 文本缓冲
-            this._readers = new Map();  // artworkId -> ReadableStream reader
+            this.handle = null;
+            this.reader = null;
+            this.connected = false;
+            this.connecting = false;
+            this.listeners = new Map();        // artworkId -> [fn]
+            this.activeArtworks = new Set();   // 当前需要监听的作品集合
+            this._buffer = '';
+            this._closeTimer = null;
+            this._reconnectTimer = null;
         }
+        // 兼容旧调用点的语义：
+        // open(id) 表示开始关注该作品的进度（必要时建立共享连接）
+        // close(id) 表示不再关注该作品；当所有关注都释放后延迟关闭共享连接
         open(artworkId) {
+            const key = String(artworkId);
+            this.activeArtworks.add(key);
+            this._cancelDeferredClose();
+            this._ensureConnection();
+        }
+        close(artworkId) {
+            const key = String(artworkId);
+            this.activeArtworks.delete(key);
+            this.listeners.delete(key);
+            if (this.activeArtworks.size === 0) this._scheduleDeferredClose();
+        }
+        closeAll() {
+            this.activeArtworks.clear();
+            this.listeners.clear();
+            this._closeNow();
+        }
+        addListener(artworkId, fn) {
+            const key = String(artworkId);
+            if (!this.listeners.has(key)) this.listeners.set(key, []);
+            this.listeners.get(key).push(fn);
+        }
+        _ensureConnection() {
+            if (this.connected || this.connecting) return;
+            this._openConnection();
+        }
+        _openConnection() {
+            this.connecting = true;
+            this._buffer = '';
+            const headers = {};
+            if (userUUID) headers['X-User-UUID'] = userUUID;
             try {
-                this.close(artworkId);
-                const key = String(artworkId);
-                this._buffers.set(key, '');
-                const headers = {};
-                if (userUUID) headers['X-User-UUID'] = userUUID;
-                const handle = GM_xmlhttpRequest({
+                this.handle = GM_xmlhttpRequest({
                     method: 'GET',
-                    url: `${CONFIG.SSE_BASE}/${artworkId}`,
+                    url: CONFIG.SSE_BASE, // 聚合端点：不带 artworkId
                     headers,
                     responseType: 'stream',
                     onloadstart: (res) => {
+                        this.connecting = false;
+                        this.connected = true;
                         const stream = res.response;
                         if (!stream || typeof stream.getReader !== 'function') {
                             console.warn('SSE: ReadableStream 不可用，将依赖轮询兜底');
                             return;
                         }
-                        this._readStream(key, stream);
+                        this._readStream(stream);
                     },
-                    onerror: (err) => { console.error('SSE connection error', err); this._cleanup(key); },
-                    ontimeout: () => this._cleanup(key)
+                    onerror: (err) => { console.error('SSE connection error', err); this._cleanup(); this._scheduleReconnect(); },
+                    ontimeout: () => { this._cleanup(); this._scheduleReconnect(); }
                 });
-                this.sources.set(key, handle);
-            } catch (err) { console.error('SSE open failed', err); }
+            } catch (err) {
+                console.error('SSE open failed', err);
+                this._cleanup();
+                this._scheduleReconnect();
+            }
         }
-        _readStream(key, stream) {
-            const reader = stream.getReader();
-            this._readers.set(key, reader);
+        _readStream(stream) {
+            this.reader = stream.getReader();
             const decoder = new TextDecoder();
             const pump = () => {
-                reader.read().then(({ done, value }) => {
-                    if (done) { this._cleanup(key); return; }
+                this.reader.read().then(({ done, value }) => {
+                    if (done) { this._cleanup(); this._scheduleReconnect(); return; }
                     const chunk = decoder.decode(value, { stream: true });
-                    let buffer = (this._buffers.get(key) || '') + chunk;
-                    const parts = buffer.split('\n\n');
-                    this._buffers.set(key, parts.pop());
+                    this._buffer += chunk;
+                    const parts = this._buffer.split('\n\n');
+                    this._buffer = parts.pop();
                     for (const part of parts) {
                         if (!part.trim()) continue;
-                        this._processEvent(key, part);
+                        this._processEvent(part);
                     }
                     pump();
-                }).catch(() => this._cleanup(key));
+                }).catch(() => { this._cleanup(); this._scheduleReconnect(); });
             };
             pump();
         }
-        _processEvent(key, rawEvent) {
+        _processEvent(rawEvent) {
             let eventName = '';
             const dataLines = [];
             for (const line of rawEvent.split('\n')) {
                 if (line.startsWith('event:')) eventName = line.substring(6).trim();
                 else if (line.startsWith('data:')) dataLines.push(line.substring(5));
             }
-            if (eventName === 'download-status' && dataLines.length > 0) {
-                try {
-                    const parsed = JSON.parse(dataLines.join('\n'));
-                    (this.listeners.get(key) || []).forEach(fn => fn(parsed));
-                } catch (e) { /* 心跳等非 JSON 事件忽略 */ }
-            }
+            if (eventName !== 'download-status' || dataLines.length === 0) return;
+            try {
+                const parsed = JSON.parse(dataLines.join('\n'));
+                const aid = parsed && parsed.artworkId !== undefined && parsed.artworkId !== null
+                    ? String(parsed.artworkId) : null;
+                if (!aid) return;
+                const fns = this.listeners.get(aid);
+                if (fns) fns.forEach(fn => fn(parsed));
+            } catch (e) { /* 握手 / 心跳等非 download-status JSON 忽略 */ }
         }
-        _cleanup(key) {
-            this.sources.delete(key);
-            this._buffers.delete(key);
-            const reader = this._readers.get(key);
-            if (reader) { try { reader.cancel(); } catch (e) {} this._readers.delete(key); }
+        _scheduleReconnect() {
+            if (this.activeArtworks.size === 0) return;
+            if (this._reconnectTimer) return;
+            this._reconnectTimer = setTimeout(() => {
+                this._reconnectTimer = null;
+                if (this.activeArtworks.size > 0 && !this.connected && !this.connecting) {
+                    this._openConnection();
+                }
+            }, 2000);
         }
-        close(artworkId) {
-            const key = String(artworkId);
-            const handle = this.sources.get(key);
-            if (handle) { try { handle.abort(); } catch (e) {} }
-            this._cleanup(key);
-            this.listeners.delete(key);
+        _scheduleDeferredClose() {
+            this._cancelDeferredClose();
+            this._closeTimer = setTimeout(() => {
+                this._closeTimer = null;
+                if (this.activeArtworks.size === 0) this._closeNow();
+            }, 30000);
         }
-        closeAll() {
-            for (const k of Array.from(this.sources.keys())) this.close(k);
-            this.listeners.clear();
+        _cancelDeferredClose() {
+            if (this._closeTimer) { clearTimeout(this._closeTimer); this._closeTimer = null; }
         }
-        addListener(artworkId, fn) {
-            const key = String(artworkId);
-            if (!this.listeners.has(key)) this.listeners.set(key, []);
-            this.listeners.get(key).push(fn);
+        _closeNow() {
+            this._cleanup();
+            this._cancelDeferredClose();
+            if (this._reconnectTimer) { clearTimeout(this._reconnectTimer); this._reconnectTimer = null; }
+        }
+        _cleanup() {
+            this.connected = false;
+            this.connecting = false;
+            if (this.reader) { try { this.reader.cancel(); } catch (e) {} this.reader = null; }
+            if (this.handle) { try { this.handle.abort(); } catch (e) {} this.handle = null; }
+            this._buffer = '';
         }
     }
 

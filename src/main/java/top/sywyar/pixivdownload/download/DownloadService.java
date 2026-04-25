@@ -83,7 +83,7 @@ public class DownloadService {
         downloadStatusMap.put(artworkId, status);
 
         // 发送初始状态更新
-        eventPublisher.publishEvent(new DownloadProgressEvent(this, artworkId, status));
+        eventPublisher.publishEvent(new DownloadProgressEvent(this, artworkId, status, userUuid));
 
         try {
             String folderName = String.valueOf(artworkId);
@@ -112,12 +112,12 @@ public class DownloadService {
                 // === 动图 (ugoira) 处理：委托给 UgoiraService ===
                 fileExtensions.add("webp");
                 status.setCurrentImageIndex(0);
-                eventPublisher.publishEvent(new DownloadProgressEvent(this, artworkId, status));
+                eventPublisher.publishEvent(new DownloadProgressEvent(this, artworkId, status, userUuid));
 
                 successCount.set(ugoiraService.processUgoira(artworkId, other, downloadPath, referer, cookie));
 
                 status.setDownloadedCount(successCount.get());
-                eventPublisher.publishEvent(new DownloadProgressEvent(this, artworkId, status));
+                eventPublisher.publishEvent(new DownloadProgressEvent(this, artworkId, status, userUuid));
 
             } else {
                 // === 普通图片下载 ===
@@ -131,7 +131,7 @@ public class DownloadService {
 
                     status.setCurrentImageIndex(i);
                     status.setDownloadedCount(successCount.get());
-                    eventPublisher.publishEvent(new DownloadProgressEvent(this, artworkId, status));
+                    eventPublisher.publishEvent(new DownloadProgressEvent(this, artworkId, status, userUuid));
 
                     try {
                         String extension = getFileExtension(imageUrl);
@@ -142,7 +142,7 @@ public class DownloadService {
                             successCount.incrementAndGet();
                             status.setDownloadedCount(successCount.get());
                             log.info("作品：{}，下载进度：{}/{}", artworkId, successCount.get(), imageUrls.size());
-                            eventPublisher.publishEvent(new DownloadProgressEvent(this, artworkId, status));
+                            eventPublisher.publishEvent(new DownloadProgressEvent(this, artworkId, status, userUuid));
                         }
                         if (other.getDelayMs() > 0) Thread.sleep(other.getDelayMs());
                     } catch (Exception e) {
@@ -177,7 +177,7 @@ public class DownloadService {
             }
 
             // 发送最终完成状态更新
-            eventPublisher.publishEvent(new DownloadProgressEvent(this, artworkId, status));
+            eventPublisher.publishEvent(new DownloadProgressEvent(this, artworkId, status, userUuid));
 
         } catch (Exception e) {
             log.error("下载出错", e);

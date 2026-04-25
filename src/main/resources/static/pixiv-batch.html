@@ -1225,7 +1225,8 @@
         activeWorkers: 0,
         userId: '',
         username: '',
-        sseMap: {},
+        sharedSse: null,        // 共享 EventSource 单例
+        sseRefs: {},            // artworkId -> 引用计数，最后一个释放时关闭共享连接
         sseListeners: {},
         stats: {success: 0, failed: 0, active: 0, skipped: 0},
         settings: {
@@ -1835,39 +1836,56 @@
     }
 
     /* ============================================================
-       SSE
+       SSE — 共享单连接版：所有作品复用同一条聚合 EventSource，按 artworkId 路由
     ============================================================ */
-    function openSSE(artworkId) {
-        closeSSE(artworkId);
-        const src = new EventSource(`${BASE}/api/sse/download/${artworkId}`);
+    function ensureSharedSSE() {
+        if (state.sharedSse) return;
+        const src = new EventSource(`${BASE}/api/sse/download`);
         src.addEventListener('download-status', e => {
             try {
                 const data = JSON.parse(e.data);
-                (state.sseListeners[artworkId] || []).forEach(fn => fn(data));
-            } catch {
-            }
+                const aid = data && data.artworkId !== undefined && data.artworkId !== null
+                    ? String(data.artworkId) : null;
+                if (!aid) return;
+                (state.sseListeners[aid] || []).forEach(fn => fn(data));
+            } catch {}
         });
-        state.sseMap[artworkId] = src;
+        // EventSource 自动重连，无需手动处理 onerror
+        state.sharedSse = src;
+    }
+
+    function openSSE(artworkId) {
+        const key = String(artworkId);
+        state.sseRefs[key] = (state.sseRefs[key] || 0) + 1;
+        ensureSharedSSE();
     }
 
     function closeSSE(artworkId) {
-        if (state.sseMap[artworkId]) {
-            try {
-                state.sseMap[artworkId].close();
-            } catch {
-            }
-            delete state.sseMap[artworkId];
+        const key = String(artworkId);
+        if (state.sseRefs[key]) {
+            state.sseRefs[key] -= 1;
+            if (state.sseRefs[key] <= 0) delete state.sseRefs[key];
         }
-        delete state.sseListeners[artworkId];
+        delete state.sseListeners[key];
+        if (Object.keys(state.sseRefs).length === 0 && state.sharedSse) {
+            try { state.sharedSse.close(); } catch {}
+            state.sharedSse = null;
+        }
     }
 
     function closeAllSSE() {
-        Object.keys(state.sseMap).forEach(closeSSE);
+        state.sseRefs = {};
+        state.sseListeners = {};
+        if (state.sharedSse) {
+            try { state.sharedSse.close(); } catch {}
+            state.sharedSse = null;
+        }
     }
 
     function addSSEListener(artworkId, fn) {
-        if (!state.sseListeners[artworkId]) state.sseListeners[artworkId] = [];
-        state.sseListeners[artworkId].push(fn);
+        const key = String(artworkId);
+        if (!state.sseListeners[key]) state.sseListeners[key] = [];
+        state.sseListeners[key].push(fn);
     }
 
     function waitForFinalStatusBySSE(artworkId, timeoutMs) {
