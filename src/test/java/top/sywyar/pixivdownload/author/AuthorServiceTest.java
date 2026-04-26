@@ -14,6 +14,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.web.client.RestTemplate;
 import top.sywyar.pixivdownload.download.db.PixivDatabase;
+import top.sywyar.pixivdownload.i18n.AppMessages;
 
 import java.time.Instant;
 
@@ -38,13 +39,15 @@ class AuthorServiceTest {
     private RestTemplate restTemplate;
     @Mock
     private TaskScheduler taskScheduler;
+    @Mock
+    private AppMessages messages;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private AuthorService authorService;
 
     @BeforeEach
     void setUp() {
-        authorService = new AuthorService(authorMapper, pixivDatabase, restTemplate, taskScheduler);
+        authorService = new AuthorService(authorMapper, pixivDatabase, restTemplate, taskScheduler, messages);
         lenient().doAnswer(invocation -> {
             Runnable task = invocation.getArgument(0);
             task.run();

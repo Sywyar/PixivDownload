@@ -1,7 +1,7 @@
 package top.sywyar.pixivdownload.collection;
 
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -10,6 +10,7 @@ import org.springframework.web.multipart.MultipartFile;
 import top.sywyar.pixivdownload.collection.request.CollectionCreateRequest;
 import top.sywyar.pixivdownload.collection.request.CollectionRenameRequest;
 import top.sywyar.pixivdownload.collection.response.CollectionListResponse;
+import top.sywyar.pixivdownload.i18n.LocalizedException;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -20,7 +21,6 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/collections")
 @RequiredArgsConstructor
-@Slf4j
 public class CollectionController {
 
     private final CollectionService collectionService;
@@ -32,14 +32,14 @@ public class CollectionController {
     }
 
     @PostMapping
-    public ResponseEntity<Collection> create(@RequestBody CollectionCreateRequest request) {
+    public ResponseEntity<Collection> create(@Valid @RequestBody CollectionCreateRequest request) {
         Collection created = collectionService.create(request.getName());
         return ResponseEntity.ok(created);
     }
 
     @PutMapping("/{id}")
     public ResponseEntity<Collection> rename(@PathVariable long id,
-                                             @RequestBody CollectionRenameRequest request) {
+                                             @Valid @RequestBody CollectionRenameRequest request) {
         return ResponseEntity.ok(collectionService.rename(id, request.getName()));
     }
 
@@ -60,10 +60,10 @@ public class CollectionController {
     public ResponseEntity<Collection> uploadIcon(@PathVariable long id,
                                                  @RequestParam("file") MultipartFile file) throws IOException {
         if (file == null || file.isEmpty()) {
-            throw new IllegalArgumentException("图标文件为空");
+            throw LocalizedException.badRequest("collection.icon.empty", "图标文件为空");
         }
         if (file.getSize() > CollectionIconService.MAX_ICON_BYTES) {
-            throw new IllegalArgumentException("图标超出大小限制");
+            throw LocalizedException.badRequest("collection.icon.size.exceeded", "图标超出大小限制");
         }
         Collection updated = collectionService.setIcon(id, file.getOriginalFilename(), file.getBytes());
         return ResponseEntity.ok(updated);
@@ -114,16 +114,5 @@ public class CollectionController {
         List<Long> ids = body == null ? List.of() : body.getOrDefault("artworkIds", List.of());
         Map<Long, List<Long>> memberships = collectionService.membershipsOf(ids);
         return ResponseEntity.ok(Map.of("memberships", memberships));
-    }
-
-    @ExceptionHandler(IllegalArgumentException.class)
-    public ResponseEntity<Map<String, String>> handleBadRequest(IllegalArgumentException e) {
-        return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-    }
-
-    @ExceptionHandler(IllegalStateException.class)
-    public ResponseEntity<Map<String, String>> handleServerError(IllegalStateException e) {
-        log.warn("Collection operation failed", e);
-        return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
     }
 }

@@ -20,6 +20,9 @@ import top.sywyar.pixivdownload.download.request.DownloadRequest;
 import top.sywyar.pixivdownload.download.response.ImageResponse;
 import top.sywyar.pixivdownload.download.response.StatisticsResponse;
 import top.sywyar.pixivdownload.imageclassifier.ThumbnailManager;
+import top.sywyar.pixivdownload.i18n.AppMessages;
+import top.sywyar.pixivdownload.i18n.LocalizedException;
+import top.sywyar.pixivdownload.i18n.MessageBundles;
 import top.sywyar.pixivdownload.quota.UserQuotaService;
 
 import javax.imageio.ImageIO;
@@ -50,6 +53,7 @@ public class DownloadService {
     private final PixivBookmarkService pixivBookmarkService;
     private final UgoiraService ugoiraService;
     private final AuthorService authorService;
+    private final AppMessages messages;
 
     // 存储下载状态
     private final ConcurrentHashMap<Long, DownloadStatus> downloadStatusMap = new ConcurrentHashMap<>();
@@ -62,7 +66,8 @@ public class DownloadService {
                            @Qualifier("taskScheduler") TaskScheduler taskScheduler,
                            PixivBookmarkService pixivBookmarkService,
                            UgoiraService ugoiraService,
-                           AuthorService authorService) {
+                           AuthorService authorService,
+                           AppMessages messages) {
         this.downloadConfig = downloadConfig;
         this.eventPublisher = eventPublisher;
         this.pixivDatabase = pixivDatabase;
@@ -72,6 +77,7 @@ public class DownloadService {
         this.pixivBookmarkService = pixivBookmarkService;
         this.ugoiraService = ugoiraService;
         this.authorService = authorService;
+        this.messages = messages;
     }
 
     @Async
@@ -141,12 +147,13 @@ public class DownloadService {
                         if (downloadImage(imageUrl, filePath, referer, cookie)) {
                             successCount.incrementAndGet();
                             status.setDownloadedCount(successCount.get());
-                            log.info("作品：{}，下载进度：{}/{}", artworkId, successCount.get(), imageUrls.size());
+                            log.info(logMessage("download.log.progress",
+                                    id(artworkId), text(successCount.get()), text(imageUrls.size())));
                             eventPublisher.publishEvent(new DownloadProgressEvent(this, artworkId, status, userUuid));
                         }
                         if (other.getDelayMs() > 0) Thread.sleep(other.getDelayMs());
                     } catch (Exception e) {
-                        log.error("下载图片失败: {}, 错误: {}", imageUrl, e.getMessage());
+                        log.error(logMessage("download.log.image.failed", imageUrl, e.getMessage()));
                     }
                 }
             }
@@ -169,7 +176,8 @@ public class DownloadService {
             status.setFailedCount(imageUrls.size() - successCount.get());
             status.setCurrentImageIndex(-1); // 完成后重置索引
 
-            log.info("下载完成: 作品 {}, 成功下载 {}/{} 张图片到 {}", artworkId, successCount.get(), imageUrls.size(), downloadPath);
+            log.info(logMessage("download.log.completed",
+                    id(artworkId), text(successCount.get()), text(imageUrls.size()), downloadPath));
 
             // 下载后收藏（可选，best-effort）
             if (other.isBookmark()) {
@@ -180,10 +188,10 @@ public class DownloadService {
             eventPublisher.publishEvent(new DownloadProgressEvent(this, artworkId, status, userUuid));
 
         } catch (Exception e) {
-            log.error("下载出错", e);
+            log.error(logMessage("download.log.failed"), e);
             status.setCompleted(true);
             status.setFailed(true);
-            status.setErrorMessage(e.getMessage());
+            status.setErrorMessage(resolveStatusErrorMessage(e));
         } finally {
             // 下载完成后，保留状态5分钟供查询，然后清理
             taskScheduler.schedule(
@@ -210,7 +218,7 @@ public class DownloadService {
                         },
                         (ClientHttpResponse response) -> {
                             if (!response.getStatusCode().is2xxSuccessful()) {
-                                log.error("HTTP错误: {} for {}", response.getStatusCode(), imageUrl);
+                                log.error(logMessage("download.log.http-error", response.getStatusCode(), imageUrl));
                                 return false;
                             }
                             try (InputStream inputStream = response.getBody();
@@ -230,7 +238,7 @@ public class DownloadService {
                 retryCount++;
             } catch (Exception e) {
                 retryCount++;
-                log.error("下载失败：{}，错误:{}，重试：{}/{}", imageUrl, e.getMessage(), retryCount, maxRetries);
+                log.error(logMessage("download.log.retry", imageUrl, e.getMessage(), retryCount, maxRetries));
 
                 if (retryCount < maxRetries) {
                     try {
@@ -240,7 +248,7 @@ public class DownloadService {
                         return false;
                     }
                 } else {
-                    log.error("重试次数用尽，放弃下载: {}", imageUrl);
+                    log.error(logMessage("download.log.retry.exhausted", imageUrl));
                     return false;
                 }
             }
@@ -284,7 +292,7 @@ public class DownloadService {
             );
             pixivDatabase.saveArtworkTags(artworkId, tags);
         } catch (Exception e) {
-            log.error("记录下载历史失败: {}", e.getMessage(), e);
+            log.error(logMessage("download.log.record-history.failed", e.getMessage()), e);
         }
     }
 
@@ -296,7 +304,7 @@ public class DownloadService {
             }
             authorService.asyncLookupMissing(artworkId, cookie);
         } catch (Exception e) {
-            log.warn("记录作者信息失败: artworkId={}", artworkId, e);
+            log.warn(logMessage("download.log.record-author.failed", id(artworkId)), e);
         }
     }
 
@@ -312,7 +320,7 @@ public class DownloadService {
                 pixivDatabase.incrementMoved();
             }
         } catch (Exception e) {
-            log.error("移动记录失败: {}", e.getMessage(), e);
+            log.error(logMessage("download.log.move-record.failed", e.getMessage()), e);
         }
     }
 
@@ -376,7 +384,8 @@ public class DownloadService {
         if (isWebp && !thumbnail) {
             byte[] fileBytes = Files.readAllBytes(imageFile.toPath());
             String base64Image = Base64.getEncoder().encodeToString(fileBytes);
-            return new ImageResponse(true, base64Image, "webp", base64Image.length(), 0, 0, "成功获取动图");
+            return new ImageResponse(true, base64Image, "webp", base64Image.length(), 0, 0,
+                    messages.get("download.image.ugoira.fetch-success"));
         }
 
         // WebP 缩略图：使用伴随的 _p0_thumb.jpg 文件
@@ -401,7 +410,8 @@ public class DownloadService {
         ImageIO.write(image, writeFormat, bass);
         String base64Image = Base64.getEncoder().encodeToString(bass.toByteArray());
 
-        return new ImageResponse(true, base64Image, writeFormat, base64Image.length(), image.getWidth(), image.getHeight(), "成功获取图片缩略图");
+        return new ImageResponse(true, base64Image, writeFormat, base64Image.length(), image.getWidth(), image.getHeight(),
+                messages.get("download.image.thumbnail.fetch-success"));
     }
 
     public File getImageFile(Long artworkId, int page) {
@@ -467,10 +477,10 @@ public class DownloadService {
     private void removeStaleArtworkRecord(ArtworkRecord artwork) {
         try {
             pixivDatabase.deleteArtwork(artwork.artworkId());
-            log.info("删除无效下载记录: artworkId={}, path={}",
-                    artwork.artworkId(), resolveArtworkDirectory(artwork));
+            log.info(logMessage("download.log.stale-record.deleted",
+                    id(artwork.artworkId()), resolveArtworkDirectory(artwork)));
         } catch (Exception e) {
-            log.warn("删除无效下载记录失败: artworkId={}", artwork.artworkId(), e);
+            log.warn(logMessage("download.log.stale-record.delete-failed", id(artwork.artworkId())), e);
         }
     }
 
@@ -499,13 +509,13 @@ public class DownloadService {
         try {
             pixivDatabase.incrementStats(count);
         } catch (Exception e) {
-            log.error("记录统计信息失败: {}", e.getMessage(), e);
+            log.error(logMessage("download.log.statistics.failed", e.getMessage()), e);
         }
     }
 
     public StatisticsResponse getStatistics() {
         int[] stats = pixivDatabase.getStats();
-        return new StatisticsResponse(true, stats[0], stats[1], stats[2], "获取成功");
+        return new StatisticsResponse(true, stats[0], stats[1], stats[2], messages.get("download.statistics.success"));
     }
 
     public List<Long> getSortTimeArtwork() {
@@ -536,13 +546,53 @@ public class DownloadService {
             String scheme = uri.getScheme();
             String host   = uri.getHost();
             if (!"https".equalsIgnoreCase(scheme)) {
-                throw new SecurityException("只允许 HTTPS 协议的下载 URL: " + url);
+                throw LocalizedException.badRequest(
+                        "download.url.https-only",
+                        "只允许 HTTPS 协议的下载 URL: {0}",
+                        url
+                );
             }
             if (host == null || !host.endsWith(".pximg.net")) {
-                throw new SecurityException("下载 URL 的域名不在白名单内: " + host);
+                throw LocalizedException.badRequest(
+                        "download.url.host.not-allowed",
+                        "下载 URL 的域名不在白名单内: {0}",
+                        host
+                );
             }
         } catch (URISyntaxException e) {
-            throw new SecurityException("无效的下载 URL: " + url);
+            throw LocalizedException.badRequest(
+                    "download.url.invalid",
+                    "无效的下载 URL: {0}",
+                    url
+            );
         }
+    }
+
+    private String logMessage(String code, Object... args) {
+        return messages.getForLog(code, args);
+    }
+
+    private String id(Long value) {
+        return value == null ? "null" : String.valueOf(value);
+    }
+
+    private String text(int value) {
+        return String.valueOf(value);
+    }
+
+    private String resolveStatusErrorMessage(Exception error) {
+        if (error instanceof LocalizedException localized) {
+            return MessageBundles.getOrDefault(
+                    Locale.getDefault(),
+                    localized.getMessageCode(),
+                    localized.getDefaultMessage(),
+                    localized.getMessageArgs()
+            );
+        }
+        String message = error.getMessage();
+        if (message == null || message.isBlank()) {
+            return MessageBundles.get("error.unexpected");
+        }
+        return message;
     }
 }

@@ -30,6 +30,8 @@ public final class GuiMessages {
     public static String get(String key, Object... args) {
         ResourceBundle bundle = ResourceBundle.getBundle(BASE_NAME, currentLocale());
         String pattern = bundle.containsKey(key) ? bundle.getString(key) : key;
-        return args == null || args.length == 0 ? pattern : MessageFormat.format(pattern, args);
+        return args == null || args.length == 0
+                ? pattern
+                : new MessageFormat(pattern, currentLocale()).format(args);
     }
 }

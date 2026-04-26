@@ -1,220 +1,254 @@
 package top.sywyar.pixivdownload.gui.config;
 
+import top.sywyar.pixivdownload.gui.i18n.GuiMessages;
+
 import java.util.List;
 
 import static top.sywyar.pixivdownload.gui.config.FieldType.*;
 
 /**
- * 所有配置字段的单一事实源（ALL_FIELDS）。
- * UI 根据此列表驱动渲染，无需逐字段硬编码控件。
+ * 所有配置字段的单一事实源。
+ * <p>
+ * {@link #allFields()} 与 {@link #groups()} 在每次调用时按当前 locale 重新构建，
+ * 这样 GUI 切换语言后再次构造 {@code ConfigPanel} 即可拿到本地化后的标签与分组名。
+ * 不可改回 {@code static final List}：那样会在类加载时锁定 locale，热重载失效。
  */
 public final class ConfigFieldRegistry {
 
     private ConfigFieldRegistry() {}
 
-    public static final List<ConfigFieldSpec> ALL_FIELDS = List.of(
+    /**
+     * 多人模式分组名（按当前 locale）。
+     * ConfigPanel 在 solo 模式下据此隐藏整组。
+     */
+    public static String groupMultiMode() {
+        return message("gui.config.group.multi-mode");
+    }
 
-            // ── 服务器 ─────────────────────────────────────────────────────────
-            ConfigFieldSpec.builder("server.port", "监听端口", PORT, "服务器")
-                    .defaultValue("6999")
-                    .help("服务器监听端口，修改后需重启")
-                    .validator(v -> {
-                        try {
-                            int p = Integer.parseInt(v);
-                            return (p >= 1 && p <= 65535) ? null : "端口范围：1–65535";
-                        } catch (NumberFormatException e) {
-                            return "请输入有效的端口号";
-                        }
-                    })
-                    .build(),
+    /** 全部分组名（按当前 locale，保持顺序）。 */
+    public static List<String> groups() {
+        return List.of(
+                message("gui.config.group.server"),
+                message("gui.config.group.download"),
+                message("gui.config.group.proxy"),
+                message("gui.config.group.multi-mode"),
+                message("gui.config.group.security"),
+                message("gui.config.group.https")
+        );
+    }
 
-            // ── 下载 ───────────────────────────────────────────────────────────
-            ConfigFieldSpec.builder("download.root-folder", "下载根目录", PATH_DIR, "下载")
-                    .defaultValue("pixiv-download")
-                    .help("图片保存的根目录（相对或绝对路径）")
-                    .build(),
+    /** 全部配置字段（按当前 locale 重建标签/帮助文本）。 */
+    public static List<ConfigFieldSpec> allFields() {
+        String groupServer = message("gui.config.group.server");
+        String groupDownload = message("gui.config.group.download");
+        String groupProxy = message("gui.config.group.proxy");
+        String groupMultiMode = message("gui.config.group.multi-mode");
+        String groupSecurity = message("gui.config.group.security");
+        String groupHttps = message("gui.config.group.https");
 
-            ConfigFieldSpec.builder("download.user-flat-folder", "User 模式扁平目录", BOOL, "下载")
-                    .defaultValue("false")
-                    .help("false = 按用户名分目录；true = 与 N-Tab 相同的扁平结构")
-                    .build(),
+        return List.of(
 
-            // ── 代理 ───────────────────────────────────────────────────────────
-            ConfigFieldSpec.builder("proxy.enabled", "启用代理", BOOL, "代理")
-                    .defaultValue("true")
-                    .help("是否通过 HTTP 代理下载图片")
-                    .build(),
+                // ── 服务器 ─────────────────────────────────────────────────────────
+                ConfigFieldSpec.builder("server.port", message("gui.config.field.server.port.label"), PORT, groupServer)
+                        .defaultValue("6999")
+                        .help(message("gui.config.field.server.port.help"))
+                        .validator(v -> {
+                            try {
+                                int p = Integer.parseInt(v);
+                                return (p >= 1 && p <= 65535) ? null : message("gui.config.validation.port-range");
+                            } catch (NumberFormatException e) {
+                                return message("gui.config.validation.valid-port");
+                            }
+                        })
+                        .build(),
 
-            ConfigFieldSpec.builder("proxy.host", "代理地址", STRING, "代理")
-                    .defaultValue("127.0.0.1")
-                    .help("代理服务器 IP 或域名")
-                    .enabledWhen(snap -> snap.isTrue("proxy.enabled"))
-                    .build(),
+                // ── 下载 ───────────────────────────────────────────────────────────
+                ConfigFieldSpec.builder("download.root-folder", message("gui.config.field.download.root-folder.label"), PATH_DIR, groupDownload)
+                        .defaultValue("pixiv-download")
+                        .help(message("gui.config.field.download.root-folder.help"))
+                        .build(),
 
-            ConfigFieldSpec.builder("proxy.port", "代理端口", PORT, "代理")
-                    .defaultValue("7890")
-                    .help("代理服务器端口")
-                    .enabledWhen(snap -> snap.isTrue("proxy.enabled"))
-                    .validator(v -> {
-                        try {
-                            int p = Integer.parseInt(v);
-                            return (p >= 1 && p <= 65535) ? null : "端口范围：1–65535";
-                        } catch (NumberFormatException e) {
-                            return "请输入有效的端口号";
-                        }
-                    })
-                    .build(),
+                ConfigFieldSpec.builder("download.user-flat-folder", message("gui.config.field.download.user-flat-folder.label"), BOOL, groupDownload)
+                        .defaultValue("false")
+                        .help(message("gui.config.field.download.user-flat-folder.help"))
+                        .build(),
 
-            // ── 多人模式 ────────────────────────────────────────────────────────
-            ConfigFieldSpec.builder("multi-mode.quota.enabled", "启用下载配额", BOOL, "多人模式")
-                    .defaultValue("true")
-                    .help("为每位用户设置下载数量限制")
-                    .build(),
+                // ── 代理 ───────────────────────────────────────────────────────────
+                ConfigFieldSpec.builder("proxy.enabled", message("gui.config.field.proxy.enabled.label"), BOOL, groupProxy)
+                        .defaultValue("true")
+                        .help(message("gui.config.field.proxy.enabled.help"))
+                        .build(),
 
-            ConfigFieldSpec.builder("multi-mode.quota.max-artworks", "每周期最多下载作品数", INT, "多人模式")
-                    .defaultValue("50")
-                    .help("每个用户在一个重置周期内最多可下载的作品数量")
-                    .enabledWhen(snap -> snap.isTrue("multi-mode.quota.enabled"))
-                    .build(),
+                ConfigFieldSpec.builder("proxy.host", message("gui.config.field.proxy.host.label"), STRING, groupProxy)
+                        .defaultValue("127.0.0.1")
+                        .help(message("gui.config.field.proxy.host.help"))
+                        .enabledWhen(snap -> snap.isTrue("proxy.enabled"))
+                        .build(),
 
-            ConfigFieldSpec.builder("multi-mode.quota.reset-period-hours", "配额重置周期（小时）", INT, "多人模式")
-                    .defaultValue("24")
-                    .help("经过多少小时后，用户配额自动重置")
-                    .enabledWhen(snap -> snap.isTrue("multi-mode.quota.enabled"))
-                    .build(),
+                ConfigFieldSpec.builder("proxy.port", message("gui.config.field.proxy.port.label"), PORT, groupProxy)
+                        .defaultValue("7890")
+                        .help(message("gui.config.field.proxy.port.help"))
+                        .enabledWhen(snap -> snap.isTrue("proxy.enabled"))
+                        .validator(v -> {
+                            try {
+                                int p = Integer.parseInt(v);
+                                return (p >= 1 && p <= 65535) ? null : message("gui.config.validation.port-range");
+                            } catch (NumberFormatException e) {
+                                return message("gui.config.validation.valid-port");
+                            }
+                        })
+                        .build(),
 
-            ConfigFieldSpec.builder("multi-mode.quota.archive-expire-minutes", "压缩包有效期（分钟）", INT, "多人模式")
-                    .defaultValue("60")
-                    .help("达到配额后生成的压缩包下载链接的有效时间")
-                    .enabledWhen(snap -> snap.isTrue("multi-mode.quota.enabled"))
-                    .build(),
+                // ── 多人模式 ────────────────────────────────────────────────────────
+                ConfigFieldSpec.builder("multi-mode.quota.enabled", message("gui.config.field.multi-mode.quota.enabled.label"), BOOL, groupMultiMode)
+                        .defaultValue("true")
+                        .help(message("gui.config.field.multi-mode.quota.enabled.help"))
+                        .build(),
 
-            ConfigFieldSpec.builder("multi-mode.quota.limit-image", "单作品图片数上限", INT, "多人模式")
-                    .defaultValue("0")
-                    .help("0 = 不限制；设置后超出的作品按比例计算配额消耗")
-                    .enabledWhen(snap -> snap.isTrue("multi-mode.quota.enabled"))
-                    .build(),
+                ConfigFieldSpec.builder("multi-mode.quota.max-artworks", message("gui.config.field.multi-mode.quota.max-artworks.label"), INT, groupMultiMode)
+                        .defaultValue("50")
+                        .help(message("gui.config.field.multi-mode.quota.max-artworks.help"))
+                        .enabledWhen(snap -> snap.isTrue("multi-mode.quota.enabled"))
+                        .build(),
 
-            ConfigFieldSpec.builder("multi-mode.quota.max-proxy-requests", "搜索/代理请求次数上限", INT, "多人模式")
-                    .defaultValue("200")
-                    .help("每用户每重置周期内最多发起的搜索及代理请求次数（0 = 不限制，独立于下载配额）")
-                    .validator(v -> {
-                        try {
-                            int n = Integer.parseInt(v);
-                            return n >= 0 ? null : "请输入大于等于 0 的整数";
-                        } catch (NumberFormatException e) {
-                            return "请输入有效的整数";
-                        }
-                    })
-                    .build(),
+                ConfigFieldSpec.builder("multi-mode.quota.reset-period-hours", message("gui.config.field.multi-mode.quota.reset-period-hours.label"), INT, groupMultiMode)
+                        .defaultValue("24")
+                        .help(message("gui.config.field.multi-mode.quota.reset-period-hours.help"))
+                        .enabledWhen(snap -> snap.isTrue("multi-mode.quota.enabled"))
+                        .build(),
 
-            ConfigFieldSpec.builder("multi-mode.post-download-mode", "下载后处理模式", ENUM, "多人模式")
-                    .defaultValue("pack-and-delete")
-                    .enumValues("pack-and-delete", "never-delete", "timed-delete")
-                    .help("pack-and-delete：打包后删除源文件；never-delete：保留；timed-delete：超时后删除")
-                    .build(),
+                ConfigFieldSpec.builder("multi-mode.quota.archive-expire-minutes", message("gui.config.field.multi-mode.quota.archive-expire-minutes.label"), INT, groupMultiMode)
+                        .defaultValue("60")
+                        .help(message("gui.config.field.multi-mode.quota.archive-expire-minutes.help"))
+                        .enabledWhen(snap -> snap.isTrue("multi-mode.quota.enabled"))
+                        .build(),
 
-            ConfigFieldSpec.builder("multi-mode.delete-after-hours", "定时删除（小时）", INT, "多人模式")
-                    .defaultValue("72")
-                    .help("timed-delete 模式：下载后多少小时自动删除文件")
-                    .enabledWhen(snap -> snap.equals("multi-mode.post-download-mode", "timed-delete"))
-                    .build(),
+                ConfigFieldSpec.builder("multi-mode.quota.limit-image", message("gui.config.field.multi-mode.quota.limit-image.label"), INT, groupMultiMode)
+                        .defaultValue("0")
+                        .help(message("gui.config.field.multi-mode.quota.limit-image.help"))
+                        .enabledWhen(snap -> snap.isTrue("multi-mode.quota.enabled"))
+                        .build(),
 
-            ConfigFieldSpec.builder("multi-mode.request-limit-minute", "每分钟最大请求数", INT, "多人模式")
-                    .defaultValue("300")
-                    .help("每个用户每分钟最多允许的 API 请求次数（0 = 不限制）")
-                    .build(),
+                ConfigFieldSpec.builder("multi-mode.quota.max-proxy-requests", message("gui.config.field.multi-mode.quota.max-proxy-requests.label"), INT, groupMultiMode)
+                        .defaultValue("200")
+                        .help(message("gui.config.field.multi-mode.quota.max-proxy-requests.help"))
+                        .validator(v -> {
+                            try {
+                                int n = Integer.parseInt(v);
+                                return n >= 0 ? null : message("gui.config.validation.non-negative-int");
+                            } catch (NumberFormatException e) {
+                                return message("gui.config.validation.valid-int");
+                            }
+                        })
+                        .build(),
 
-            ConfigFieldSpec.builder("multi-mode.limit-page", "搜索模式自动补页上限", INT, "多人模式")
-                    .defaultValue("3")
-                    .help("限制搜索模式“向后补充 N 页”的最大 N 值；0 = 不限制，仅多人模式生效")
-                    .validator(v -> {
-                        try {
-                            int n = Integer.parseInt(v);
-                            return n >= 0 ? null : "请输入大于等于 0 的整数";
-                        } catch (NumberFormatException e) {
-                            return "请输入有效的整数";
-                        }
-                    })
-                    .build(),
+                ConfigFieldSpec.builder("multi-mode.post-download-mode", message("gui.config.field.multi-mode.post-download-mode.label"), ENUM, groupMultiMode)
+                        .defaultValue("pack-and-delete")
+                        .enumValues("pack-and-delete", "never-delete", "timed-delete")
+                        .help(message("gui.config.field.multi-mode.post-download-mode.help"))
+                        .build(),
 
-            // ── 安全 ───────────────────────────────────────────────────────────
-            ConfigFieldSpec.builder("setup.login-rate-limit-minute", "登录频率限制（次/分钟）", INT, "安全")
-                    .defaultValue("10")
-                    .help("每个 IP 每分钟最多允许的登录尝试次数（0 = 不限制）")
-                    .build(),
+                ConfigFieldSpec.builder("multi-mode.delete-after-hours", message("gui.config.field.multi-mode.delete-after-hours.label"), INT, groupMultiMode)
+                        .defaultValue("72")
+                        .help(message("gui.config.field.multi-mode.delete-after-hours.help"))
+                        .enabledWhen(snap -> snap.equals("multi-mode.post-download-mode", "timed-delete"))
+                        .build(),
 
-            // ── HTTPS ──────────────────────────────────────────────────────────
-            ConfigFieldSpec.builder("ssl.domain", "服务域名", STRING, "HTTPS")
-                    .defaultValue("localhost")
-                    .help("服务对外暴露的域名（本机访问填 localhost；通过域名/公网 IP 访问时必须修改为实际域名）")
-                    .build(),
+                ConfigFieldSpec.builder("multi-mode.request-limit-minute", message("gui.config.field.multi-mode.request-limit-minute.label"), INT, groupMultiMode)
+                        .defaultValue("300")
+                        .help(message("gui.config.field.multi-mode.request-limit-minute.help"))
+                        .build(),
 
-            ConfigFieldSpec.builder("server.ssl.enabled", "启用 HTTPS", BOOL, "HTTPS")
-                    .defaultValue("false")
-                    .help("启用 HTTPS，需同时选择证书类型并填写对应路径")
-                    .build(),
+                ConfigFieldSpec.builder("multi-mode.limit-page", message("gui.config.field.multi-mode.limit-page.label"), INT, groupMultiMode)
+                        .defaultValue("3")
+                        .help(message("gui.config.field.multi-mode.limit-page.help"))
+                        .validator(v -> {
+                            try {
+                                int n = Integer.parseInt(v);
+                                return n >= 0 ? null : message("gui.config.validation.non-negative-int");
+                            } catch (NumberFormatException e) {
+                                return message("gui.config.validation.valid-int");
+                            }
+                        })
+                        .build(),
 
-            ConfigFieldSpec.builder("ssl.type", "证书类型", ENUM, "HTTPS")
-                    .defaultValue("pem")
-                    .enumValues("pem", "jks")
-                    .help("pem：PEM 证书（推荐，.pem + .key）；jks：JKS/PKCS12 证书库（.jks / .p12）")
-                    .enabledWhen(snap -> snap.isTrue("server.ssl.enabled"))
-                    .build(),
+                // ── 安全 ───────────────────────────────────────────────────────────
+                ConfigFieldSpec.builder("setup.login-rate-limit-minute", message("gui.config.field.setup.login-rate-limit-minute.label"), INT, groupSecurity)
+                        .defaultValue("10")
+                        .help(message("gui.config.field.setup.login-rate-limit-minute.help"))
+                        .build(),
 
-            // PEM 字段：仅当 ssl.type=pem 时显示
-            ConfigFieldSpec.builder("server.ssl.certificate", "PEM 证书路径", PATH_FILE, "HTTPS")
-                    .defaultValue("")
-                    .help("PEM 格式证书文件（.pem）")
-                    .visibleWhen(snap -> snap.equals("ssl.type", "pem"))
-                    .enabledWhen(snap -> snap.isTrue("server.ssl.enabled") && snap.equals("ssl.type", "pem"))
-                    .build(),
+                // ── HTTPS ──────────────────────────────────────────────────────────
+                ConfigFieldSpec.builder("ssl.domain", message("gui.config.field.ssl.domain.label"), STRING, groupHttps)
+                        .defaultValue("localhost")
+                        .help(message("gui.config.field.ssl.domain.help"))
+                        .build(),
 
-            ConfigFieldSpec.builder("server.ssl.certificate-private-key", "PEM 私钥路径", PATH_FILE, "HTTPS")
-                    .defaultValue("")
-                    .help("PEM 格式私钥文件（.key 或 .pem）")
-                    .visibleWhen(snap -> snap.equals("ssl.type", "pem"))
-                    .enabledWhen(snap -> snap.isTrue("server.ssl.enabled") && snap.equals("ssl.type", "pem"))
-                    .build(),
+                ConfigFieldSpec.builder("server.ssl.enabled", message("gui.config.field.server.ssl.enabled.label"), BOOL, groupHttps)
+                        .defaultValue("false")
+                        .help(message("gui.config.field.server.ssl.enabled.help"))
+                        .build(),
 
-            // JKS 字段：仅当 ssl.type=jks 时显示
-            ConfigFieldSpec.builder("server.ssl.key-store-type", "JKS 证书类型", ENUM, "HTTPS")
-                    .defaultValue("JKS")
-                    .enumValues("JKS", "PKCS12")
-                    .help("JKS 证书库格式")
-                    .visibleWhen(snap -> snap.equals("ssl.type", "jks"))
-                    .enabledWhen(snap -> snap.isTrue("server.ssl.enabled") && snap.equals("ssl.type", "jks"))
-                    .build(),
+                ConfigFieldSpec.builder("ssl.type", message("gui.config.field.ssl.type.label"), ENUM, groupHttps)
+                        .defaultValue("pem")
+                        .enumValues("pem", "jks")
+                        .help(message("gui.config.field.ssl.type.help"))
+                        .enabledWhen(snap -> snap.isTrue("server.ssl.enabled"))
+                        .build(),
 
-            ConfigFieldSpec.builder("server.ssl.key-store", "JKS 证书库路径", PATH_FILE, "HTTPS")
-                    .defaultValue("")
-                    .help("JKS/PKCS12 证书库文件（.jks 或 .p12）")
-                    .visibleWhen(snap -> snap.equals("ssl.type", "jks"))
-                    .enabledWhen(snap -> snap.isTrue("server.ssl.enabled") && snap.equals("ssl.type", "jks"))
-                    .build(),
+                // PEM 字段：仅当 ssl.type=pem 时显示
+                ConfigFieldSpec.builder("server.ssl.certificate", message("gui.config.field.server.ssl.certificate.label"), PATH_FILE, groupHttps)
+                        .defaultValue("")
+                        .help(message("gui.config.field.server.ssl.certificate.help"))
+                        .visibleWhen(snap -> snap.equals("ssl.type", "pem"))
+                        .enabledWhen(snap -> snap.isTrue("server.ssl.enabled") && snap.equals("ssl.type", "pem"))
+                        .build(),
 
-            ConfigFieldSpec.builder("server.ssl.key-store-password", "JKS 证书库密码", PASSWORD, "HTTPS")
-                    .defaultValue("")
-                    .help("JKS 证书库的访问密码")
-                    .visibleWhen(snap -> snap.equals("ssl.type", "jks"))
-                    .enabledWhen(snap -> snap.isTrue("server.ssl.enabled") && snap.equals("ssl.type", "jks"))
-                    .build(),
+                ConfigFieldSpec.builder("server.ssl.certificate-private-key", message("gui.config.field.server.ssl.certificate-private-key.label"), PATH_FILE, groupHttps)
+                        .defaultValue("")
+                        .help(message("gui.config.field.server.ssl.certificate-private-key.help"))
+                        .visibleWhen(snap -> snap.equals("ssl.type", "pem"))
+                        .enabledWhen(snap -> snap.isTrue("server.ssl.enabled") && snap.equals("ssl.type", "pem"))
+                        .build(),
 
-            ConfigFieldSpec.builder("ssl.http-redirect", "HTTP 自动重定向到 HTTPS", BOOL, "HTTPS")
-                    .defaultValue("false")
-                    .help("在 http-redirect-port 监听 HTTP 并 301 重定向到 HTTPS（需先启用 HTTPS）")
-                    .enabledWhen(snap -> snap.isTrue("server.ssl.enabled"))
-                    .build(),
+                // JKS 字段：仅当 ssl.type=jks 时显示
+                ConfigFieldSpec.builder("server.ssl.key-store-type", message("gui.config.field.server.ssl.key-store-type.label"), ENUM, groupHttps)
+                        .defaultValue("JKS")
+                        .enumValues("JKS", "PKCS12")
+                        .help(message("gui.config.field.server.ssl.key-store-type.help"))
+                        .visibleWhen(snap -> snap.equals("ssl.type", "jks"))
+                        .enabledWhen(snap -> snap.isTrue("server.ssl.enabled") && snap.equals("ssl.type", "jks"))
+                        .build(),
 
-            ConfigFieldSpec.builder("ssl.http-redirect-port", "HTTP 重定向监听端口", PORT, "HTTPS")
-                    .defaultValue("80")
-                    .help("HTTP 重定向使用的端口（默认 80）")
-                    .enabledWhen(snap -> snap.isTrue("server.ssl.enabled") && snap.isTrue("ssl.http-redirect"))
-                    .build()
-    );
+                ConfigFieldSpec.builder("server.ssl.key-store", message("gui.config.field.server.ssl.key-store.label"), PATH_FILE, groupHttps)
+                        .defaultValue("")
+                        .help(message("gui.config.field.server.ssl.key-store.help"))
+                        .visibleWhen(snap -> snap.equals("ssl.type", "jks"))
+                        .enabledWhen(snap -> snap.isTrue("server.ssl.enabled") && snap.equals("ssl.type", "jks"))
+                        .build(),
 
-    /** 所有分组名称（保持顺序） */
-    public static final List<String> GROUPS = List.of(
-            "服务器", "下载", "代理", "多人模式", "安全", "HTTPS"
-    );
+                ConfigFieldSpec.builder("server.ssl.key-store-password", message("gui.config.field.server.ssl.key-store-password.label"), PASSWORD, groupHttps)
+                        .defaultValue("")
+                        .help(message("gui.config.field.server.ssl.key-store-password.help"))
+                        .visibleWhen(snap -> snap.equals("ssl.type", "jks"))
+                        .enabledWhen(snap -> snap.isTrue("server.ssl.enabled") && snap.equals("ssl.type", "jks"))
+                        .build(),
+
+                ConfigFieldSpec.builder("ssl.http-redirect", message("gui.config.field.ssl.http-redirect.label"), BOOL, groupHttps)
+                        .defaultValue("false")
+                        .help(message("gui.config.field.ssl.http-redirect.help"))
+                        .enabledWhen(snap -> snap.isTrue("server.ssl.enabled"))
+                        .build(),
+
+                ConfigFieldSpec.builder("ssl.http-redirect-port", message("gui.config.field.ssl.http-redirect-port.label"), PORT, groupHttps)
+                        .defaultValue("80")
+                        .help(message("gui.config.field.ssl.http-redirect-port.help"))
+                        .enabledWhen(snap -> snap.isTrue("server.ssl.enabled") && snap.isTrue("ssl.http-redirect"))
+                        .build()
+        );
+    }
+
+    private static String message(String code, Object... args) {
+        return GuiMessages.get(code, args);
+    }
 }

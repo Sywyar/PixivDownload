@@ -1,8 +1,11 @@
 package top.sywyar.pixivdownload.collection;
 
 import jakarta.annotation.PostConstruct;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import top.sywyar.pixivdownload.i18n.AppMessages;
+import top.sywyar.pixivdownload.i18n.LocalizedException;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -18,12 +21,15 @@ import java.util.Set;
  */
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class CollectionIconService {
 
     public static final Set<String> ALLOWED_EXTENSIONS = Set.of("png", "jpg", "jpeg", "webp");
     public static final long MAX_ICON_BYTES = 1024L * 1024L;
 
     private static final Path ICON_DIR = Paths.get("collection_icons");
+
+    private final AppMessages messages;
 
     @PostConstruct
     public void init() throws IOException {
@@ -43,15 +49,22 @@ public class CollectionIconService {
     public String saveIcon(long collectionId, String originalFilename, byte[] data) throws IOException {
         String ext = detectExtension(originalFilename, data);
         if (ext == null) {
-            throw new IllegalArgumentException("不支持的图标格式，仅接受 png/jpg/jpeg/webp");
+            throw LocalizedException.badRequest(
+                    "collection.icon.format.unsupported",
+                    "不支持的图标格式，仅接受 png/jpg/jpeg/webp"
+            );
         }
         if (data.length > MAX_ICON_BYTES) {
-            throw new IllegalArgumentException("图标超出大小限制（" + MAX_ICON_BYTES / 1024 + " KB）");
+            throw LocalizedException.badRequest(
+                    "collection.icon.size.exceeded.detail",
+                    "图标超出大小限制（最多 {0} KB）",
+                    MAX_ICON_BYTES / 1024
+            );
         }
         deleteAll(collectionId);
         Path target = resolveIconPath(collectionId, ext);
         Files.write(target, data);
-        log.info("保存收藏夹图标: id={}, ext={}, size={}", collectionId, ext, data.length);
+        log.info(message("collection.log.icon.saved", collectionId, ext, data.length));
         return ext;
     }
 
@@ -61,7 +74,7 @@ public class CollectionIconService {
             try {
                 Files.deleteIfExists(p);
             } catch (IOException e) {
-                log.warn("删除旧图标失败: {}", p, e);
+                log.warn(message("collection.log.icon.delete-failed", p), e);
             }
         }
     }
@@ -114,5 +127,9 @@ public class CollectionIconService {
         Path tmp = Files.createTempFile(ICON_DIR, "icon", ".tmp");
         Files.write(tmp, data);
         Files.move(tmp, resolveIconPath(collectionId, ext), StandardCopyOption.REPLACE_EXISTING);
+    }
+
+    private String message(String code, Object... args) {
+        return messages.getForLog(code, args);
     }
 }

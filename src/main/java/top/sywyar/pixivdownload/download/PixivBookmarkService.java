@@ -7,6 +7,7 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
+import top.sywyar.pixivdownload.i18n.AppMessages;
 
 import java.util.List;
 import java.util.regex.Matcher;
@@ -29,12 +30,15 @@ public class PixivBookmarkService {
 
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper;
+    private final AppMessages messages;
 
     public PixivBookmarkService(
             @Qualifier("restTemplate") RestTemplate restTemplate,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            AppMessages messages) {
         this.restTemplate = restTemplate;
         this.objectMapper = objectMapper;
+        this.messages = messages;
     }
 
     /**
@@ -45,15 +49,15 @@ public class PixivBookmarkService {
      */
     public void bookmarkArtwork(Long artworkId, String cookie) {
         if (cookie == null || cookie.isBlank()) {
-            log.warn("收藏跳过：作品 {}，未提供 Cookie", artworkId);
+            log.warn(message("bookmark.log.skip.missing-cookie", id(artworkId)));
             return;
         }
         try {
             String csrfToken = fetchCsrfToken(cookie);
             postBookmark(artworkId, cookie, csrfToken);
-            log.info("收藏成功：作品 {}", artworkId);
+            log.info(message("bookmark.log.success", id(artworkId)));
         } catch (Exception e) {
-            log.warn("收藏失败（不影响下载结果）：作品 {}，原因：{}", artworkId, e.getMessage());
+            log.warn(message("bookmark.log.failed", id(artworkId), e.getMessage()));
         }
     }
 
@@ -63,7 +67,7 @@ public class PixivBookmarkService {
                 restTemplate.exchange(PIXIV_HOME, HttpMethod.GET, new HttpEntity<>(headers), String.class);
         String body = response.getBody();
         if (body == null) {
-            throw new IllegalStateException("Pixiv 主页响应为空，无法提取 CSRF token");
+            throw new IllegalStateException(message("bookmark.log.reason.home-response-empty"));
         }
 
         // 1. 新版 Pixiv Next.js：引号转义格式  token\":\"abc...\"
@@ -88,17 +92,17 @@ public class PixivBookmarkService {
 
         // 诊断 A：Cloudflare 拦截
         if (body.contains("cf-browser-verification") || body.contains("cf-turnstile") || body.contains("cloudflare")) {
-            throw new IllegalStateException("被 Cloudflare 人机验证拦截，请检查代理 IP 或更新伪装 Header");
+            throw new IllegalStateException(message("bookmark.log.reason.cloudflare-blocked"));
         }
 
         // 诊断 B：未登录（新版 Pixiv Next.js 通过 isLoggedIn 字段判断）
         if (body.contains("\"isLoggedIn\":false") || body.contains("login:'no'")) {
-            throw new IllegalStateException("Cookie 已过期或格式错误，请重新从浏览器获取");
+            throw new IllegalStateException(message("bookmark.log.reason.cookie-invalid"));
         }
 
         // 诊断 C：页面结构未知变化
-        log.warn("无法匹配 CSRF token，HTML 截取前 500 字符: \n{}", body.substring(0, Math.min(body.length(), 500)));
-        throw new IllegalStateException("无法从 Pixiv 主页中提取 CSRF token（页面 DOM 结构可能已改变）");
+        log.warn(message("bookmark.log.csrf.unmatched-preview", body.substring(0, Math.min(body.length(), 500))));
+        throw new IllegalStateException(message("bookmark.log.reason.csrf-extract-failed"));
     }
 
     private record BookmarkRequest(String illust_id, int restrict, String comment, List<String> tags) {}
@@ -115,11 +119,11 @@ public class PixivBookmarkService {
                 BOOKMARK_URL, HttpMethod.POST, new HttpEntity<>(bodyJson, headers), String.class);
 
         if (!response.getStatusCode().is2xxSuccessful()) {
-            throw new IllegalStateException("收藏 API 返回非 2xx: " + response.getStatusCode());
+            throw new IllegalStateException(message("bookmark.log.reason.api.non-2xx", response.getStatusCode()));
         }
         JsonNode root = objectMapper.readTree(response.getBody());
         if (root.path("error").asBoolean(false)) {
-            throw new IllegalStateException("收藏 API 返回错误: " + root.path("message").asText());
+            throw new IllegalStateException(message("bookmark.log.reason.api.error", root.path("message").asText()));
         }
     }
 
@@ -140,5 +144,13 @@ public class PixivBookmarkService {
         headers.set("Sec-Fetch-Site", "none");
 
         return headers;
+    }
+
+    private String message(String code, Object... args) {
+        return messages.getForLog(code, args);
+    }
+
+    private String id(Long value) {
+        return value == null ? "null" : String.valueOf(value);
     }
 }

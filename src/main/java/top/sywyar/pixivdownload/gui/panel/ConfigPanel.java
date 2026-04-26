@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import top.sywyar.pixivdownload.config.RuntimeFiles;
 import top.sywyar.pixivdownload.gui.config.*;
+import top.sywyar.pixivdownload.gui.i18n.GuiMessages;
+import top.sywyar.pixivdownload.i18n.MessageBundles;
 
 import javax.swing.*;
 import javax.swing.event.DocumentEvent;
@@ -26,11 +28,15 @@ public class ConfigPanel extends JPanel {
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final String DEFAULT_ROOT_FOLDER = RuntimeFiles.DEFAULT_DOWNLOAD_ROOT;
     private static final String SOLO_MODE = "solo";
-    private static final String MULTI_MODE_GROUP = "多人模式";
 
     private final Path configPath;
     private final ConfigFileEditor editor;
     private final String currentMode;
+
+    /** 字段元数据快照（按当前 locale），构造时从 ConfigFieldRegistry 拉取一次。 */
+    private final List<ConfigFieldSpec> allFields;
+    private final List<String> groups;
+    private final String multiModeGroup;
 
     /** key → 渲染后的字段（含取值/赋值方法） */
     private final Map<String, FieldRenderer.RenderedField> renderedFields = new LinkedHashMap<>();
@@ -42,6 +48,9 @@ public class ConfigPanel extends JPanel {
         this.configPath = configPath;
         this.editor = new ConfigFileEditor(configPath);
         this.currentMode = resolveCurrentMode();
+        this.allFields = ConfigFieldRegistry.allFields();
+        this.groups = ConfigFieldRegistry.groups();
+        this.multiModeGroup = ConfigFieldRegistry.groupMultiMode();
         buildUi();
         loadCurrentValues();
         checkFieldDrift();
@@ -54,7 +63,7 @@ public class ConfigPanel extends JPanel {
 
         // 子标签页（按 group）
         JTabbedPane tabs = new JTabbedPane(JTabbedPane.TOP);
-        for (String group : ConfigFieldRegistry.GROUPS) {
+        for (String group : groups) {
             if (shouldHideGroup(group)) {
                 continue;
             }
@@ -71,7 +80,7 @@ public class ConfigPanel extends JPanel {
         content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
         content.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
 
-        List<ConfigFieldSpec> fields = ConfigFieldRegistry.ALL_FIELDS.stream()
+        List<ConfigFieldSpec> fields = allFields.stream()
                 .filter(f -> group.equals(f.group()))
                 .toList();
 
@@ -93,7 +102,7 @@ public class ConfigPanel extends JPanel {
     }
 
     private boolean shouldHideGroup(String group) {
-        return SOLO_MODE.equalsIgnoreCase(currentMode) && MULTI_MODE_GROUP.equals(group);
+        return SOLO_MODE.equalsIgnoreCase(currentMode) && multiModeGroup.equals(group);
     }
 
     private String resolveCurrentMode() {
@@ -104,7 +113,7 @@ public class ConfigPanel extends JPanel {
                 rootFolder = configuredRoot.trim();
             }
         } catch (IOException e) {
-            log.debug("读取下载目录失败，使用默认目录推断运行模式: {}", e.getMessage());
+            log.debug(logMessage("gui.config.log.download-root.read-failed", e.getMessage()));
         }
 
         Path setupConfigPath = RuntimeFiles.resolveSetupConfigPath(rootFolder);
@@ -115,7 +124,7 @@ public class ConfigPanel extends JPanel {
         try {
             return MAPPER.readTree(setupConfigPath.toFile()).path("mode").asText(null);
         } catch (IOException e) {
-            log.warn("读取运行模式失败: {}", e.getMessage());
+            log.warn(logMessage("gui.config.log.mode.read-failed", e.getMessage()));
             return null;
         }
     }
@@ -129,13 +138,13 @@ public class ConfigPanel extends JPanel {
         noticeBar.setVisible(false);
 
         // 按钮行
-        JButton save = new JButton("保存");
+        JButton save = new JButton(message("gui.button.save"));
         save.addActionListener(e -> saveConfig());
 
-        JButton reset = new JButton("重置为默认值");
+        JButton reset = new JButton(message("gui.button.reset-defaults"));
         reset.addActionListener(e -> resetToDefaults());
 
-        JButton openFile = new JButton("打开 config.yaml");
+        JButton openFile = new JButton(message("gui.button.open-config"));
         openFile.addActionListener(e -> openConfigFile());
 
         JPanel btnRow = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 4));
@@ -161,7 +170,7 @@ public class ConfigPanel extends JPanel {
             Map<String, String> values = editor.readAll(renderedFields.keySet());
             Map<String, String> missing = new LinkedHashMap<>();
 
-            for (ConfigFieldSpec spec : ConfigFieldRegistry.ALL_FIELDS) {
+            for (ConfigFieldSpec spec : allFields) {
                 FieldRenderer.RenderedField rf = renderedFields.get(spec.key());
                 if (rf == null) continue;
                 if (values.containsKey(spec.key())) {
@@ -177,18 +186,19 @@ public class ConfigPanel extends JPanel {
             if (!missing.isEmpty()) {
                 try {
                     editor.writeAll(missing);
-                    log.info("已自动补全 {} 个缺失的配置项: {}",
-                            missing.size(), String.join(", ", missing.keySet()));
+                    log.info(logMessage("gui.config.log.missing-keys.completed",
+                            missing.size(), String.join(", ", missing.keySet())));
                 } catch (IOException ex) {
-                    log.warn("自动补全配置项失败: {}", ex.getMessage());
+                    log.warn(logMessage("gui.config.log.missing-keys.failed", ex.getMessage()));
                 }
             }
 
             updateEnabledStates();
         } catch (IOException e) {
-            log.warn("读取配置文件失败: {}", e.getMessage());
-            JOptionPane.showMessageDialog(this, "读取配置文件失败：" + e.getMessage(),
-                    "错误", JOptionPane.ERROR_MESSAGE);
+            log.warn(logMessage("gui.config.log.read-failed", e.getMessage()));
+            JOptionPane.showMessageDialog(this,
+                    message("gui.config.dialog.read-failed.message", e.getMessage()),
+                    message("gui.dialog.error.title"), JOptionPane.ERROR_MESSAGE);
         }
     }
 
@@ -199,7 +209,7 @@ public class ConfigPanel extends JPanel {
     private void updateEnabledStates() {
         ConfigSnapshot snap = buildSnapshot();
         boolean layoutChanged = false;
-        for (ConfigFieldSpec spec : ConfigFieldRegistry.ALL_FIELDS) {
+        for (ConfigFieldSpec spec : allFields) {
             FieldRenderer.RenderedField rf = renderedFields.get(spec.key());
             if (rf == null) continue;
             boolean visible = spec.visibleWhen().test(snap);
@@ -239,7 +249,7 @@ public class ConfigPanel extends JPanel {
     private void saveConfig() {
         // 验证（仅验证可见且已启用的字段）
         List<String> errors = new ArrayList<>();
-        for (ConfigFieldSpec spec : ConfigFieldRegistry.ALL_FIELDS) {
+        for (ConfigFieldSpec spec : allFields) {
             FieldRenderer.RenderedField rf = renderedFields.get(spec.key());
             if (rf == null || !rf.panel().isVisible() || !rf.control().isEnabled()) continue;
             String val = rf.getValue().get();
@@ -250,14 +260,14 @@ public class ConfigPanel extends JPanel {
         }
         if (!errors.isEmpty()) {
             JOptionPane.showMessageDialog(this,
-                    "以下字段有误，请修正后再保存：\n" + String.join("\n", errors),
-                    "验证失败", JOptionPane.ERROR_MESSAGE);
+                    message("gui.config.dialog.validation-failed.message", String.join("\n", errors)),
+                    message("gui.config.dialog.validation-failed.title"), JOptionPane.ERROR_MESSAGE);
             return;
         }
 
         // 收集所有值：隐藏字段写入空值，Spring Boot 对空值不加载对应证书
         Map<String, String> values = new LinkedHashMap<>();
-        for (ConfigFieldSpec spec : ConfigFieldRegistry.ALL_FIELDS) {
+        for (ConfigFieldSpec spec : allFields) {
             FieldRenderer.RenderedField rf = renderedFields.get(spec.key());
             if (rf == null) continue;
             values.put(spec.key(), rf.panel().isVisible() ? rf.getValue().get() : "");
@@ -265,22 +275,23 @@ public class ConfigPanel extends JPanel {
 
         try {
             editor.writeAll(values);
-            showNotice("配置已保存，需重启服务生效");
-            log.info("配置已保存到: {}", configPath);
+            showNotice(message("gui.config.notice.saved"));
+            log.info(logMessage("gui.config.log.saved", configPath));
         } catch (IOException e) {
-            log.error("保存配置失败: {}", e.getMessage());
-            JOptionPane.showMessageDialog(this, "保存配置失败：" + e.getMessage(),
-                    "错误", JOptionPane.ERROR_MESSAGE);
+            log.error(logMessage("gui.config.log.save-failed", e.getMessage()));
+            JOptionPane.showMessageDialog(this,
+                    message("gui.config.dialog.save-failed.message", e.getMessage()),
+                    message("gui.dialog.error.title"), JOptionPane.ERROR_MESSAGE);
         }
     }
 
     private void resetToDefaults() {
         int confirm = JOptionPane.showConfirmDialog(this,
-                "确认将所有字段重置为默认值？（仅更新界面，需点击[保存]才写入文件）",
-                "重置为默认值", JOptionPane.YES_NO_OPTION);
+                message("gui.config.dialog.reset-confirm.message"),
+                message("gui.config.dialog.reset-confirm.title"), JOptionPane.YES_NO_OPTION);
         if (confirm != JOptionPane.YES_OPTION) return;
 
-        for (ConfigFieldSpec spec : ConfigFieldRegistry.ALL_FIELDS) {
+        for (ConfigFieldSpec spec : allFields) {
             FieldRenderer.RenderedField rf = renderedFields.get(spec.key());
             if (rf != null) {
                 rf.setValue().accept(spec.defaultValue());
@@ -293,8 +304,9 @@ public class ConfigPanel extends JPanel {
         try {
             Desktop.getDesktop().open(configPath.toFile());
         } catch (Exception e) {
-            JOptionPane.showMessageDialog(this, "无法打开文件：" + e.getMessage(),
-                    "错误", JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(this,
+                    message("gui.error.open-file", e.getMessage()),
+                    message("gui.dialog.error.title"), JOptionPane.ERROR_MESSAGE);
         }
     }
 
@@ -307,15 +319,15 @@ public class ConfigPanel extends JPanel {
         if (!configPath.toFile().exists()) return;
         try {
             Map<String, String> existing = editor.readAll(
-                    ConfigFieldRegistry.ALL_FIELDS.stream()
+                    allFields.stream()
                             .map(ConfigFieldSpec::key).toList());
-            for (ConfigFieldSpec spec : ConfigFieldRegistry.ALL_FIELDS) {
+            for (ConfigFieldSpec spec : allFields) {
                 if (!existing.containsKey(spec.key())) {
-                    log.warn("配置字段漂移：key '{}' 在 config.yaml 中不存在，GUI 将使用默认值", spec.key());
+                    log.warn(logMessage("gui.config.log.field-drift", spec.key()));
                 }
             }
         } catch (IOException e) {
-            log.warn("字段漂移检查失败: {}", e.getMessage());
+            log.warn(logMessage("gui.config.log.field-drift-check.failed", e.getMessage()));
         }
     }
 
@@ -348,5 +360,13 @@ public class ConfigPanel extends JPanel {
         javax.swing.Timer t = new javax.swing.Timer(10_000, e -> noticeBar.setVisible(false));
         t.setRepeats(false);
         t.start();
+    }
+
+    private static String message(String code, Object... args) {
+        return GuiMessages.get(code, args);
+    }
+
+    private static String logMessage(String code, Object... args) {
+        return MessageBundles.get(code, args);
     }
 }

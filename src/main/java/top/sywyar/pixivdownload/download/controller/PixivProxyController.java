@@ -15,6 +15,7 @@ import org.springframework.web.client.RestTemplate;
 import top.sywyar.pixivdownload.common.UuidUtils;
 import top.sywyar.pixivdownload.download.db.TagDto;
 import top.sywyar.pixivdownload.download.response.*;
+import top.sywyar.pixivdownload.i18n.AppMessages;
 import top.sywyar.pixivdownload.quota.MultiModeConfig;
 import top.sywyar.pixivdownload.quota.UserQuotaService;
 import top.sywyar.pixivdownload.quota.response.ProxyRateLimitResponse;
@@ -54,6 +55,7 @@ public class PixivProxyController {
     private final SetupService setupService;
     private final UserQuotaService userQuotaService;
     private final MultiModeConfig multiModeConfig;
+    private final AppMessages messages;
 
     /**
      * 多人模式访问控制：
@@ -71,13 +73,13 @@ public class PixivProxyController {
         }
         String uuid = UuidUtils.extractExistingUuid(request);
         if (uuid == null) {
-            return ResponseEntity.status(401).body(new ErrorResponse("missing user UUID"));
+            return ResponseEntity.status(401).body(new ErrorResponse(messages.get("pixiv.proxy.user-uuid.missing")));
         }
         if (!userQuotaService.checkAndReserveProxy(uuid)) {
             int max = multiModeConfig.getQuota().getMaxProxyRequests();
             int hours = multiModeConfig.getQuota().getResetPeriodHours();
             return ResponseEntity.status(429).body(new ProxyRateLimitResponse(
-                    String.format("搜索/代理请求次数已达上限（每 %d 小时最多 %d 次），请稍后再试", hours, max),
+                    messages.get("pixiv.proxy.rate-limit.exceeded", hours, max),
                     max, hours));
         }
         return null;
@@ -246,13 +248,13 @@ public class PixivProxyController {
 
     private String validateSearchParams(String order, String mode, String sMode) {
         if (!VALID_ORDERS.contains(order)) {
-            return "invalid order parameter: " + order;
+            return messages.get("pixiv.proxy.search.order.invalid", order);
         }
         if (!VALID_MODES.contains(mode)) {
-            return "invalid mode parameter: " + mode;
+            return messages.get("pixiv.proxy.search.mode.invalid", mode);
         }
         if (!VALID_S_MODES.contains(sMode)) {
-            return "invalid sMode parameter: " + sMode;
+            return messages.get("pixiv.proxy.search.s-mode.invalid", sMode);
         }
         return null;
     }
@@ -287,7 +289,7 @@ public class PixivProxyController {
         String body = proxyGetUri(searchUri, cookie);
         JsonNode root = objectMapper.readTree(body);
         if (root.path("error").asBoolean(false)) {
-            throw new IllegalArgumentException(root.path("message").asText("pixiv search failed"));
+            throw new IllegalArgumentException(root.path("message").asText(messages.get("pixiv.proxy.search.failed")));
         }
         JsonNode illustManga = root.path("body").path("illustManga");
         int total = illustManga.path("total").asInt(0);
@@ -344,7 +346,7 @@ public class PixivProxyController {
             @RequestHeader(value = "X-Pixiv-Cookie", required = false) String cookie,
             HttpServletRequest request) throws IOException {
         if (SEARCH_FILL_DISABLED) {
-            return ResponseEntity.status(503).body(new ErrorResponse("向后补充功能暂时不可用"));
+            return ResponseEntity.status(503).body(new ErrorResponse(messages.get("pixiv.proxy.search-fill.disabled")));
         }
         ResponseEntity<?> deny = checkMultiModeAccess(request);
         if (deny != null) return deny;
@@ -354,7 +356,8 @@ public class PixivProxyController {
             return ResponseEntity.badRequest().body(new ErrorResponse(validationError));
         }
         if (extraPages < 1) {
-            return ResponseEntity.badRequest().body(new ErrorResponse("extraPages must be >= 1"));
+            return ResponseEntity.badRequest()
+                    .body(new ErrorResponse(messages.get("pixiv.proxy.search-fill.extra-pages.invalid")));
         }
 
         int startPage = Math.max(page, 1);
@@ -405,11 +408,11 @@ public class PixivProxyController {
         try {
             uri = URI.create(url);
         } catch (IllegalArgumentException e) {
-            throw new SecurityException("malformed thumbnail URL");
+            throw new SecurityException(messages.get("pixiv.proxy.thumbnail-url.invalid"));
         }
         String host = uri.getHost();
         if (host == null || !host.endsWith(".pximg.net")) {
-            throw new SecurityException("thumbnail URL host must be a pximg.net subdomain");
+            throw new SecurityException(messages.get("pixiv.proxy.thumbnail-url.host.invalid"));
         }
         byte[] bytes = proxyGetBytes(url, cookie);
         HttpHeaders responseHeaders = new HttpHeaders();

@@ -10,6 +10,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import top.sywyar.pixivdownload.common.NetworkUtils;
 import top.sywyar.pixivdownload.config.SslConfig;
+import top.sywyar.pixivdownload.i18n.AppMessages;
 import top.sywyar.pixivdownload.setup.SetupService;
 
 import java.time.Instant;
@@ -34,6 +35,7 @@ public class GuiStatusController {
     private final SetupService setupService;
     private final Environment environment;
     private final SslConfig sslConfig;
+    private final AppMessages messages;
 
     private static final DateTimeFormatter FORMATTER =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
@@ -82,7 +84,7 @@ public class GuiStatusController {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
 
-        log.info("收到 GUI 重启请求，即将重启服务...");
+        log.info(logMessage("gui.controller.log.restart-request.received"));
 
         Thread restartThread = new Thread(() -> {
             try {
@@ -94,10 +96,10 @@ public class GuiStatusController {
                         command.add(cmd);
                         current.info().arguments()
                                 .ifPresent(a -> command.addAll(Arrays.asList(a)));
-                        log.info("重新启动进程: {}", command);
+                        log.info(logMessage("gui.controller.log.restart.command", command));
                         new ProcessBuilder(command).start();
                     } catch (Exception e) {
-                        log.warn("重新启动进程失败: {}", e.getMessage());
+                        log.warn(logMessage("gui.controller.log.restart.command-failed", e.getMessage()));
                     }
                 });
                 Thread.sleep(1000);
@@ -139,5 +141,9 @@ public class GuiStatusController {
 
         String keyStore = environment.getProperty("server.ssl.key-store");
         return keyStore != null && !keyStore.isBlank();
+    }
+
+    private String logMessage(String code, Object... args) {
+        return messages.getForLog(code, args);
     }
 }

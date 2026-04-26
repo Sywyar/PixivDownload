@@ -11,6 +11,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.web.client.RestTemplate;
 import top.sywyar.pixivdownload.author.AuthorService;
@@ -19,12 +20,16 @@ import top.sywyar.pixivdownload.download.db.ArtworkRecord;
 import top.sywyar.pixivdownload.download.db.PixivDatabase;
 import top.sywyar.pixivdownload.download.request.DownloadRequest;
 import top.sywyar.pixivdownload.download.response.StatisticsResponse;
+import top.sywyar.pixivdownload.i18n.AppMessages;
+import top.sywyar.pixivdownload.i18n.LocalizedException;
+import top.sywyar.pixivdownload.i18n.TestI18nBeans;
 import top.sywyar.pixivdownload.quota.UserQuotaService;
 
 import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Locale;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.lenient;
@@ -33,6 +38,8 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 @DisplayName("DownloadService 单元测试")
 class DownloadServiceTest {
+    private static final AppMessages APP_MESSAGES = TestI18nBeans.appMessages();
+
     @TempDir
     Path tempDir;
 
@@ -59,8 +66,9 @@ class DownloadServiceTest {
 
     @BeforeEach
     void setUp() {
+        LocaleContextHolder.setLocale(Locale.SIMPLIFIED_CHINESE);
         downloadService = new DownloadService(downloadConfig, eventPublisher, pixivDatabase, userQuotaService,
-                downloadRestTemplate, taskScheduler, pixivBookmarkService, ugoiraService, authorService);
+                downloadRestTemplate, taskScheduler, pixivBookmarkService, ugoiraService, authorService, APP_MESSAGES);
     }
 
     // ========== validatePixivUrl (SSRF 防护) ==========
@@ -90,7 +98,9 @@ class DownloadServiceTest {
         void shouldRejectHttpUrl() {
             assertThatThrownBy(() -> DownloadService.validatePixivUrl(
                     "http://i.pximg.net/img/12345.jpg"
-            )).isInstanceOf(SecurityException.class)
+            )).isInstanceOf(LocalizedException.class)
+              .satisfies(error -> assertThat(((LocalizedException) error).getMessageCode())
+                      .isEqualTo("download.url.https-only"))
               .hasMessageContaining("只允许 HTTPS 协议");
         }
 
@@ -104,7 +114,9 @@ class DownloadServiceTest {
         @DisplayName("非 pximg.net 域名应被拒绝")
         void shouldRejectNonPixivDomain(String url) {
             assertThatThrownBy(() -> DownloadService.validatePixivUrl(url))
-                    .isInstanceOf(SecurityException.class)
+                    .isInstanceOf(LocalizedException.class)
+                    .satisfies(error -> assertThat(((LocalizedException) error).getMessageCode())
+                            .isEqualTo("download.url.host.not-allowed"))
                     .hasMessageContaining("域名不在白名单内");
         }
 
@@ -113,7 +125,9 @@ class DownloadServiceTest {
         void shouldRejectFtpProtocol() {
             assertThatThrownBy(() -> DownloadService.validatePixivUrl(
                     "ftp://i.pximg.net/img.jpg"
-            )).isInstanceOf(SecurityException.class)
+            )).isInstanceOf(LocalizedException.class)
+              .satisfies(error -> assertThat(((LocalizedException) error).getMessageCode())
+                      .isEqualTo("download.url.https-only"))
               .hasMessageContaining("只允许 HTTPS 协议");
         }
 
@@ -122,7 +136,9 @@ class DownloadServiceTest {
         void shouldRejectInvalidUrl() {
             assertThatThrownBy(() -> DownloadService.validatePixivUrl(
                     "not a url at all %%"
-            )).isInstanceOf(SecurityException.class);
+            )).isInstanceOf(LocalizedException.class)
+              .satisfies(error -> assertThat(((LocalizedException) error).getMessageCode())
+                      .isEqualTo("download.url.invalid"));
         }
 
         @ParameterizedTest
@@ -474,23 +490,28 @@ class DownloadServiceTest {
         void shouldReturnCorrectStatusDescription() {
             DownloadStatus status = new DownloadStatus(1L, "test", 5);
 
-            assertThat(status.getStatusDescription()).isEqualTo("等待开始");
+            assertThat(status.getStatusMessageCode()).isEqualTo("download.status.pending");
+            assertThat(APP_MESSAGES.get(status.getStatusMessageCode(), status.getStatusMessageArgs())).isEqualTo("等待开始");
 
             status.setCurrentImageIndex(2);
-            assertThat(status.getStatusDescription()).contains("下载中");
+            assertThat(status.getStatusMessageCode()).isEqualTo("download.status.in-progress");
+            assertThat(APP_MESSAGES.get(status.getStatusMessageCode(), status.getStatusMessageArgs())).isEqualTo("下载中 (3/5)");
 
             status.setCompleted(true);
             status.setSuccessCount(5);
-            assertThat(status.getStatusDescription()).contains("已完成");
+            assertThat(status.getStatusMessageCode()).isEqualTo("download.status.completed");
+            assertThat(APP_MESSAGES.get(status.getStatusMessageCode(), status.getStatusMessageArgs())).isEqualTo("已完成 (5/5)");
 
             status.setCompleted(false);
             status.setCancelled(true);
-            assertThat(status.getStatusDescription()).isEqualTo("已取消");
+            assertThat(status.getStatusMessageCode()).isEqualTo("download.status.cancelled");
+            assertThat(APP_MESSAGES.get(status.getStatusMessageCode(), status.getStatusMessageArgs())).isEqualTo("已取消");
 
             status.setCancelled(false);
             status.setFailed(true);
             status.setErrorMessage("网络超时");
-            assertThat(status.getStatusDescription()).contains("失败").contains("网络超时");
+            assertThat(status.getStatusMessageCode()).isEqualTo("download.status.failed");
+            assertThat(APP_MESSAGES.get(status.getStatusMessageCode(), status.getStatusMessageArgs())).isEqualTo("失败: 网络超时");
         }
     }
 }

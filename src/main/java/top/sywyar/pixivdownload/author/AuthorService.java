@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestTemplate;
 import top.sywyar.pixivdownload.download.db.PixivDatabase;
+import top.sywyar.pixivdownload.i18n.AppMessages;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -36,16 +37,19 @@ public class AuthorService {
     private final PixivDatabase pixivDatabase;
     private final RestTemplate downloadRestTemplate;
     private final TaskScheduler taskScheduler;
+    private final AppMessages messages;
     private final ConcurrentHashMap<Long, Long> lastRenameValidationAtMs = new ConcurrentHashMap<>();
 
     public AuthorService(AuthorMapper authorMapper,
                          PixivDatabase pixivDatabase,
                          @Qualifier("downloadRestTemplate") RestTemplate downloadRestTemplate,
-                         @Qualifier("taskScheduler") TaskScheduler taskScheduler) {
+                         @Qualifier("taskScheduler") TaskScheduler taskScheduler,
+                         AppMessages messages) {
         this.authorMapper = authorMapper;
         this.pixivDatabase = pixivDatabase;
         this.downloadRestTemplate = downloadRestTemplate;
         this.taskScheduler = taskScheduler;
+        this.messages = messages;
     }
 
     @PostConstruct
@@ -89,7 +93,11 @@ public class AuthorService {
         if (existing == null) {
             String initialName = StringUtils.hasText(normalizedHint) ? normalizedHint : String.valueOf(authorId);
             authorMapper.insertIfAbsent(authorId, initialName, nowSeconds());
-            log.info("首次记录作者: authorId={}, name={}", authorId, initialName);
+            log.info(message(
+                    "author.log.observe.first-record",
+                    authorId,
+                    initialName
+            ));
             return;
         }
 
@@ -123,7 +131,11 @@ public class AuthorService {
 
             JsonNode root = fetchJson("https://www.pixiv.net/ajax/user/" + authorId + "?full=0", null);
             if (isErrorResponse(root)) {
-                log.warn("作者改名校验失败: authorId={}, response={}", authorId, root);
+                log.warn(message(
+                        "author.log.rename.validation.failed.response",
+                        authorId,
+                        root
+                ));
                 return;
             }
 
@@ -133,9 +145,17 @@ public class AuthorService {
             }
 
             authorMapper.updateName(authorId, actualName, nowSeconds());
-            log.info("作者改名: {} -> {} (authorId={})", existing.name(), actualName, authorId);
+            log.info(message(
+                    "author.log.rename.updated",
+                    existing.name(),
+                    actualName,
+                    authorId
+            ));
         } catch (Exception e) {
-            log.warn("作者改名校验失败: authorId={}", authorId, e);
+            log.warn(message(
+                    "author.log.rename.validation.failed.exception",
+                    authorId
+            ), e);
         }
     }
 
@@ -143,14 +163,21 @@ public class AuthorService {
         try {
             JsonNode root = fetchJson("https://www.pixiv.net/ajax/illust/" + artworkId, cookie);
             if (isErrorResponse(root)) {
-                log.warn("补齐作者信息失败: artworkId={}, response={}", artworkId, root);
+                log.warn(message(
+                        "author.log.lookup.failed.response",
+                        artworkId,
+                        root
+                ));
                 return;
             }
 
             JsonNode body = root.path("body");
             long authorId = body.path("userId").asLong(0);
             if (authorId <= 0) {
-                log.warn("补齐作者信息失败: artworkId={}, missing userId", artworkId);
+                log.warn(message(
+                        "author.log.lookup.failed.missing-user-id",
+                        artworkId
+                ));
                 return;
             }
 
@@ -158,7 +185,10 @@ public class AuthorService {
             pixivDatabase.updateAuthorId(artworkId, authorId);
             observe(authorId, authorName);
         } catch (Exception e) {
-            log.warn("补齐作者信息失败: artworkId={}", artworkId, e);
+            log.warn(message(
+                    "author.log.lookup.failed.exception",
+                    artworkId
+            ), e);
         }
     }
 
@@ -188,5 +218,9 @@ public class AuthorService {
             return null;
         }
         return hintName.trim();
+    }
+
+    private String message(String code, Object... args) {
+        return messages.getForLog(code, args);
     }
 }

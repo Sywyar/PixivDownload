@@ -4,6 +4,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.*;
 import org.springframework.web.client.RestTemplate;
 import top.sywyar.pixivdownload.config.RuntimeFiles;
+import top.sywyar.pixivdownload.gui.i18n.GuiMessages;
+import top.sywyar.pixivdownload.i18n.MessageBundles;
 
 import javax.swing.*;
 import javax.swing.Timer;
@@ -137,12 +139,12 @@ public class ImageClassifier extends JFrame {
         };
 
         String[] defaultFolderRemarks = {
-                "类别0 - 小特",
-                "类别1 - 气象学家",
-                "类别2 - 小女孩",
-                "类别3 - 默认",
-                "类别4 - idv",
-                "类别5 - 删除",
+                message("gui.image-classifier.default-remark.0"),
+                message("gui.image-classifier.default-remark.1"),
+                message("gui.image-classifier.default-remark.2"),
+                message("gui.image-classifier.default-remark.3"),
+                message("gui.image-classifier.default-remark.4"),
+                message("gui.image-classifier.default-remark.5"),
         };
 
         try {
@@ -152,7 +154,7 @@ public class ImageClassifier extends JFrame {
                 }
             }
         } catch (IOException e) {
-            log.warn("无法加载配置文件，使用默认配置: {}", e.getMessage());
+            log.warn(logMessage("gui.image-classifier.log.config-load-fallback", e.getMessage()));
         }
 
         targetFolders = new ArrayList<>();
@@ -186,13 +188,17 @@ public class ImageClassifier extends JFrame {
                 config.setProperty("folder.remark." + i, folderRemarks.get(i));
             }
             try (FileOutputStream output = new FileOutputStream(configFile)) {
-                config.store(output, "Image Classifier Configuration");
+                config.store(output, message("gui.image-classifier.config.comment"));
             }
-            log.info("配置已保存");
+            log.info(logMessage("gui.image-classifier.log.config-saved"));
         } catch (IOException e) {
-            log.error("保存配置失败: {}", e.getMessage());
-            JOptionPane.showMessageDialog(this, "保存配置失败: " + e.getMessage(),
-                    "错误", JOptionPane.ERROR_MESSAGE);
+            log.error(logMessage("gui.image-classifier.log.config-save-failed", e.getMessage()));
+            JOptionPane.showMessageDialog(
+                    this,
+                    message("gui.image-classifier.dialog.config-save-failed.message", e.getMessage()),
+                    message("gui.dialog.error.title"),
+                    JOptionPane.ERROR_MESSAGE
+            );
         }
     }
 
@@ -207,7 +213,7 @@ public class ImageClassifier extends JFrame {
             log.error(e.getMessage(), e);
         }
 
-        setTitle("图片分类工具");
+        setTitle(message("gui.tools.card.image-classifier.title"));
         setDefaultCloseOperation(closeOperation);
         setSize(1340, 800);
         setLocationRelativeTo(null);
@@ -235,7 +241,7 @@ public class ImageClassifier extends JFrame {
         JPanel left = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
         left.setOpaque(false);
 
-        JLabel pathLabel = new JLabel("文件夹路径");
+        JLabel pathLabel = new JLabel(message("gui.image-classifier.label.folder-path"));
         pathLabel.setFont(new Font("微软雅黑", Font.PLAIN, 13));
         pathLabel.setForeground(C_TEXT_MUTED);
         left.add(pathLabel);
@@ -246,9 +252,9 @@ public class ImageClassifier extends JFrame {
         folderPathField.setText(config.getProperty("default.folder", ""));
         left.add(folderPathField);
 
-        openFolderButton    = styledButton("打 开", C_PRIMARY);
-        browseFolderButton  = styledButton("浏 览", C_NEUTRAL);
-        settingsButton      = styledButton("设 置", C_NEUTRAL);
+        openFolderButton = styledButton(message("gui.image-classifier.button.open"), C_PRIMARY);
+        browseFolderButton = styledButton(message("gui.button.browse"), C_NEUTRAL);
+        settingsButton = styledButton(message("gui.image-classifier.button.settings"), C_NEUTRAL);
         left.add(openFolderButton);
         left.add(browseFolderButton);
         left.add(settingsButton);
@@ -256,7 +262,7 @@ public class ImageClassifier extends JFrame {
         // 右侧：服务器状态
         JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
         right.setOpaque(false);
-        serverStatusLabel = new JLabel("● 检测中...");
+        serverStatusLabel = new JLabel(message("gui.image-classifier.server.detecting"));
         serverStatusLabel.setFont(new Font("微软雅黑", Font.PLAIN, 13));
         serverStatusLabel.setForeground(C_TEXT_MUTED);
         right.add(serverStatusLabel);
@@ -305,8 +311,8 @@ public class ImageClassifier extends JFrame {
         // ── 翻页导航 ──
         JPanel navPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 16, 10));
         navPanel.setBackground(C_BG);
-        prevGroupButton = styledButton("◀  上一组", C_NEUTRAL);
-        nextGroupButton = styledButton("下一组  ▶", C_NEUTRAL);
+        prevGroupButton = styledButton(message("gui.image-classifier.button.prev-group"), C_NEUTRAL);
+        nextGroupButton = styledButton(message("gui.image-classifier.button.next-group"), C_NEUTRAL);
         prevGroupButton.setPreferredSize(new Dimension(130, 34));
         nextGroupButton.setPreferredSize(new Dimension(130, 34));
         navPanel.add(prevGroupButton);
@@ -336,7 +342,7 @@ public class ImageClassifier extends JFrame {
         catScroll.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createTitledBorder(
                         BorderFactory.createLineBorder(C_BORDER),
-                        "分类说明",
+                        message("gui.image-classifier.section.categories"),
                         javax.swing.border.TitledBorder.LEFT,
                         javax.swing.border.TitledBorder.TOP,
                         new Font("微软雅黑", Font.BOLD, 13)),
@@ -348,7 +354,7 @@ public class ImageClassifier extends JFrame {
         actionPanel.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createTitledBorder(
                         BorderFactory.createLineBorder(C_BORDER),
-                        "文件夹分类",
+                        message("gui.image-classifier.section.classify"),
                         javax.swing.border.TitledBorder.LEFT,
                         javax.swing.border.TitledBorder.TOP,
                         new Font("微软雅黑", Font.BOLD, 13)),
@@ -357,12 +363,12 @@ public class ImageClassifier extends JFrame {
         // 编号输入行
         JPanel inputRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 4));
         inputRow.setOpaque(false);
-        JLabel numLabel = new JLabel("编号:");
+        JLabel numLabel = new JLabel(message("gui.image-classifier.label.number") + message("gui.punctuation.colon"));
         numLabel.setFont(new Font("微软雅黑", Font.PLAIN, 13));
         numLabel.setForeground(C_TEXT_MUTED);
         targetFolderField = new JTextField(4);
         targetFolderField.setFont(new Font("微软雅黑", Font.PLAIN, 14));
-        remarkLabel = new JLabel("请输入 0–" + (targetFolders.size() - 1));
+        remarkLabel = new JLabel(message("gui.image-classifier.hint.number.range-short", targetFolders.size() - 1));
         remarkLabel.setFont(new Font("微软雅黑", Font.PLAIN, 12));
         remarkLabel.setForeground(C_TEXT_MUTED);
         inputRow.add(numLabel);
@@ -370,10 +376,10 @@ public class ImageClassifier extends JFrame {
         inputRow.add(remarkLabel);
 
         // 四个操作按钮（2×2 网格）
-        classifyButton  = styledButton("分类整个文件夹", C_PRIMARY);
-        skipFolderButton = styledButton("跳过此文件夹",  C_DANGER);
-        prevFolderButton = styledButton("← 上一文件夹", C_NEUTRAL);
-        refreshButton    = styledButton("刷新缩略图",   C_NEUTRAL);
+        classifyButton = styledButton(message("gui.image-classifier.button.classify-folder"), C_PRIMARY);
+        skipFolderButton = styledButton(message("gui.image-classifier.button.skip-folder"), C_DANGER);
+        prevFolderButton = styledButton(message("gui.image-classifier.button.prev-folder"), C_NEUTRAL);
+        refreshButton = styledButton(message("gui.image-classifier.button.refresh-thumbnails"), C_NEUTRAL);
         skipFolderButton.setVisible(Boolean.parseBoolean(config.getProperty("show.skip.button", "true")));
 
         JPanel btnGrid = new JPanel(new GridLayout(2, 2, 6, 6));
@@ -396,7 +402,7 @@ public class ImageClassifier extends JFrame {
         JPanel bar = new JPanel(new FlowLayout(FlowLayout.LEFT, 12, 6));
         bar.setBackground(C_PANEL);
         bar.setBorder(BorderFactory.createMatteBorder(1, 0, 0, 0, C_BORDER));
-        statusLabel = new JLabel("请先选择包含数字文件夹的父目录");
+        statusLabel = new JLabel(message("gui.image-classifier.status.select-parent-folder"));
         statusLabel.setFont(new Font("微软雅黑", Font.PLAIN, 13));
         statusLabel.setForeground(C_TEXT_MUTED);
         bar.add(statusLabel);
@@ -502,7 +508,7 @@ public class ImageClassifier extends JFrame {
                 StringSelection selection = new StringSelection(String.valueOf(currentArtworkId));
                 Toolkit.getDefaultToolkit().getSystemClipboard().setContents(selection, null);
                 String prev = statusLabel.getText();
-                statusLabel.setText("已复制 artworkId: " + currentArtworkId);
+                statusLabel.setText(message("gui.image-classifier.status.artwork-id.copied", currentArtworkId));
                 Timer timer = new Timer(1500, ev -> statusLabel.setText(prev));
                 timer.setRepeats(false);
                 timer.start();
@@ -522,7 +528,7 @@ public class ImageClassifier extends JFrame {
     // =========================================================================
 
     private void showSettingsDialog() {
-        JDialog settingsDialog = new JDialog(this, "设置", true);
+        JDialog settingsDialog = new JDialog(this, message("gui.image-classifier.dialog.settings.title"), true);
         settingsDialog.setSize(600, 500);
         settingsDialog.setLocationRelativeTo(this);
         settingsDialog.setLayout(new BorderLayout(10, 10));
@@ -532,8 +538,8 @@ public class ImageClassifier extends JFrame {
 
         // 用 JTabbedPane 的 clientProperty 在构建方法与保存 lambda 之间传递组件引用
         JTabbedPane tabbedPane = new JTabbedPane();
-        tabbedPane.addTab("基本设置",   buildBasicSettingsPanel(settingsDialog, tabbedPane));
-        tabbedPane.addTab("目标文件夹", buildTargetFoldersPanel(settingsDialog, tabbedPane));
+        tabbedPane.addTab(message("gui.image-classifier.tab.basic-settings"), buildBasicSettingsPanel(settingsDialog, tabbedPane));
+        tabbedPane.addTab(message("gui.image-classifier.tab.target-folders"), buildTargetFoldersPanel(settingsDialog, tabbedPane));
         mainPanel.add(tabbedPane, BorderLayout.CENTER);
 
         JTextField defaultFolderField = (JTextField)  tabbedPane.getClientProperty("defaultFolderField");
@@ -543,8 +549,8 @@ public class ImageClassifier extends JFrame {
                 (javax.swing.table.DefaultTableModel) tabbedPane.getClientProperty("tableModel");
 
         JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
-        JButton saveButton   = new JButton("保存");
-        JButton cancelButton = new JButton("取消");
+        JButton saveButton = new JButton(message("gui.button.save"));
+        JButton cancelButton = new JButton(message("gui.image-classifier.button.cancel"));
         buttonPanel.add(saveButton);
         buttonPanel.add(cancelButton);
         mainPanel.add(buttonPanel, BorderLayout.SOUTH);
@@ -564,9 +570,14 @@ public class ImageClassifier extends JFrame {
             saveConfig();
             skipFolderButton.setVisible(showSkipCheckBox.isSelected());
             updateCategoriesPanel();
-            remarkLabel.setText("请输入0-" + (targetFolders.size() - 1) + "之间的数字");
+            remarkLabel.setText(message("gui.image-classifier.hint.number.range", targetFolders.size() - 1));
             settingsDialog.dispose();
-            JOptionPane.showMessageDialog(this, "设置已保存", "提示", JOptionPane.INFORMATION_MESSAGE);
+            JOptionPane.showMessageDialog(
+                    this,
+                    message("gui.image-classifier.dialog.settings-saved.message"),
+                    message("gui.dialog.info.title"),
+                    JOptionPane.INFORMATION_MESSAGE
+            );
         });
 
         cancelButton.addActionListener(e -> settingsDialog.dispose());
@@ -587,19 +598,19 @@ public class ImageClassifier extends JFrame {
 
         // 默认文件夹
         gbc.gridx = 0; gbc.gridy = 0; gbc.weightx = 0.0;
-        panel.add(new JLabel("默认打开文件夹:"), gbc);
+        panel.add(new JLabel(message("gui.image-classifier.label.default-folder") + message("gui.punctuation.colon")), gbc);
 
         gbc.gridx = 1; gbc.weightx = 1.0;
         JTextField defaultFolderField = new JTextField(config.getProperty("default.folder", ""));
         panel.add(defaultFolderField, gbc);
 
         gbc.gridx = 2; gbc.weightx = 0.0;
-        JButton browseBtn = new JButton("浏览");
+        JButton browseBtn = new JButton(message("gui.button.browse"));
         panel.add(browseBtn, gbc);
         browseBtn.addActionListener(e -> {
             JFileChooser fc = new JFileChooser();
             fc.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
-            fc.setDialogTitle("选择默认文件夹");
+            fc.setDialogTitle(message("gui.image-classifier.dialog.select-default-folder.title"));
             if (fc.showOpenDialog(parent) == JFileChooser.APPROVE_OPTION) {
                 defaultFolderField.setText(fc.getSelectedFile().getAbsolutePath());
             }
@@ -607,7 +618,7 @@ public class ImageClassifier extends JFrame {
 
         // 显示跳过按钮
         gbc.gridx = 0; gbc.gridy = 1; gbc.weightx = 0.0;
-        panel.add(new JLabel("显示跳过按钮:"), gbc);
+        panel.add(new JLabel(message("gui.image-classifier.label.show-skip-button") + message("gui.punctuation.colon")), gbc);
 
         gbc.gridx = 1;
         JCheckBox showSkipCheckBox = new JCheckBox();
@@ -616,7 +627,7 @@ public class ImageClassifier extends JFrame {
 
         // 服务器网址
         gbc.gridx = 0; gbc.gridy = 2; gbc.weightx = 0.0;
-        panel.add(new JLabel("服务器网址:"), gbc);
+        panel.add(new JLabel(message("gui.image-classifier.label.server-url") + message("gui.punctuation.colon")), gbc);
 
         gbc.gridx = 1; gbc.gridwidth = 2; gbc.weightx = 1.0;
         JTextField serverUrlField = new JTextField(config.getProperty("server.url", "http://localhost:6999"));
@@ -636,7 +647,11 @@ public class ImageClassifier extends JFrame {
     private JPanel buildTargetFoldersPanel(JDialog parent, JTabbedPane tabbedPane) {
         JPanel panel = new JPanel(new BorderLayout(5, 5));
 
-        String[] columnNames = {"编号", "路径", "备注"};
+        String[] columnNames = {
+                message("gui.image-classifier.table.column.number"),
+                message("gui.image-classifier.table.column.path"),
+                message("gui.image-classifier.table.column.remark")
+        };
         Object[][] data = new Object[targetFolders.size()][3];
         for (int i = 0; i < targetFolders.size(); i++) {
             data[i][0] = i;
@@ -659,11 +674,11 @@ public class ImageClassifier extends JFrame {
 
         // 操作按钮
         JPanel btnPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        JButton addBtn      = new JButton("新增");
-        JButton editBtn     = new JButton("编辑");
-        JButton deleteBtn   = new JButton("删除");
-        JButton moveUpBtn   = new JButton("上移");
-        JButton moveDownBtn = new JButton("下移");
+        JButton addBtn = new JButton(message("gui.image-classifier.button.add"));
+        JButton editBtn = new JButton(message("gui.image-classifier.button.edit"));
+        JButton deleteBtn = new JButton(message("gui.image-classifier.button.delete"));
+        JButton moveUpBtn = new JButton(message("gui.image-classifier.button.move-up"));
+        JButton moveDownBtn = new JButton(message("gui.image-classifier.button.move-down"));
         btnPanel.add(addBtn);
         btnPanel.add(editBtn);
         btnPanel.add(deleteBtn);
@@ -676,13 +691,31 @@ public class ImageClassifier extends JFrame {
         editBtn.addActionListener(e -> {
             int row = table.getSelectedRow();
             if (row >= 0) showFolderEditDialog(parent, row, tableModel);
-            else JOptionPane.showMessageDialog(parent, "请先选择一个文件夹进行编辑", "提示", JOptionPane.INFORMATION_MESSAGE);
+            else JOptionPane.showMessageDialog(
+                    parent,
+                    message("gui.image-classifier.dialog.select-folder-before-edit.message"),
+                    message("gui.dialog.info.title"),
+                    JOptionPane.INFORMATION_MESSAGE
+            );
         });
 
         deleteBtn.addActionListener(e -> {
             int row = table.getSelectedRow();
-            if (row < 0) { JOptionPane.showMessageDialog(parent, "请先选择一个文件夹进行删除", "提示", JOptionPane.INFORMATION_MESSAGE); return; }
-            if (JOptionPane.showConfirmDialog(parent, "确定要删除选中的文件夹吗？", "确认删除", JOptionPane.YES_NO_OPTION) == JOptionPane.YES_OPTION) {
+            if (row < 0) {
+                JOptionPane.showMessageDialog(
+                        parent,
+                        message("gui.image-classifier.dialog.select-folder-before-delete.message"),
+                        message("gui.dialog.info.title"),
+                        JOptionPane.INFORMATION_MESSAGE
+                );
+                return;
+            }
+            if (JOptionPane.showConfirmDialog(
+                    parent,
+                    message("gui.image-classifier.dialog.confirm-delete-folder.message"),
+                    message("gui.image-classifier.dialog.confirm-delete-folder.title"),
+                    JOptionPane.YES_NO_OPTION
+            ) == JOptionPane.YES_OPTION) {
                 tableModel.removeRow(row);
                 for (int i = 0; i < tableModel.getRowCount(); i++) tableModel.setValueAt(i, i, 0);
             }
@@ -715,7 +748,13 @@ public class ImageClassifier extends JFrame {
     }
 
     private void showFolderEditDialog(JDialog parent, int rowIndex, javax.swing.table.DefaultTableModel tableModel) {
-        JDialog editDialog = new JDialog(parent, rowIndex < 0 ? "新增文件夹" : "编辑文件夹", true);
+        JDialog editDialog = new JDialog(
+                parent,
+                rowIndex < 0
+                        ? message("gui.image-classifier.dialog.add-folder.title")
+                        : message("gui.image-classifier.dialog.edit-folder.title"),
+                true
+        );
         editDialog.setSize(400, 200);
         editDialog.setLocationRelativeTo(parent);
         editDialog.setLayout(new BorderLayout(10, 10));
@@ -729,17 +768,17 @@ public class ImageClassifier extends JFrame {
         gbc.insets = new Insets(5, 5, 5, 5);
 
         gbc.gridx = 0; gbc.gridy = 0; gbc.weightx = 0.0;
-        formPanel.add(new JLabel("文件夹路径:"), gbc);
+        formPanel.add(new JLabel(message("gui.image-classifier.label.folder-path") + message("gui.punctuation.colon")), gbc);
         gbc.gridx = 1; gbc.weightx = 1.0;
         JTextField pathField = new JTextField(20);
         if (rowIndex >= 0) pathField.setText(tableModel.getValueAt(rowIndex, 1).toString());
         formPanel.add(pathField, gbc);
         gbc.gridx = 2; gbc.weightx = 0.0;
-        JButton browsePathButton = new JButton("浏览");
+        JButton browsePathButton = new JButton(message("gui.button.browse"));
         formPanel.add(browsePathButton, gbc);
 
         gbc.gridx = 0; gbc.gridy = 1;
-        formPanel.add(new JLabel("文件夹备注:"), gbc);
+        formPanel.add(new JLabel(message("gui.image-classifier.label.folder-remark") + message("gui.punctuation.colon")), gbc);
         gbc.gridx = 1; gbc.gridwidth = 2; gbc.weightx = 1.0;
         JTextField remarkField = new JTextField(20);
         if (rowIndex >= 0) remarkField.setText(tableModel.getValueAt(rowIndex, 2).toString());
@@ -748,8 +787,8 @@ public class ImageClassifier extends JFrame {
         mainPanel.add(formPanel, BorderLayout.CENTER);
 
         JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
-        JButton okButton     = new JButton("确定");
-        JButton cancelButton = new JButton("取消");
+        JButton okButton = new JButton(message("gui.image-classifier.button.confirm"));
+        JButton cancelButton = new JButton(message("gui.image-classifier.button.cancel"));
         buttonPanel.add(okButton);
         buttonPanel.add(cancelButton);
         mainPanel.add(buttonPanel, BorderLayout.SOUTH);
@@ -759,7 +798,7 @@ public class ImageClassifier extends JFrame {
         browsePathButton.addActionListener(e -> {
             JFileChooser fc = new JFileChooser();
             fc.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
-            fc.setDialogTitle("选择目标文件夹");
+            fc.setDialogTitle(message("gui.image-classifier.dialog.select-target-folder.title"));
             if (fc.showOpenDialog(editDialog) == JFileChooser.APPROVE_OPTION) {
                 pathField.setText(fc.getSelectedFile().getAbsolutePath());
             }
@@ -767,11 +806,21 @@ public class ImageClassifier extends JFrame {
 
         okButton.addActionListener(e -> {
             if (pathField.getText().trim().isEmpty()) {
-                JOptionPane.showMessageDialog(editDialog, "请输入文件夹路径", "错误", JOptionPane.ERROR_MESSAGE);
+                JOptionPane.showMessageDialog(
+                        editDialog,
+                        message("gui.image-classifier.validation.folder-path.required"),
+                        message("gui.dialog.error.title"),
+                        JOptionPane.ERROR_MESSAGE
+                );
                 return;
             }
             if (remarkField.getText().trim().isEmpty()) {
-                JOptionPane.showMessageDialog(editDialog, "请输入文件夹备注", "错误", JOptionPane.ERROR_MESSAGE);
+                JOptionPane.showMessageDialog(
+                        editDialog,
+                        message("gui.image-classifier.validation.folder-remark.required"),
+                        message("gui.dialog.error.title"),
+                        JOptionPane.ERROR_MESSAGE
+                );
                 return;
             }
             if (rowIndex < 0) {
@@ -800,7 +849,7 @@ public class ImageClassifier extends JFrame {
                 folderPathField.setText(defaultFolder);
                 SwingUtilities.invokeLater(this::openParentFolderFromField);
             } else {
-                log.warn("默认文件夹不存在或不是有效目录: {}", defaultFolder);
+                log.warn(logMessage("gui.image-classifier.log.default-folder-invalid", defaultFolder));
             }
         }
     }
@@ -808,12 +857,22 @@ public class ImageClassifier extends JFrame {
     private void openParentFolderFromField() {
         String folderPath = stripTrailingSlash(folderPathField.getText().trim());
         if (folderPath.isEmpty()) {
-            JOptionPane.showMessageDialog(this, "请输入文件夹路径", "提示", JOptionPane.INFORMATION_MESSAGE);
+            JOptionPane.showMessageDialog(
+                    this,
+                    message("gui.image-classifier.validation.folder-path.required"),
+                    message("gui.dialog.info.title"),
+                    JOptionPane.INFORMATION_MESSAGE
+            );
             return;
         }
         File folder = new File(folderPath);
         if (!folder.exists() || !folder.isDirectory()) {
-            JOptionPane.showMessageDialog(this, "文件夹不存在或不是有效目录", "错误", JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(
+                    this,
+                    message("gui.image-classifier.validation.folder-path.invalid"),
+                    message("gui.dialog.error.title"),
+                    JOptionPane.ERROR_MESSAGE
+            );
             return;
         }
         parentFolder = folder;
@@ -823,14 +882,19 @@ public class ImageClassifier extends JFrame {
             updateThumbnails();
             updateStatus();
         } else {
-            JOptionPane.showMessageDialog(this, "选择的文件夹中没有子文件夹", "错误", JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(
+                    this,
+                    message("gui.image-classifier.validation.no-subfolders"),
+                    message("gui.dialog.error.title"),
+                    JOptionPane.ERROR_MESSAGE
+            );
         }
     }
 
     private void browseParentFolder() {
         JFileChooser fc = new JFileChooser();
         fc.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
-        fc.setDialogTitle("选择包含数字文件夹的父文件夹");
+        fc.setDialogTitle(message("gui.image-classifier.dialog.select-parent-folder.title"));
         if (fc.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
             parentFolder = fc.getSelectedFile();
             folderPathField.setText(parentFolder.getAbsolutePath());
@@ -858,7 +922,12 @@ public class ImageClassifier extends JFrame {
             currentGroupIndex  = 0;
         } else {
             subFolders = List.of();
-            JOptionPane.showMessageDialog(this, "选择的文件夹中没有子文件夹", "错误", JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(
+                    this,
+                    message("gui.image-classifier.validation.no-subfolders"),
+                    message("gui.dialog.error.title"),
+                    JOptionPane.ERROR_MESSAGE
+            );
         }
     }
 
@@ -891,7 +960,12 @@ public class ImageClassifier extends JFrame {
             temp--;
         }while (temp >=0 && !subFolders.get(temp).exists());
         if (temp == -1) {
-            JOptionPane.showMessageDialog(this,"没有上一个文件夹了","错误",JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(
+                    this,
+                    message("gui.image-classifier.dialog.no-previous-folder.message"),
+                    message("gui.dialog.error.title"),
+                    JOptionPane.ERROR_MESSAGE
+            );
             return;
         }
         currentFolderIndex = temp;
@@ -916,9 +990,17 @@ public class ImageClassifier extends JFrame {
             updateThumbnails();
             updateStatus();
         } else {
-            JOptionPane.showMessageDialog(this, "所有文件夹已处理完毕", "完成", JOptionPane.INFORMATION_MESSAGE);
-            for (JLabel label : thumbnailLabels) { label.setIcon(null); label.setText("已全部完成"); }
-            statusLabel.setText("所有文件夹已处理完毕");
+            JOptionPane.showMessageDialog(
+                    this,
+                    message("gui.image-classifier.dialog.all-folders-complete.message"),
+                    message("gui.image-classifier.dialog.all-folders-complete.title"),
+                    JOptionPane.INFORMATION_MESSAGE
+            );
+            for (JLabel label : thumbnailLabels) {
+                label.setIcon(null);
+                label.setText(message("gui.image-classifier.thumbnail.all-done"));
+            }
+            statusLabel.setText(message("gui.image-classifier.dialog.all-folders-complete.message"));
             statusLabel.setForeground(new Color(34, 139, 87));
         }
     }
@@ -939,7 +1021,7 @@ public class ImageClassifier extends JFrame {
         if (currentImages == null || currentImages.isEmpty()) {
             for (JLabel label : thumbnailLabels) {
                 label.setIcon(null);
-                label.setText("无图片");
+                label.setText(message("gui.image-classifier.thumbnail.empty"));
                 label.setBorder(BorderFactory.createLineBorder(Color.GRAY, 1));
             }
             updateNavigationButtons();
@@ -956,14 +1038,14 @@ public class ImageClassifier extends JFrame {
             if (imgIndex < endIndex) {
                 File   imageFile = currentImages.get(imgIndex);
                 String fname     = imageFile.getName().toLowerCase();
-                String badge     = fname.endsWith(".webp") ? "动图" : null;
-                label.setText("加载中…");
+                String badge     = fname.endsWith(".webp") ? message("gui.image-classifier.thumbnail.badge.animated") : null;
+                label.setText(message("gui.image-classifier.thumbnail.loading"));
                 label.setIcon(null);
                 label.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
                 thumbnailManager.loadThumbnail(imageFile, label, thumbW, thumbH, badge);
             } else {
                 label.setIcon(null);
-                label.setText("无图片");
+                label.setText(message("gui.image-classifier.thumbnail.empty"));
                 label.setCursor(Cursor.getDefaultCursor());
             }
             label.setBorder(BorderFactory.createLineBorder(Color.GRAY, 1));
@@ -1014,12 +1096,20 @@ public class ImageClassifier extends JFrame {
         File currentFolder = subFolders.get(currentFolderIndex);
         int  totalGroups   = currentImages.isEmpty() ? 0 : (int) Math.ceil((double) currentImages.size() / GROUP_SIZE);
 
-        statusLabel.setText(String.format("当前文件夹: %s   %d 张图片   第 %d / %d 组",
-                currentFolder.getName(), currentImages.size(), currentGroupIndex + 1, totalGroups));
+        statusLabel.setText(message(
+                "gui.image-classifier.status.current-folder",
+                currentFolder.getName(),
+                currentImages.size(),
+                currentGroupIndex + 1,
+                totalGroups
+        ));
         statusLabel.setForeground(C_TEXT);
 
-        setTitle(String.format("图片分类工具 - 共%s个文件夹 - %d 张图片",
-                subFolders.size() - currentFolderIndex, currentImages.size()));
+        setTitle(message(
+                "gui.image-classifier.title.remaining-folders",
+                subFolders.size() - currentFolderIndex,
+                currentImages.size()
+        ));
 
         Long resolvedId = serverRunning ? resolveArtworkId(currentFolder) : null;
         currentArtworkId = resolvedId;
@@ -1038,20 +1128,24 @@ public class ImageClassifier extends JFrame {
                         String  title    = titleVal instanceof String s ? s : null;
                         SwingUtilities.invokeLater(() -> {
                             if (title != null && !title.isEmpty()) {
-                                setTitle(String.format("图片分类工具 - 共%d个文件夹 - %d 张图片  |  %s",
-                                        remainingFolders, imageCount, title));
+                                setTitle(message(
+                                        "gui.image-classifier.title.remaining-folders.with-artwork",
+                                        remainingFolders,
+                                        imageCount,
+                                        title
+                                ));
                             }
                             if (xRestrict != null && xRestrict == 2) {
-                                statusLabel.setText(statusLabel.getText() + "   [R18G]");
+                                statusLabel.setText(statusLabel.getText() + "   " + message("gui.image-classifier.status.tag.r18g"));
                                 statusLabel.setForeground(C_DANGER);
                             } else if (xRestrict != null && xRestrict == 1) {
-                                statusLabel.setText(statusLabel.getText() + "   [R18]");
+                                statusLabel.setText(statusLabel.getText() + "   " + message("gui.image-classifier.status.tag.r18"));
                                 statusLabel.setForeground(C_DANGER);
                             } else if (xRestrict != null) {
-                                statusLabel.setText(statusLabel.getText() + "   [SFW]");
+                                statusLabel.setText(statusLabel.getText() + "   " + message("gui.image-classifier.status.tag.sfw"));
                                 statusLabel.setForeground(new Color(34, 139, 87));
                             } else {
-                                statusLabel.setText(statusLabel.getText() + "   [未知]");
+                                statusLabel.setText(statusLabel.getText() + "   " + message("gui.image-classifier.status.tag.unknown"));
                                 statusLabel.setForeground(C_TEXT_MUTED);
                             }
                         });
@@ -1064,16 +1158,16 @@ public class ImageClassifier extends JFrame {
     private void updateRemarkLabel() {
         String input = targetFolderField.getText().trim();
         if (input.isEmpty()) {
-            remarkLabel.setText("请输入0-" + (targetFolders.size() - 1) + "之间的数字");
+            remarkLabel.setText(message("gui.image-classifier.hint.number.range", targetFolders.size() - 1));
             return;
         }
         try {
             int index = Integer.parseInt(input);
             remarkLabel.setText(index >= 0 && index < targetFolders.size()
                     ? folderRemarks.get(index)
-                    : "无效编号，请输入0-" + (targetFolders.size() - 1));
+                    : message("gui.image-classifier.validation.invalid-number.range", targetFolders.size() - 1));
         } catch (NumberFormatException ex) {
-            remarkLabel.setText("请输入有效数字");
+            remarkLabel.setText(message("gui.image-classifier.validation.invalid-number"));
         }
     }
 
@@ -1083,13 +1177,23 @@ public class ImageClassifier extends JFrame {
 
     private void classifyFolder() {
         if (currentImages == null || currentImages.isEmpty()) {
-            JOptionPane.showMessageDialog(this, "当前文件夹没有图片可分类", "错误", JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(
+                    this,
+                    message("gui.image-classifier.dialog.no-images-to-classify.message"),
+                    message("gui.dialog.error.title"),
+                    JOptionPane.ERROR_MESSAGE
+            );
             return;
         }
 
         String targetFolderNum = targetFolderField.getText().trim();
         if (targetFolderNum.isEmpty()) {
-            JOptionPane.showMessageDialog(this, "请输入目标文件夹编号", "错误", JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(
+                    this,
+                    message("gui.image-classifier.validation.target-folder-number.required"),
+                    message("gui.dialog.error.title"),
+                    JOptionPane.ERROR_MESSAGE
+            );
             return;
         }
 
@@ -1097,29 +1201,45 @@ public class ImageClassifier extends JFrame {
         try {
             index = Integer.parseInt(targetFolderNum);
         } catch (NumberFormatException e) {
-            JOptionPane.showMessageDialog(this, "请输入有效的文件夹编号", "错误", JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(
+                    this,
+                    message("gui.image-classifier.validation.target-folder-number.invalid"),
+                    message("gui.dialog.error.title"),
+                    JOptionPane.ERROR_MESSAGE
+            );
             return;
         }
 
         if (index < 0 || index >= targetFolders.size()) {
-            JOptionPane.showMessageDialog(this, "请输入0-" + (targetFolders.size() - 1) + "之间的数字",
-                    "错误", JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(
+                    this,
+                    message("gui.image-classifier.validation.target-folder-number.range", targetFolders.size() - 1),
+                    message("gui.dialog.error.title"),
+                    JOptionPane.ERROR_MESSAGE
+            );
             return;
         }
 
         File currentSubFolder = subFolders.get(currentFolderIndex);
         Long artworkId        = resolveArtworkId(currentSubFolder);
         if (artworkId == null) {
-            JOptionPane.showMessageDialog(this,
-                    "无法从文件夹名「" + currentSubFolder.getName() + "」或数据库记录中找到对应的作品 ID。\n请使用「跳过此文件夹」处理。",
-                    "错误", JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(
+                    this,
+                    message("gui.image-classifier.dialog.artwork-id-not-found.message", currentSubFolder.getName()),
+                    message("gui.dialog.error.title"),
+                    JOptionPane.ERROR_MESSAGE
+            );
             return;
         }
 
         File targetFolder = new File(targetFolders.get(index));
         if (!targetFolder.exists() && !targetFolder.mkdirs()) {
-            JOptionPane.showMessageDialog(this, "无法创建目标文件夹: " + targetFolder.getAbsolutePath(),
-                    "错误", JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(
+                    this,
+                    message("gui.image-classifier.dialog.create-target-folder-failed.message", targetFolder.getAbsolutePath()),
+                    message("gui.dialog.error.title"),
+                    JOptionPane.ERROR_MESSAGE
+            );
             return;
         }
 
@@ -1130,7 +1250,9 @@ public class ImageClassifier extends JFrame {
                 destDir = targetFolder;
             } else {
                 numberedFolder = new File(targetFolder, String.valueOf(findNextFolderNumber(targetFolder)));
-                if (!numberedFolder.mkdirs()) throw new IOException("无法创建子文件夹: " + numberedFolder.getAbsolutePath());
+                if (!numberedFolder.mkdirs()) {
+                    throw new IOException(message("gui.image-classifier.error.create-subfolder", numberedFolder.getAbsolutePath()));
+                }
                 destDir = numberedFolder;
             }
 
@@ -1154,7 +1276,11 @@ public class ImageClassifier extends JFrame {
                 } else {
                     // 如果是单图没创建文件夹，则只删除已拷贝过去的文件
                     for (File[] pair : copyPairs) {
-                        try { Files.deleteIfExists(pair[1].toPath()); } catch (IOException re) { log.error("回滚删除失败: {}", re.getMessage()); }
+                        try {
+                            Files.deleteIfExists(pair[1].toPath());
+                        } catch (IOException re) {
+                            log.error(logMessage("gui.image-classifier.log.rollback-delete-failed", re.getMessage()));
+                        }
                     }
                 }
                 throw copyErr; // 抛出异常交给外层 catch 弹窗并终止当前操作
@@ -1177,7 +1303,7 @@ public class ImageClassifier extends JFrame {
                     if (remaining == null || remaining.length == 0) {
                         Files.delete(currentSubFolder.toPath());
                     } else {
-                        throw new IOException("源文件夹中仍存在其他非图片文件 (" + remaining.length + "个)");
+                        throw new IOException(message("gui.image-classifier.error.source-folder-has-other-files", remaining.length));
                     }
                 } catch (Exception delErr) {
                     // 如果在弹窗前，用户已经光速手动删除了文件夹，则直接跳出循环
@@ -1185,15 +1311,17 @@ public class ImageClassifier extends JFrame {
                         break;
                     }
 
-                    int option = JOptionPane.showConfirmDialog(this,
-                            "删除源文件或源文件夹时出错: " + delErr.getMessage() + "\n\n" +
-                                    "目标文件已成功复制。\n" +
-                                    "您可以前往路径手动删除源文件夹后，点击「确定」继续；\n" +
-                                    "或者点击「取消」跳过清理直接进行下一个。\n\n" +
-                                    "源路径: " + currentSubFolder.getAbsolutePath(),
-                            "删除源文件失败",
+                    int option = JOptionPane.showConfirmDialog(
+                            this,
+                            message(
+                                    "gui.image-classifier.dialog.delete-source-failed.message",
+                                    delErr.getMessage(),
+                                    currentSubFolder.getAbsolutePath()
+                            ),
+                            message("gui.image-classifier.dialog.delete-source-failed.title"),
                             JOptionPane.OK_CANCEL_OPTION,
-                            JOptionPane.WARNING_MESSAGE);
+                            JOptionPane.WARNING_MESSAGE
+                    );
 
                     if (option != JOptionPane.OK_OPTION) {
                         // 用户放弃挣扎，打断循环，保留源文件垃圾
@@ -1207,13 +1335,18 @@ public class ImageClassifier extends JFrame {
             // ==========================================
             if (serverRunning) {
                 try { sendMoveArtWorkInfo(artworkId, moveReportPath); }
-                catch (Exception e) { log.error("记录失败", e); }
+                catch (Exception e) { log.error(logMessage("gui.image-classifier.log.record-move-failed"), e); }
             }
 
             moveToNextFolder();
 
         } catch (IOException e) {
-            JOptionPane.showMessageDialog(this, "移动文件时出错（已回滚目标文件）: " + e.getMessage(), "错误", JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(
+                    this,
+                    message("gui.image-classifier.dialog.move-files-failed.message", e.getMessage()),
+                    message("gui.dialog.error.title"),
+                    JOptionPane.ERROR_MESSAGE
+            );
             loadImagesFromCurrentFolder();
             updateThumbnails();
         }
@@ -1232,20 +1365,20 @@ public class ImageClassifier extends JFrame {
                 serverRunning = ok;
                 SwingUtilities.invokeLater(() -> {
                     if (ok) {
-                        serverStatusLabel.setText("● 服务器正常");
+                        serverStatusLabel.setText(message("gui.image-classifier.server.ok"));
                         serverStatusLabel.setForeground(new Color(34, 139, 87));
                     } else {
-                        serverStatusLabel.setText("● 服务器异常 (" + response.getStatusCode() + ")");
+                        serverStatusLabel.setText(message("gui.image-classifier.server.error", response.getStatusCode()));
                         serverStatusLabel.setForeground(C_DANGER);
                     }
                 });
             } catch (Exception e) {
                 serverRunning = false;
                 SwingUtilities.invokeLater(() -> {
-                    serverStatusLabel.setText("● 连接失败");
+                    serverStatusLabel.setText(message("gui.image-classifier.server.connect-failed"));
                     serverStatusLabel.setForeground(C_DANGER);
                 });
-                log.error("检查服务器状态失败: {}", e.getMessage());
+                log.error(logMessage("gui.image-classifier.log.server-status-check-failed", e.getMessage()));
             }
         }).start();
     }
@@ -1263,9 +1396,9 @@ public class ImageClassifier extends JFrame {
 
         try {
             ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.POST, new HttpEntity<>(body, headers), String.class);
-            log.info("Response: {}", response.getBody());
+            log.info(logMessage("gui.image-classifier.log.move-api-response", response.getBody()));
         } catch (Exception e) {
-            log.error("发送请求失败: {}", e.getMessage());
+            log.error(logMessage("gui.image-classifier.log.move-api-request-failed", e.getMessage()));
         }
     }
 
@@ -1276,7 +1409,7 @@ public class ImageClassifier extends JFrame {
     private void openImageViewer(int initialIndex) {
         if (currentImages == null || currentImages.isEmpty()) return;
 
-        JDialog viewer = new JDialog(this, "图片查看", false);
+        JDialog viewer = new JDialog(this, message("gui.image-classifier.dialog.image-viewer.title"), false);
         viewer.setSize(1100, 860);
         viewer.setLocationRelativeTo(this);
         viewer.setLayout(new BorderLayout());
@@ -1284,7 +1417,7 @@ public class ImageClassifier extends JFrame {
         final int[] idx = {initialIndex};
 
         // ── 图片显示区 ──
-        JLabel imageLabel = new JLabel("加载中...", JLabel.CENTER);
+        JLabel imageLabel = new JLabel(message("gui.image-classifier.thumbnail.loading"), JLabel.CENTER);
         imageLabel.setFont(new Font("微软雅黑", Font.PLAIN, 14));
         imageLabel.setForeground(new Color(180, 180, 180));
         imageLabel.setBackground(new Color(18, 18, 18));
@@ -1301,8 +1434,8 @@ public class ImageClassifier extends JFrame {
         navPanel.setBackground(C_PANEL);
         navPanel.setBorder(BorderFactory.createMatteBorder(1, 0, 0, 0, C_BORDER));
 
-        JButton prevBtn = styledButton("◀ 上一张", C_NEUTRAL);
-        JButton nextBtn = styledButton("下一张 ▶", C_NEUTRAL);
+        JButton prevBtn = styledButton(message("gui.image-classifier.button.prev-image"), C_NEUTRAL);
+        JButton nextBtn = styledButton(message("gui.image-classifier.button.next-image"), C_NEUTRAL);
         prevBtn.setPreferredSize(new Dimension(110, 34));
         nextBtn.setPreferredSize(new Dimension(110, 34));
 
@@ -1330,12 +1463,12 @@ public class ImageClassifier extends JFrame {
             if (currentImages == null || idx[0] >= currentImages.size()) return;
             File imgFile = currentImages.get(idx[0]);
 
-            viewer.setTitle("图片查看  [" + (idx[0] + 1) + " / " + currentImages.size() + "]  " + imgFile.getName());
-            pageLabel.setText("第 " + (idx[0] + 1) + " / " + currentImages.size() + " 张");
+            viewer.setTitle(message("gui.image-classifier.dialog.image-viewer.page-title", idx[0] + 1, currentImages.size(), imgFile.getName()));
+            pageLabel.setText(message("gui.image-classifier.dialog.image-viewer.page-label", idx[0] + 1, currentImages.size()));
             fileNameLabel.setText(imgFile.getName());
             prevBtn.setEnabled(idx[0] > 0);
             nextBtn.setEnabled(idx[0] < currentImages.size() - 1);
-            imageLabel.setText("加载中...");
+            imageLabel.setText(message("gui.image-classifier.thumbnail.loading"));
             imageLabel.setIcon(null);
 
             // WebP 动图：Java ImageIO 不支持 webp，改用伴随的 _thumb.jpg（第一帧原始分辨率）
@@ -1358,7 +1491,7 @@ public class ImageClassifier extends JFrame {
                         ImageIcon raw = new ImageIcon(loadFile.getAbsolutePath());
                         src = toBufferedImage(raw.getImage());
                     }
-                    if (src == null) throw new IOException("无法解码图片");
+                    if (src == null) throw new IOException(message("gui.image-classifier.error.decode-image"));
 
                     int imgW = src.getWidth();
                     int imgH = src.getHeight();
@@ -1381,10 +1514,10 @@ public class ImageClassifier extends JFrame {
                         scrollPane.getViewport().setViewPosition(new Point(0, 0));
                     });
                 } catch (Exception ex) {
-                    log.error("查看器加载图片失败: {}", ex.getMessage());
+                    log.error(logMessage("gui.image-classifier.log.viewer-load-failed", ex.getMessage()));
                     SwingUtilities.invokeLater(() -> {
                         imageLabel.setIcon(null);
-                        imageLabel.setText("图片加载失败: " + ex.getMessage());
+                        imageLabel.setText(message("gui.image-classifier.thumbnail.viewer-load-failed", ex.getMessage()));
                     });
                 }
             }, "ImageViewer-Loader").start();
@@ -1426,7 +1559,7 @@ public class ImageClassifier extends JFrame {
         try {
             file.delete();
         } catch (Exception e) {
-            log.error("删除残留文件失败: {}", file.getAbsolutePath());
+            log.error(logMessage("gui.image-classifier.log.delete-residual-failed", file.getAbsolutePath()));
         }
     }
 
@@ -1465,7 +1598,7 @@ public class ImageClassifier extends JFrame {
                 }
             } catch (org.springframework.web.client.HttpClientErrorException ignored) {
             } catch (Exception e) {
-                log.debug("通过 move_folder 查询作品 ID 失败: {}", e.getMessage());
+                log.debug(logMessage("gui.image-classifier.log.resolve-artwork-id-by-move-folder-failed", e.getMessage()));
             }
         }
         try {
@@ -1480,6 +1613,14 @@ public class ImageClassifier extends JFrame {
             if (!Files.exists(parentFolder.toPath().resolve(String.valueOf(i)))) return i;
         }
         return Integer.MAX_VALUE;
+    }
+
+    private static String message(String code, Object... args) {
+        return GuiMessages.get(code, args);
+    }
+
+    private static String logMessage(String code, Object... args) {
+        return MessageBundles.get(code, args);
     }
 
     private static String stripTrailingSlash(String path) {

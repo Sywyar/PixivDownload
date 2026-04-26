@@ -13,6 +13,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import top.sywyar.pixivdownload.GlobalExceptionHandler;
 import top.sywyar.pixivdownload.author.AuthorService;
+import top.sywyar.pixivdownload.i18n.AppMessages;
 import top.sywyar.pixivdownload.i18n.TestI18nBeans;
 import top.sywyar.pixivdownload.download.DownloadService;
 import top.sywyar.pixivdownload.download.DownloadStatus;
@@ -26,6 +27,7 @@ import top.sywyar.pixivdownload.quota.UserQuotaService;
 import top.sywyar.pixivdownload.setup.SetupService;
 
 import java.util.List;
+import java.util.Locale;
 
 import static org.hamcrest.Matchers.*;
 import static org.mockito.Mockito.*;
@@ -35,6 +37,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @ExtendWith(MockitoExtension.class)
 @DisplayName("DownloadController 单元测试")
 class DownloadControllerTest {
+    private static final AppMessages APP_MESSAGES = TestI18nBeans.appMessages();
 
     private MockMvc mockMvc;
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -56,9 +59,9 @@ class DownloadControllerTest {
     void setUp() {
         multiModeConfig = new MultiModeConfig();
         DownloadController controller = new DownloadController(
-                downloadService, setupService, userQuotaService, multiModeConfig, pixivDatabase, authorService);
+                downloadService, setupService, userQuotaService, multiModeConfig, pixivDatabase, authorService, APP_MESSAGES);
         mockMvc = MockMvcBuilders.standaloneSetup(controller)
-                .setControllerAdvice(new GlobalExceptionHandler(TestI18nBeans.appMessages()))
+                .setControllerAdvice(new GlobalExceptionHandler(APP_MESSAGES))
                 .build();
     }
 
@@ -67,7 +70,7 @@ class DownloadControllerTest {
     @Test
     @DisplayName("GET /api/download/status 应返回服务状态")
     void shouldReturnServiceStatus() throws Exception {
-        mockMvc.perform(get("/api/download/status"))
+        mockMvc.perform(get("/api/download/status").locale(Locale.SIMPLIFIED_CHINESE))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.message").value("服务运行正常"));
@@ -101,7 +104,7 @@ class DownloadControllerTest {
         void shouldReturnNotFoundStatus() throws Exception {
             when(downloadService.getDownloadStatus(99999L)).thenReturn(null);
 
-            mockMvc.perform(get("/api/download/status/99999"))
+            mockMvc.perform(get("/api/download/status/99999").locale(Locale.SIMPLIFIED_CHINESE))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.success").value(false))
                     .andExpect(jsonPath("$.message").value("未找到该作品的下载状态"));
@@ -128,7 +131,7 @@ class DownloadControllerTest {
     @Test
     @DisplayName("POST /api/cancel/{artworkId} 应取消下载")
     void shouldCancelDownload() throws Exception {
-        mockMvc.perform(post("/api/cancel/12345"))
+        mockMvc.perform(post("/api/cancel/12345").locale(Locale.SIMPLIFIED_CHINESE))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.message").value("下载任务已取消"));
@@ -153,6 +156,7 @@ class DownloadControllerTest {
             request.setImageUrls(List.of("https://i.pximg.net/img/12345_p0.jpg"));
 
             mockMvc.perform(post("/api/download/pixiv")
+                            .locale(Locale.SIMPLIFIED_CHINESE)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isOk())

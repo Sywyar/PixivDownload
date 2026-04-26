@@ -1,5 +1,7 @@
 package top.sywyar.pixivdownload.gui.config;
 
+import top.sywyar.pixivdownload.gui.i18n.GuiMessages;
+
 import javax.swing.*;
 import javax.swing.filechooser.FileNameExtensionFilter;
 import java.awt.*;
@@ -63,12 +65,12 @@ public final class FieldRenderer {
 
     private static RenderedField renderPath(ConfigFieldSpec spec, boolean dirMode) {
         JTextField tf = new JTextField(spec.defaultValue(), 24);
-        JButton browse = new JButton("浏览...");
+        JButton browse = new JButton(message("gui.button.browse"));
         browse.addActionListener(e -> {
             JFileChooser fc = new JFileChooser();
             fc.setFileSelectionMode(dirMode ? JFileChooser.DIRECTORIES_ONLY : JFileChooser.FILES_ONLY);
             if (!dirMode) {
-                fc.setFileFilter(new FileNameExtensionFilter("证书文件 (*.pem, *.jks, *.p12)",
+                fc.setFileFilter(new FileNameExtensionFilter(message("gui.filechooser.cert-files"),
                         "pem", "jks", "p12", "key"));
             }
             String cur = tf.getText().trim();
@@ -135,7 +137,7 @@ public final class FieldRenderer {
         gbc.anchor = GridBagConstraints.WEST;
 
         // 标签
-        JLabel label = new JLabel(spec.label() + "：");
+        JLabel label = new JLabel(spec.label() + message("gui.punctuation.colon"));
         label.setPreferredSize(new Dimension(160, 24));
         gbc.gridx = 0;
         gbc.gridy = 0;
@@ -149,7 +151,7 @@ public final class FieldRenderer {
 
         // 需重启标记
         if (spec.requiresRestart()) {
-            JLabel restart = new JLabel("需重启");
+            JLabel restart = new JLabel(message("gui.label.restart-required"));
             restart.setFont(restart.getFont().deriveFont(Font.PLAIN, 11f));
             restart.setForeground(new Color(180, 100, 0));
             gbc.gridx = 2;
@@ -179,5 +181,9 @@ public final class FieldRenderer {
         } catch (NumberFormatException e) {
             return fallback;
         }
+    }
+
+    private static String message(String code, Object... args) {
+        return GuiMessages.get(code, args);
     }
 }

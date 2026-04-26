@@ -9,8 +9,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.server.ResponseStatusException;
 import top.sywyar.pixivdownload.common.SessionUtils;
+import top.sywyar.pixivdownload.i18n.LocalizedException;
 import top.sywyar.pixivdownload.quota.MultiModeConfig;
 import top.sywyar.pixivdownload.setup.request.LoginRequest;
 import top.sywyar.pixivdownload.setup.request.SetupInitRequest;
@@ -45,7 +45,11 @@ public class SetupController {
     @PostMapping("/api/setup/init")
     public SetupInitResponse init(@Valid @RequestBody SetupInitRequest request) throws IOException {
         if (setupService.isSetupComplete()) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "已完成配置，不可重复初始化");
+            throw new LocalizedException(
+                    HttpStatus.FORBIDDEN,
+                    "setup.init.already-completed",
+                    "已完成配置，不可重复初始化"
+            );
         }
         setupService.init(request.getUsername(), request.getPassword(), request.getMode());
         return new SetupInitResponse(true, request.getMode());
@@ -57,10 +61,18 @@ public class SetupController {
     public ResponseEntity<AuthResponse> login(@RequestBody LoginRequest request, HttpServletRequest httpRequest) {
         String clientIp = getClientIp(httpRequest);
         if (!loginRateLimitService.isAllowed(clientIp)) {
-            throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS, "登录尝试过于频繁，请稍后再试");
+            throw new LocalizedException(
+                    HttpStatus.TOO_MANY_REQUESTS,
+                    "setup.login.rate-limit.exceeded",
+                    "登录尝试过于频繁，请稍后再试"
+            );
         }
         if (!setupService.checkLogin(request.getUsername(), request.getPassword())) {
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "用户名或密码错误");
+            throw new LocalizedException(
+                    HttpStatus.UNAUTHORIZED,
+                    "setup.login.invalid-credentials",
+                    "用户名或密码错误"
+            );
         }
 
         String token = setupService.createSession(request.isRememberMe());

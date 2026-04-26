@@ -5,6 +5,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import top.sywyar.pixivdownload.download.response.DownloadedResponse;
 import top.sywyar.pixivdownload.download.response.PagedHistoryResponse;
+import top.sywyar.pixivdownload.i18n.AppMessages;
 
 import java.util.*;
 
@@ -14,6 +15,7 @@ import java.util.*;
 public class GalleryController {
 
     private final GalleryService galleryService;
+    private final AppMessages messages;
 
     @GetMapping("/artworks")
     public PagedHistoryResponse listArtworks(
@@ -89,8 +91,12 @@ public class GalleryController {
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
-    public ResponseEntity<Map<String, String>> handleBadRequest(IllegalArgumentException e) {
-        return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+    public ResponseEntity<Map<String, String>> handleBadRequest(IllegalArgumentException e, Locale locale) {
+        String rawMessage = e.getMessage();
+        String message = rawMessage == null || rawMessage.isBlank()
+                ? messages.getOrDefault(locale, "error.request.param.invalid", "请求参数错误")
+                : messages.getOrDefault(locale, rawMessage, rawMessage);
+        return ResponseEntity.badRequest().body(Map.of("error", message));
     }
 
     private List<String> parseFormats(String csv) {

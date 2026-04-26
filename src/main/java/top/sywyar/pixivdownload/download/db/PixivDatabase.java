@@ -4,6 +4,7 @@ import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Repository;
+import top.sywyar.pixivdownload.i18n.AppMessages;
 
 import java.util.List;
 
@@ -13,6 +14,7 @@ import java.util.List;
 public class PixivDatabase {
 
     private final PixivMapper pixivMapper;
+    private final AppMessages messages;
 
     @PostConstruct
     public void init() {
@@ -27,7 +29,7 @@ public class PixivDatabase {
         try { pixivMapper.addIsAiColumn(); } catch (Exception ignored) {}
         try { pixivMapper.addAuthorIdColumn(); } catch (Exception ignored) {}
         try { pixivMapper.addDescriptionColumn(); } catch (Exception ignored) {}
-        log.info("数据库初始化完成");
+        log.info(messages.getForLog("download.db.log.initialized"));
     }
 
     /**

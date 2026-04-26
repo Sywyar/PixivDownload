@@ -1,6 +1,7 @@
 package top.sywyar.pixivdownload.gui.panel;
 
 import top.sywyar.pixivdownload.common.AppVersion;
+import top.sywyar.pixivdownload.gui.i18n.GuiMessages;
 
 import javax.swing.*;
 import java.awt.*;
@@ -9,20 +10,14 @@ import java.awt.event.MouseEvent;
 import java.net.URI;
 
 /**
- * "关于" 标签页：显示版本、GitHub 链接、AGPL-3.0 许可证全文及免责声明。
+ * "关于" 标签页：显示版本、GitHub 链接、免责声明及 AGPL-3.0 许可证全文。
  */
 public class AboutPanel extends JPanel {
 
     private static final String GITHUB_URL = "https://github.com/Sywyar/PixivDownload";
-    private static final String APP_NAME = "PixivDownload";
-    private static final String APP_VERSION = AppVersion.getDisplayVersion();
+    private static final String APP_NAME = GuiMessages.get("app.name");
 
     private static final String LICENSE_TEXT = """
-            - 本项目仅供个人学习和研究使用，请勿用于任何商业用途。
-            - 使用本工具下载的内容版权归原作者所有，请尊重创作者权益，不得二次传播或商业使用。
-            - 本工具通过用户自行提供的 Cookie 访问 Pixiv，使用者需自行承担账号风险。
-            - 本项目与 Pixiv 官方无任何关联，使用本工具产生的一切后果由使用者自行负责。
-            - 请合理设置下载间隔，避免对 Pixiv 服务器造成过大压力。
                                 GNU AFFERO GENERAL PUBLIC LICENSE
                                    Version 3, 19 November 2007
             
@@ -687,6 +682,7 @@ public class AboutPanel extends JPanel {
 
     public AboutPanel() {
         setLayout(new BorderLayout(0, 0));
+        String appVersion = AppVersion.getDisplayVersionOrDefault(GuiMessages.get("app.version.unknown"));
 
         // ── 顶部：图标 + 名称 + 描述 + 链接 + 技术栈 ────────────────────────────
         JPanel topPanel = new JPanel();
@@ -710,7 +706,7 @@ public class AboutPanel extends JPanel {
         topPanel.add(nameLabel);
         topPanel.add(Box.createVerticalStrut(6));
 
-        JLabel versionLabel = new JLabel("版本：" + APP_VERSION);
+        JLabel versionLabel = new JLabel(GuiMessages.get("gui.about.version", appVersion));
         versionLabel.setFont(versionLabel.getFont().deriveFont(Font.PLAIN, 12f));
         versionLabel.setForeground(Color.GRAY);
         versionLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
@@ -718,9 +714,7 @@ public class AboutPanel extends JPanel {
         topPanel.add(Box.createVerticalStrut(6));
 
         // 描述
-        JLabel desc = new JLabel("<html><div style='text-align:center'>"
-                + "Pixiv 本地下载代理后端<br>配合 Tampermonkey 油猴脚本使用"
-                + "</div></html>");
+        JLabel desc = new JLabel(GuiMessages.get("gui.about.description"));
         desc.setHorizontalAlignment(SwingConstants.CENTER);
         desc.setAlignmentX(Component.CENTER_ALIGNMENT);
         topPanel.add(desc);
@@ -738,7 +732,8 @@ public class AboutPanel extends JPanel {
                     Desktop.getDesktop().browse(new URI(GITHUB_URL));
                 } catch (Exception ex) {
                     JOptionPane.showMessageDialog(AboutPanel.this,
-                            "无法打开浏览器：" + ex.getMessage(), "错误", JOptionPane.ERROR_MESSAGE);
+                            GuiMessages.get("gui.error.open-browser", ex.getMessage()),
+                            GuiMessages.get("gui.dialog.error.title"), JOptionPane.ERROR_MESSAGE);
                 }
             }
         });
@@ -746,7 +741,7 @@ public class AboutPanel extends JPanel {
         topPanel.add(Box.createVerticalStrut(6));
 
         // 许可证标识
-        JLabel licenseBadge = new JLabel("许可证：GNU AGPL v3.0");
+        JLabel licenseBadge = new JLabel(GuiMessages.get("gui.about.license.badge"));
         licenseBadge.setFont(licenseBadge.getFont().deriveFont(Font.BOLD, 11f));
         licenseBadge.setForeground(new Color(0, 120, 0));
         licenseBadge.setAlignmentX(Component.CENTER_ALIGNMENT);
@@ -754,16 +749,25 @@ public class AboutPanel extends JPanel {
         topPanel.add(Box.createVerticalStrut(4));
 
         // 技术栈
-        JLabel tech = new JLabel("<html><div style='text-align:center;color:gray;font-size:10pt'>"
-                + "Spring Boot 3.5.7 · Java 17 · Swing + FlatLaf"
-                + "</div></html>");
+        JLabel tech = new JLabel(GuiMessages.get("gui.about.tech"));
         tech.setHorizontalAlignment(SwingConstants.CENTER);
         tech.setAlignmentX(Component.CENTER_ALIGNMENT);
         topPanel.add(tech);
 
         add(topPanel, BorderLayout.NORTH);
 
-        // ── 许可证全文 + 免责声明（可滚动）─────────────────────────────────────
+        // ── 免责声明 ────────────────────────────────────────────────────────
+        JTextArea disclaimerArea = new JTextArea(GuiMessages.get("gui.about.disclaimer.text"));
+        disclaimerArea.setEditable(false);
+        disclaimerArea.setLineWrap(true);
+        disclaimerArea.setWrapStyleWord(true);
+        disclaimerArea.setBorder(BorderFactory.createEmptyBorder(6, 8, 6, 8));
+
+        JPanel disclaimerWrapper = new JPanel(new BorderLayout());
+        disclaimerWrapper.setBorder(BorderFactory.createTitledBorder(GuiMessages.get("gui.about.disclaimer.title")));
+        disclaimerWrapper.add(disclaimerArea);
+
+        // ── 许可证全文（可滚动）────────────────────────────────────────────
         JTextArea licenseArea = new JTextArea(LICENSE_TEXT);
         licenseArea.setEditable(false);
         licenseArea.setLineWrap(true);
@@ -772,14 +776,15 @@ public class AboutPanel extends JPanel {
         licenseArea.setBorder(BorderFactory.createEmptyBorder(8, 8, 8, 8));
 
         JScrollPane scroll = new JScrollPane(licenseArea);
-        scroll.setBorder(BorderFactory.createTitledBorder("许可证与免责声明"));
+        scroll.setBorder(BorderFactory.createTitledBorder(GuiMessages.get("gui.about.license.title")));
         scroll.getVerticalScrollBar().setUnitIncrement(16);
 
-        JPanel scrollWrapper = new JPanel(new BorderLayout());
-        scrollWrapper.setBorder(BorderFactory.createEmptyBorder(0, 8, 8, 8));
-        scrollWrapper.add(scroll);
+        JPanel centerPanel = new JPanel(new BorderLayout(0, 8));
+        centerPanel.setBorder(BorderFactory.createEmptyBorder(0, 8, 8, 8));
+        centerPanel.add(disclaimerWrapper, BorderLayout.NORTH);
+        centerPanel.add(scroll, BorderLayout.CENTER);
 
-        add(scrollWrapper, BorderLayout.CENTER);
+        add(centerPanel, BorderLayout.CENTER);
     }
 
     private static ImageIcon loadIcon(int size) {

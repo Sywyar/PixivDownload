@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 import top.sywyar.pixivdownload.download.config.DownloadConfig;
 import top.sywyar.pixivdownload.download.db.ArtworkRecord;
 import top.sywyar.pixivdownload.download.db.PixivDatabase;
+import top.sywyar.pixivdownload.i18n.AppMessages;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
@@ -30,6 +31,7 @@ public class UserQuotaService {
     private final MultiModeConfig config;
     private final DownloadConfig downloadConfig;
     private final PixivDatabase pixivDatabase;
+    private final AppMessages messages;
 
     /** UUID → 用户配额信息 */
     private final ConcurrentHashMap<String, UserQuota> quotaMap = new ConcurrentHashMap<>();
@@ -227,7 +229,7 @@ public class UserQuotaService {
         UserQuota quota = quotaMap.get(uuid);
         if (quota == null || quota.getDownloadedFolders().isEmpty()) {
             entry.setStatus("empty");
-            log.info("压缩包 {}: 用户 {} 暂无已下载文件夹", token, uuid);
+            log.info(message("archive.log.user.empty", token, uuid));
             return;
         }
 
@@ -263,7 +265,7 @@ public class UserQuotaService {
 
             entry.setArchivePath(archivePath);
             entry.setStatus("ready");
-            log.info("压缩包 {} 创建完成: {}", token, archivePath);
+            log.info(message("archive.log.created", token, archivePath));
 
             // pack-and-delete 模式：打包后立即删除源文件及下载历史记录
             // never-delete / timed-delete 模式：保留源文件，不删除历史记录
@@ -277,7 +279,7 @@ public class UserQuotaService {
 
         } catch (Exception e) {
             entry.setStatus("error");
-            log.error("压缩包 {} 创建失败 (用户 {})", token, uuid, e);
+            log.error(message("archive.log.create.failed", token, uuid), e);
         }
     }
 
@@ -323,11 +325,10 @@ public class UserQuotaService {
 
             entry.setArchivePath(archivePath);
             entry.setStatus("ready");
-            log.info("管理员压缩包 {} 创建完成: {} ({} 个文件夹，源文件保留)",
-                    token, archivePath, folders.size());
+            log.info(message("archive.log.admin.created", token, archivePath, folders.size()));
         } catch (Exception e) {
             entry.setStatus("error");
-            log.error("管理员压缩包 {} 创建失败", token, e);
+            log.error(message("archive.log.admin.create.failed", token), e);
         }
     }
 
@@ -341,7 +342,7 @@ public class UserQuotaService {
             try {
                 Files.deleteIfExists(entry.getArchivePath());
             } catch (Exception e) {
-                log.warn("删除压缩包文件失败: {}", entry.getArchivePath(), e);
+                log.warn(message("archive.log.file.delete.failed", entry.getArchivePath()), e);
             }
         }
     }
@@ -357,10 +358,10 @@ public class UserQuotaService {
                     try {
                         Files.deleteIfExists(ae.getArchivePath());
                     } catch (Exception e1) {
-                        log.warn("删除过期压缩包文件失败: {}", ae.getArchivePath(), e1);
+                        log.warn(message("archive.log.expired-file.delete.failed", ae.getArchivePath()), e1);
                     }
                 }
-                log.info("压缩包 {} 已过期，已删除", e.getKey());
+                log.info(message("archive.log.expired.deleted", e.getKey()));
                 return true;
             }
             return false;
@@ -374,7 +375,7 @@ public class UserQuotaService {
         long cutoffSec = System.currentTimeMillis() / 1000 - (long) config.getDeleteAfterHours() * 3600;
         List<ArtworkRecord> oldArtworks = pixivDatabase.getArtworksOlderThan(cutoffSec);
         if (oldArtworks.isEmpty()) return;
-        log.info("timed-delete: 发现 {} 个超期作品，开始清理", oldArtworks.size());
+        log.info(message("quota.log.timed-delete.started", oldArtworks.size()));
         for (ArtworkRecord artwork : oldArtworks) {
             deleteArtworkFolder(artwork);
         }
@@ -400,19 +401,19 @@ public class UserQuotaService {
                 try (var stream = Files.walk(folder)) {
                     stream.sorted(Comparator.reverseOrder()).map(Path::toFile).forEach(File::delete);
                 }
-                log.info("已删除源文件夹: {}", folder);
+                log.info(message("quota.log.folder.deleted", folder));
             }
         } catch (Exception e) {
-            log.warn("删除源文件夹失败: {}", folder, e);
+            log.warn(message("quota.log.folder.delete.failed", folder), e);
         }
         try {
             if (artworkId == null) {
                 return;
             }
             pixivDatabase.deleteArtwork(artworkId);
-            log.info("已删除下载历史记录: artworkId={}", artworkId);
+            log.info(message("quota.log.history.deleted", artworkId));
         } catch (Exception e) {
-            log.warn("删除下载历史记录失败: folder={}", folder, e);
+            log.warn(message("quota.log.history.delete.failed", folder), e);
         }
     }
 
@@ -455,6 +456,10 @@ public class UserQuotaService {
         } catch (Exception e) {
             return UUID.randomUUID().toString();
         }
+    }
+
+    private String message(String code, Object... args) {
+        return messages.getForLog(code, args);
     }
 
     // ---- 内部数据类 --------------------------------------------------------------

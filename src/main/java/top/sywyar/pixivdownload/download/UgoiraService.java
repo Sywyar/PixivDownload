@@ -9,6 +9,7 @@ import org.springframework.web.client.RestTemplate;
 import top.sywyar.pixivdownload.ffmpeg.FfmpegInstallation;
 import top.sywyar.pixivdownload.ffmpeg.FfmpegLocator;
 import top.sywyar.pixivdownload.download.request.DownloadRequest;
+import top.sywyar.pixivdownload.i18n.AppMessages;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
@@ -25,9 +26,12 @@ import java.util.zip.ZipInputStream;
 public class UgoiraService {
 
     private final RestTemplate downloadRestTemplate;
+    private final AppMessages messages;
 
-    public UgoiraService(@Qualifier("downloadRestTemplate") RestTemplate downloadRestTemplate) {
+    public UgoiraService(@Qualifier("downloadRestTemplate") RestTemplate downloadRestTemplate,
+                         AppMessages messages) {
         this.downloadRestTemplate = downloadRestTemplate;
+        this.messages = messages;
     }
 
     /**
@@ -45,16 +49,16 @@ public class UgoiraService {
 
         for (int attempt = 1; attempt <= maxAttempts; attempt++) {
             try {
-                log.info("正在下载动图ZIP：作品 {}（尝试 {}/{}）", artworkId, attempt, maxAttempts);
+                log.info(message("ugoira.log.zip.download.started", id(artworkId), text(attempt), text(maxAttempts)));
                 if (!downloadZip(other.getUgoiraZipUrl(), zipPath, referer, cookie)) {
-                    log.error("作品：{}，动图ZIP下载失败(尝试 {}/{})", artworkId, attempt, maxAttempts);
+                    log.error(message("ugoira.log.zip.download.failed", id(artworkId), text(attempt), text(maxAttempts)));
                     continue;
                 }
 
                 Files.createDirectories(tempDir);
                 TreeMap<String, Path> frameFiles = extractFrames(artworkId, zipPath, tempDir);
                 if (frameFiles.isEmpty()) {
-                    log.error("作品：{}，ZIP内无帧文件", artworkId);
+                    log.error(message("ugoira.log.zip.empty", id(artworkId)));
                     continue;
                 }
 
@@ -71,10 +75,10 @@ public class UgoiraService {
                 }
 
             } catch (java.util.zip.ZipException e) {
-                log.warn("作品：{}，动图ZIP校验失败(尝试 {}/{})：{}，将重新下载",
-                        artworkId, attempt, maxAttempts, e.getMessage());
+                log.warn(message("ugoira.log.zip.invalid",
+                        id(artworkId), text(attempt), text(maxAttempts), e.getMessage()));
             } catch (Exception e) {
-                log.error("作品：{}，动图处理异常: {}", artworkId, e.getMessage(), e);
+                log.error(message("ugoira.log.processing.failed", id(artworkId), e.getMessage()), e);
                 break; // 非ZIP格式异常不重试
             } finally {
                 cleanup(zipPath, tempDir);
@@ -103,7 +107,7 @@ public class UgoiraService {
                     // Zip Slip 防护：确保解压路径不逃出 tempDir
                     Path framePath = normalizedTempDir.resolve(entry.getName()).normalize();
                     if (!framePath.startsWith(normalizedTempDir)) {
-                        log.warn("作品：{}，跳过危险ZIP条目（Zip Slip）: {}", artworkId, entry.getName());
+                        log.warn(message("ugoira.log.zip-entry.unsafe", id(artworkId), entry.getName()));
                         zis.closeEntry();
                         continue;
                     }
@@ -134,11 +138,12 @@ public class UgoiraService {
         var installation = FfmpegLocator.locate();
         if (installation.isPresent()) {
             FfmpegInstallation ffmpegInstallation = installation.get();
-            log.info("使用{} FFmpeg：{}", ffmpegInstallation.sourceLabel(), ffmpegInstallation.ffmpegPath());
+            log.info(message("ugoira.log.ffmpeg.detected",
+                    message(ffmpegInstallation.sourceMessageCode()), ffmpegInstallation.ffmpegPath()));
             return ffmpegInstallation.ffmpegPath().toString();
         }
 
-        log.warn("未检测到 FFmpeg，将尝试直接调用 'ffmpeg'，请确保已安装或配置 ffmpeg.path");
+        log.warn(message("ugoira.log.ffmpeg.missing"));
         return FfmpegLocator.fallbackCommand();
     }
 
@@ -177,7 +182,7 @@ public class UgoiraService {
         int exitCode = process.waitFor();
 
         if (exitCode != 0) {
-            log.error("作品：{}，ffmpeg 执行失败，退出码：{}", artworkId, exitCode);
+            log.error(message("ugoira.log.ffmpeg.failed", id(artworkId), text(exitCode)));
             return false;
         }
         return true;
@@ -198,7 +203,7 @@ public class UgoiraService {
                         },
                         (ClientHttpResponse response) -> {
                             if (!response.getStatusCode().is2xxSuccessful()) {
-                                log.error("HTTP错误: {} for {}", response.getStatusCode(), url);
+                                log.error(message("ugoira.log.http-error", response.getStatusCode(), url));
                                 return false;
                             }
                             try (InputStream in = response.getBody();
@@ -211,7 +216,7 @@ public class UgoiraService {
                         });
                 if (Boolean.TRUE.equals(success)) return true;
             } catch (Exception e) {
-                log.error("ZIP下载失败：{}，错误：{}，重试：{}/{}", url, e.getMessage(), attempt, maxRetries);
+                log.error(message("ugoira.log.zip.retry", url, e.getMessage(), attempt, maxRetries));
                 if (attempt < maxRetries) {
                     try {
                         Thread.sleep(2000L * attempt);
@@ -233,5 +238,17 @@ public class UgoiraService {
                         .map(Path::toFile).forEach(File::delete);
             }
         } catch (Exception ignored) {}
+    }
+
+    private String message(String code, Object... args) {
+        return messages.getForLog(code, args);
+    }
+
+    private String id(Long value) {
+        return value == null ? "null" : String.valueOf(value);
+    }
+
+    private String text(int value) {
+        return String.valueOf(value);
     }
 }

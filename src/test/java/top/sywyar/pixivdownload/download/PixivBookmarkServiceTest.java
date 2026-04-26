@@ -14,6 +14,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.*;
 import org.springframework.web.client.RestTemplate;
+import top.sywyar.pixivdownload.i18n.TestI18nBeans;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -31,7 +32,7 @@ class PixivBookmarkServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new PixivBookmarkService(restTemplate, new ObjectMapper());
+        service = new PixivBookmarkService(restTemplate, new ObjectMapper(), TestI18nBeans.appMessages());
     }
 
     // ========== cookie 校验 ==========

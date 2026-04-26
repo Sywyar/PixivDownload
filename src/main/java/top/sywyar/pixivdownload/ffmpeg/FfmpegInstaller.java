@@ -1,5 +1,7 @@
 package top.sywyar.pixivdownload.ffmpeg;
 
+import top.sywyar.pixivdownload.gui.i18n.GuiMessages;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -37,6 +39,10 @@ public final class FfmpegInstaller {
 
     private FfmpegInstaller() {}
 
+    private static String message(String code, Object... args) {
+        return GuiMessages.get(code, args);
+    }
+
     public static boolean supportsManagedDownload() {
         return FfmpegLocator.isWindows();
     }
@@ -45,7 +51,7 @@ public final class FfmpegInstaller {
                                                     ProgressListener listener)
             throws IOException, InterruptedException {
         if (!supportsManagedDownload()) {
-            throw new IOException("当前系统暂不支持自动下载 FFmpeg，请自行安装到 PATH。");
+            throw new IOException(message("gui.ffmpeg.install.unsupported"));
         }
 
         ProxySettings settings = proxySettings == null ? ProxySettings.disabled() : proxySettings;
@@ -55,10 +61,10 @@ public final class FfmpegInstaller {
         Path archive = tempDir.resolve("ffmpeg.zip");
         Path extracted = tempDir.resolve("extract");
         try {
-            progress.onProgress("正在连接 FFmpeg 发布源…", 0L, -1L);
+            progress.onProgress(message("gui.ffmpeg.install.stage.connecting"), 0L, -1L);
             downloadArchive(settings, archive, progress);
 
-            progress.onProgress("正在解压 FFmpeg…", -1L, -1L);
+            progress.onProgress(message("gui.ffmpeg.install.stage.extracting"), -1L, -1L);
             ExtractedFiles extractedFiles = extractRequiredFiles(archive, extracted);
 
             Path toolsDir = FfmpegLocator.managedToolsDir();
@@ -72,9 +78,9 @@ public final class FfmpegInstaller {
             Files.createDirectories(licenseDir);
             Files.writeString(licenseDir.resolve("ffmpeg-LGPL.txt"), LGPL_NOTICE);
 
-            progress.onProgress("FFmpeg 已安装到软件目录。", 1L, 1L);
+            progress.onProgress(message("gui.ffmpeg.install.completed"), 1L, 1L);
             return FfmpegLocator.managedInstallation()
-                    .orElseThrow(() -> new IOException("FFmpeg 安装完成，但未检测到安装结果。"));
+                    .orElseThrow(() -> new IOException(message("gui.ffmpeg.install.result-missing")));
         } finally {
             deleteRecursively(tempDir);
         }
@@ -97,7 +103,7 @@ public final class FfmpegInstaller {
         HttpResponse<InputStream> response = builder.build()
                 .send(request, HttpResponse.BodyHandlers.ofInputStream());
         if (response.statusCode() < 200 || response.statusCode() >= 300) {
-            throw new IOException("FFmpeg 下载失败，HTTP 状态码: " + response.statusCode());
+            throw new IOException(message("gui.ffmpeg.install.download-http-error", response.statusCode()));
         }
 
         long total = contentLength(response);
@@ -109,7 +115,7 @@ public final class FfmpegInstaller {
             while ((read = inputStream.read(buffer)) != -1) {
                 outputStream.write(buffer, 0, read);
                 downloaded += read;
-                listener.onProgress("正在下载 FFmpeg…", downloaded, total);
+                listener.onProgress(message("gui.ffmpeg.install.stage.downloading"), downloaded, total);
             }
         }
     }
@@ -147,7 +153,7 @@ public final class FfmpegInstaller {
 
                 Path target = extractDir.resolve(fileName.toString()).normalize();
                 if (!target.startsWith(extractDir)) {
-                    throw new IOException("FFmpeg 压缩包包含非法路径: " + normalizedName);
+                    throw new IOException(message("gui.ffmpeg.install.archive.illegal-path", normalizedName));
                 }
 
                 Files.copy(zipInputStream, target, StandardCopyOption.REPLACE_EXISTING);
@@ -161,7 +167,8 @@ public final class FfmpegInstaller {
         }
 
         if (ffmpegPath == null || ffprobePath == null) {
-            throw new IOException("FFmpeg 压缩包结构异常，未找到 ffmpeg.exe 或 ffprobe.exe。");
+            throw new IOException(message("gui.ffmpeg.install.archive.invalid-structure",
+                    FfmpegLocator.executableName(), FfmpegLocator.probeExecutableName()));
         }
 
         return new ExtractedFiles(ffmpegPath, ffprobePath);

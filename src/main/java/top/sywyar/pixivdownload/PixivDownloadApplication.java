@@ -12,9 +12,9 @@ import java.nio.file.Path;
 @EnableScheduling
 public class PixivDownloadApplication {
 
-    public static void main(String[] args) {
+    /*public static void main(String[] args) {
         start(args);
-    }
+    }*/
 
     public static ConfigurableApplicationContext start(String[] args) {
         Path configPath = RuntimeFiles.resolveConfigYamlPath();

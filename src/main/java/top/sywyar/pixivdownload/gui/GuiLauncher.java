@@ -7,7 +7,10 @@ import top.sywyar.pixivdownload.common.AppVersion;
 import top.sywyar.pixivdownload.config.RuntimeFiles;
 import top.sywyar.pixivdownload.download.db.DatabaseSchemaInspector;
 import top.sywyar.pixivdownload.gui.config.ConfigFileEditor;
+import top.sywyar.pixivdownload.gui.i18n.GuiMessages;
 import top.sywyar.pixivdownload.gui.theme.FlatLafSetup;
+import top.sywyar.pixivdownload.i18n.MessageBundles;
+import top.sywyar.pixivdownload.i18n.SystemLocaleDetector;
 import top.sywyar.pixivdownload.tools.ArtworksBackFill;
 
 import javax.swing.*;
@@ -75,31 +78,37 @@ public class GuiLauncher {
     private static final String DEFAULT_ROOT = RuntimeFiles.DEFAULT_DOWNLOAD_ROOT;
 
     public static void main(String[] args) throws Exception {
-        // ── 0. 在 logback 初始化前完成日志目录/属性准备 ──────────────────────────
+        // ── 0a. 全局 locale 检测（必须先于 logback 初始化）────────────────────────
+        //    检测器内部不允许使用 SLF4J / @Slf4j 类；通过 Locale.setDefault 写回，
+        //    使后续 HtmlLogLayout / GuiMessages / getForLog 拿到统一信号。
+        SystemLocaleDetector.detectAndApply();
+
+        // ── 0b. 在 logback 初始化前完成日志目录/属性准备 ─────────────────────────
         //    顺序不可颠倒：必须先于任何 getLogger() / log.xxx() 调用
         prepareLogging();
 
         // ── 触发 logback 初始化（此时 LOG_TIMESTAMP 已就绪）─────────────────────
         log = LoggerFactory.getLogger(GuiLauncher.class);
-        log.info("PixivDownload 版本：{}", AppVersion.getDisplayVersion());
-        log.info("PixivDownload 启动中，args={}", Arrays.toString(args));
+        log.info(logMessage("gui.launcher.log.version",
+                AppVersion.getDisplayVersionOrDefault(logMessage("app.version.unknown"))));
+        log.info(logMessage("gui.launcher.log.starting", Arrays.toString(args)));
 
         SingleInstanceManager singleInstanceManager;
         try {
             singleInstanceManager = SingleInstanceManager.acquire();
         } catch (Exception e) {
-            log.error("无法初始化单实例保护", e);
+            log.error(logMessage("gui.launcher.log.single-instance.init-failed"), e);
             showSingleInstanceInitError(e);
             throw e;
         }
 
         if (singleInstanceManager == null) {
             boolean activated = SingleInstanceManager.signalExistingInstance();
-            log.info("检测到已有运行实例，是否已发出激活请求: {}", activated);
+            log.info(logMessage("gui.launcher.log.single-instance.existing-detected", activated));
             if (!activated && !GraphicsEnvironment.isHeadless()) {
                 JOptionPane.showMessageDialog(null,
-                        "PixivDownload 已在运行，请先关闭现有窗口后再重新启动。",
-                        "程序已运行",
+                        message("gui.launcher.dialog.already-running.message"),
+                        message("gui.launcher.dialog.already-running.title"),
                         JOptionPane.INFORMATION_MESSAGE);
             }
             return;
@@ -111,9 +120,9 @@ public class GuiLauncher {
                 || GraphicsEnvironment.isHeadless();
 
         if (noGui) {
-            log.info("无头/命令行模式启动（GUI 已禁用）");
+            log.info(logMessage("gui.launcher.log.headless"));
             try {
-                PixivDownloadApplication.main(args);
+                PixivDownloadApplication.start(args);
             } catch (Throwable t) {
                 logStartupFailure(t);
                 throw t;
@@ -138,7 +147,7 @@ public class GuiLauncher {
                     rootFolder = rootStr.trim();
                 }
             } catch (Exception e) {
-                log.warn("读取配置文件失败，使用默认值: {}", e.getMessage());
+                log.warn(logMessage("gui.launcher.log.config.read-failed", e.getMessage()));
             }
         }
 
@@ -200,7 +209,7 @@ public class GuiLauncher {
                     .format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HHmmss"));
             System.setProperty("LOG_TIMESTAMP", timestamp);
         } catch (Exception e) {
-            System.err.println("日志目录准备失败: " + e.getMessage());
+            System.err.println(logMessage("gui.launcher.log.prepare-logging.failed", e.getMessage()));
         }
     }
 
@@ -226,7 +235,8 @@ public class GuiLauncher {
                 Files.deleteIfExists(sessions.get(i));
             }
         } catch (Exception e) {
-            System.err.println("清理旧日志失败（" + logDir + extension + "）: " + e.getMessage());
+            System.err.println(logMessage("gui.launcher.log.cleanup-old-logs.failed",
+                    logDir, extension, e.getMessage()));
         }
     }
 
@@ -238,7 +248,7 @@ public class GuiLauncher {
             try {
                 runStartupSchemaBackfill(frame, databasePath, options);
             } catch (Throwable fatal) {
-                log.error("Startup schema-backfill flow failed unexpectedly", fatal);
+                log.error(logMessage("gui.launcher.log.startup.schema-backfill-flow.unexpected"), fatal);
                 BackendLifecycleManager.startAsync();
             }
         }, "startup-schema-backfill");
@@ -249,7 +259,7 @@ public class GuiLauncher {
     private static void runStartupSchemaBackfill(MainFrame frame, Path databasePath,
                                                  ArtworksBackFill.Options options) {
         if (!hasInspectableDatabase(databasePath)) {
-            log.info("Startup schema check skipped: database absent or empty at {}", databasePath.toAbsolutePath());
+            log.info(logMessage("gui.launcher.log.startup.schema-check.skipped", databasePath.toAbsolutePath()));
             BackendLifecycleManager.startAsync();
             return;
         }
@@ -258,41 +268,39 @@ public class GuiLauncher {
         try {
             comparison = DatabaseSchemaInspector.compare(databasePath);
         } catch (Throwable error) {
-            log.warn("Failed to compare database schema at startup", error);
+            log.warn(logMessage("gui.launcher.log.startup.schema-check.compare-failed"), error);
             SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(
                     frame,
-                    "启动时未能完成数据库结构检查，后端将继续启动。\n原因：" + safeMessage(error),
-                    "数据库结构检查",
+                    message("gui.launcher.dialog.schema-check-failed.message", safeMessage(error)),
+                    message("gui.launcher.dialog.schema-check-failed.title"),
                     JOptionPane.WARNING_MESSAGE));
             BackendLifecycleManager.startAsync();
             return;
         }
 
         if (comparison.matches()) {
-            log.info("Startup schema check passed for {}", databasePath.toAbsolutePath());
+            log.info(logMessage("gui.launcher.log.startup.schema-check.passed", databasePath.toAbsolutePath()));
             BackendLifecycleManager.startAsync();
             return;
         }
 
-        log.info("Startup schema mismatch:\n{}", comparison.summary(8));
+        log.info(logMessage("gui.launcher.log.startup.schema-check.mismatch", comparison.summary(8)));
         SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(
                 frame,
-                "检测到本地数据库结构与当前维护结构不一致。\n"
-                        + "程序将在后台执行一次数据库回填检查，若发现待回填记录则自动开始回填。\n\n"
-                        + "结构差异摘要：\n" + comparison.summary(6),
-                "数据库结构变化提醒",
+                message("gui.launcher.dialog.schema-mismatch.message", comparison.summary(6)),
+                message("gui.launcher.dialog.schema-mismatch.title"),
                 JOptionPane.INFORMATION_MESSAGE));
 
         int pendingCount;
         try {
             pendingCount = ArtworksBackFill.countCandidates(options);
-            log.info("Startup backfill check: pendingCandidates={}", pendingCount);
+            log.info(logMessage("gui.launcher.log.startup.backfill.pending", pendingCount));
         } catch (Throwable error) {
-            log.warn("Startup backfill check failed", error);
+            log.warn(logMessage("gui.launcher.log.startup.backfill.check-failed"), error);
             SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(
                     frame,
-                    "数据库回填检查失败，后端将继续启动。\n原因：" + safeMessage(error),
-                    "数据库回填检查",
+                    message("gui.launcher.dialog.backfill-check-failed.message", safeMessage(error)),
+                    message("gui.launcher.dialog.backfill-check-failed.title"),
                     JOptionPane.WARNING_MESSAGE));
             BackendLifecycleManager.startAsync();
             return;
@@ -306,9 +314,8 @@ public class GuiLauncher {
         final int confirmedPending = pendingCount;
         SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(
                 frame,
-                "数据库回填检查发现 " + confirmedPending + " 条待回填记录。\n"
-                        + "程序将自动开始数据库回填，并尝试打开实时日志文件。",
-                "自动数据库回填",
+                message("gui.launcher.dialog.backfill-pending.message", confirmedPending),
+                message("gui.launcher.dialog.auto-backfill.title"),
                 JOptionPane.INFORMATION_MESSAGE));
 
         ToolHtmlLogSession logSession = null;
@@ -320,15 +327,15 @@ public class GuiLauncher {
                 try {
                     logSession.openLatestInBrowser();
                 } catch (Exception browserError) {
-                    log.warn("Failed to open startup backfill log page", browserError);
+                    log.warn(logMessage("gui.launcher.log.startup.backfill.open-log-page-failed"), browserError);
                 }
             } catch (Exception logError) {
-                log.warn("Failed to create startup backfill log session", logError);
+                log.warn(logMessage("gui.launcher.log.startup.backfill.create-log-session-failed"), logError);
             }
             summary = ArtworksBackFill.run(options);
         } catch (Throwable error) {
             failure = error;
-            log.error("Startup auto backfill failed", error);
+            log.error(logMessage("gui.launcher.log.startup.backfill.failed"), error);
         } finally {
             if (logSession != null) {
                 try {
@@ -350,8 +357,8 @@ public class GuiLauncher {
         if (failure != null) {
             JOptionPane.showMessageDialog(
                     owner,
-                    "自动数据库回填失败：" + safeMessage(failure) + "\n请稍后在工具页手动重试。",
-                    "自动数据库回填",
+                    message("gui.launcher.dialog.auto-backfill.failed.message", safeMessage(failure)),
+                    message("gui.launcher.dialog.auto-backfill.title"),
                     JOptionPane.ERROR_MESSAGE
             );
             return;
@@ -362,13 +369,13 @@ public class GuiLauncher {
         }
 
         String resultText = summary.rateLimited()
-                ? "自动数据库回填因限流提前结束，后端已恢复。"
-                : "自动数据库回填已完成，后端已恢复。";
+                ? message("gui.launcher.dialog.auto-backfill.rate-limited")
+                : message("gui.launcher.dialog.auto-backfill.completed");
         JOptionPane.showMessageDialog(
                 owner,
-                resultText + "\n启动检查结果：" + checkedCount
-                        + "\n已处理：" + summary.processed() + " / " + summary.totalCandidates(),
-                "自动数据库回填",
+                message("gui.launcher.dialog.auto-backfill.summary.message",
+                        resultText, checkedCount, summary.processed(), summary.totalCandidates()),
+                message("gui.launcher.dialog.auto-backfill.title"),
                 summary.rateLimited() ? JOptionPane.WARNING_MESSAGE : JOptionPane.INFORMATION_MESSAGE
         );
     }
@@ -386,7 +393,7 @@ public class GuiLauncher {
                 proxyHost = defaultIfBlank(editor.read("proxy.host"), defaults.proxyHost());
                 proxyPort = Integer.parseInt(defaultIfBlank(editor.read("proxy.port"), String.valueOf(defaults.proxyPort())));
             } catch (Exception e) {
-                log.warn("Failed to load proxy defaults for startup backfill: {}", e.getMessage());
+                log.warn(logMessage("gui.launcher.log.startup.backfill.proxy-defaults.failed", e.getMessage()));
             }
         }//"
 
@@ -405,7 +412,8 @@ public class GuiLauncher {
         try {
             return Files.isRegularFile(databasePath) && Files.size(databasePath) > 0;
         } catch (Exception e) {
-            log.warn("Failed to inspect database file {}: {}", databasePath.toAbsolutePath(), e.getMessage());
+            log.warn(logMessage("gui.launcher.log.database.inspect-failed",
+                    databasePath.toAbsolutePath(), e.getMessage()));
             return false;
         }
     }
@@ -416,12 +424,12 @@ public class GuiLauncher {
 
     private static void showBackendStartupFailure(Throwable error) {
         String diag = diagnoseStartupError(error);
-        String userMessage = diag != null ? diag : ("后端服务启动失败：" + safeMessage(error));
+        String userMessage = diag != null ? diag : message("gui.launcher.dialog.startup-error.message", safeMessage(error));
         logStartupFailure(error);
         SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(
                 null,
-                userMessage + "\n\n详细日志见：" + Path.of(LOG_LATEST).toAbsolutePath(),
-                "启动错误",
+                message("gui.launcher.dialog.startup-error.with-log.message", userMessage, Path.of(LOG_LATEST).toAbsolutePath()),
+                message("gui.launcher.dialog.startup-error.title"),
                 JOptionPane.ERROR_MESSAGE
         ));
     }
@@ -429,9 +437,9 @@ public class GuiLauncher {
     private static void logStartupFailure(Throwable t) {
         String diag = diagnoseStartupError(t);
         if (diag != null) {
-            log.error("启动失败：\n{}", diag, t);
+            log.error(logMessage("gui.launcher.log.startup.failed.diagnostic", diag), t);
         } else {
-            log.error("启动失败：{}", safeMessage(t), t);
+            log.error(logMessage("gui.launcher.log.startup.failed.generic", safeMessage(t)), t);
         }
     }
 
@@ -450,24 +458,18 @@ public class GuiLauncher {
                     || low.contains("address already in use")
                     || low.contains("failed to bind")) {
                 String port = extractPort(msg);
-                String portHint = (port == null) ? "<端口>" : port;
-                return "[端口被占用] " + (port == null ? "" : "端口 " + port + " ")
-                        + "已被其他程序占用。\n"
-                        + "请检查 config.yaml 中的 server.port 或 ssl.http-redirect-port，"
-                        + "或释放该端口后重启。\n"
-                        + "Windows 排查命令：netstat -ano | findstr :" + portHint + "\n"
-                        + "原始信息：" + msg;
+                String portHint = port == null ? message("gui.launcher.diagnostic.port.placeholder") : port;
+                if (port == null) {
+                    return message("gui.launcher.diagnostic.port-in-use.without-port", portHint, msg);
+                }
+                return message("gui.launcher.diagnostic.port-in-use.with-port", port, portHint, msg);
             }
 
             if ((cause instanceof NoSuchFileException
                     || cause instanceof FileNotFoundException
                     || low.contains("nosuchfileexception"))
                     && hasAny(low, "ssl", "cert", "key", "pem", "jks", "store", "p12", "pkcs12")) {
-                return "[SSL 证书文件未找到] " + msg + "\n"
-                        + "请检查 config.yaml 中以下路径是否存在且可读：\n"
-                        + "  - server.ssl.certificate / server.ssl.certificate-private-key（PEM）\n"
-                        + "  - server.ssl.key-store（JKS / PKCS12）\n"
-                        + "建议使用绝对路径，避免相对路径在不同工作目录下解析出错。";
+                return message("gui.launcher.diagnostic.ssl-file-not-found", msg);
             }
 
             if (name.endsWith("UnrecoverableKeyException")
@@ -475,9 +477,7 @@ public class GuiLauncher {
                     || low.contains("password was incorrect")
                     || low.contains("wrong password")
                     || low.contains("given final block not properly padded")) {
-                return "[SSL 密码错误] " + msg + "\n"
-                        + "请检查 config.yaml 中 server.ssl.key-store-password / "
-                        + "server.ssl.key-password 是否正确。";
+                return message("gui.launcher.diagnostic.ssl-password-invalid", msg);
             }
 
             if (name.endsWith("CertificateException")
@@ -487,11 +487,7 @@ public class GuiLauncher {
                     || low.contains("unable to read")
                     || (low.contains("keystore") && low.contains("not"))
                     || low.contains("invalid keystore format")) {
-                return "[SSL 证书格式无效或无法解析] " + msg + "\n"
-                        + "请确认：\n"
-                        + "  - PEM 与 JKS 配置不要混用（同时配置时 PEM 优先）；\n"
-                        + "  - 证书文件与私钥文件成对、未损坏；\n"
-                        + "  - JKS 类型与 server.ssl.key-store-type 匹配（默认 JKS，PKCS12 需显式指定）。";
+                return message("gui.launcher.diagnostic.ssl-invalid-format", msg);
             }
 
             if (name.contains("yaml")
@@ -500,15 +496,13 @@ public class GuiLauncher {
                     || msg.contains("ScannerException")
                     || msg.contains("ParserException")
                     || msg.contains("mapping values")) {
-                return "[config.yaml 格式错误] " + msg + "\n"
-                        + "请检查缩进（仅空格、不要 Tab）、冒号后空格、引号是否成对。";
+                return message("gui.launcher.diagnostic.config-yaml-invalid", msg);
             }
 
             if (cause instanceof AccessDeniedException
                     || low.contains("permission denied")
                     || msg.contains("拒绝访问")) {
-                return "[权限不足] " + msg + "\n"
-                        + "可能原因：下载目录无写权限，或监听端口 < 1024 需要管理员权限。";
+                return message("gui.launcher.diagnostic.permission-denied", msg);
             }
         }
         return null;
@@ -550,8 +544,9 @@ public class GuiLauncher {
             return;
         }
         JOptionPane.showMessageDialog(null,
-                "初始化单实例保护失败：" + safeMessage(e) + "\n\n详细日志见：" + Path.of(LOG_LATEST).toAbsolutePath(),
-                "启动错误",
+                message("gui.launcher.dialog.single-instance-init-failed.message",
+                        safeMessage(e), Path.of(LOG_LATEST).toAbsolutePath()),
+                message("gui.launcher.dialog.startup-error.title"),
                 JOptionPane.ERROR_MESSAGE);
     }
 
@@ -561,10 +556,18 @@ public class GuiLauncher {
                 singleInstanceManager.close();
             } catch (Exception e) {
                 if (log != null) {
-                    log.debug("关闭单实例保护时出现异常: {}", e.getMessage());
+                    log.debug(logMessage("gui.launcher.log.single-instance.close-failed", e.getMessage()));
                 }
             }
         }, "single-instance-shutdown"));
+    }
+
+    private static String message(String code, Object... args) {
+        return GuiMessages.get(code, args);
+    }
+
+    private static String logMessage(String code, Object... args) {
+        return MessageBundles.get(code, args);
     }
 
     /**

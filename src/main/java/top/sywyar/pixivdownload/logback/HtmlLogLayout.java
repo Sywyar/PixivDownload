@@ -45,7 +45,7 @@ public class HtmlLogLayout extends LayoutBase<ILoggingEvent> {
     public String getPresentationHeader() {
         return """
                 <!DOCTYPE html>
-                <html lang="zh-CN">
+                <html lang="%s">
                 <head>
                 <meta charset="UTF-8">
                 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -98,7 +98,9 @@ public class HtmlLogLayout extends LayoutBase<ILoggingEvent> {
                 </style>
                 </head>
                 <body>
-                """.formatted(COLOR_INFO,COLOR_WARN,COLOR_ERROR,COLOR_DEBUG,COLOR_TRACE);
+                """.formatted(
+                java.util.Locale.getDefault().toLanguageTag(),
+                COLOR_INFO, COLOR_WARN, COLOR_ERROR, COLOR_DEBUG, COLOR_TRACE);
     }
 
     @Override

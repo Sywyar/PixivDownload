@@ -7,10 +7,10 @@ public final class AppLocale {
 
     public static final String LANGUAGE_COOKIE_NAME = "pixiv_lang";
     public static final String LANGUAGE_PARAM_NAME = "lang";
-    public static final Locale DEFAULT_LOCALE = Locale.SIMPLIFIED_CHINESE;
+    public static final Locale DEFAULT_LOCALE = Locale.US;
     public static final List<Locale> SUPPORTED_LOCALES = List.of(
-            Locale.SIMPLIFIED_CHINESE,
-            Locale.US
+            Locale.US,
+            Locale.SIMPLIFIED_CHINESE
     );
 
     private AppLocale() {

@@ -8,6 +8,6 @@ import java.util.List;
 @Data
 public class AdminPackRequest {
 
-    @NotEmpty
+    @NotEmpty(message = "{validation.archive.pack.artwork-ids.required}")
     private List<Long> artworkIds;
 }

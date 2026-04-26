@@ -11,6 +11,7 @@ import org.springframework.boot.web.server.WebServerFactoryCustomizer;
 import org.springframework.core.annotation.Order;
 import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
+import top.sywyar.pixivdownload.i18n.AppMessages;
 
 /**
  * 根据 {@code ssl.type} 选择性地加载 PEM 或 JKS 证书，并配置 HTTPS 连接器。
@@ -31,6 +32,7 @@ public class HttpsWebServerCustomizer implements WebServerFactoryCustomizer<Tomc
 
     private final SslConfig sslConfig;
     private final Environment environment;
+    private final AppMessages messages;
 
     @Override
     public void customize(TomcatServletWebServerFactory factory) {
@@ -42,12 +44,12 @@ public class HttpsWebServerCustomizer implements WebServerFactoryCustomizer<Tomc
 
         // 覆盖 Spring Boot 基于 server.ssl.* 自动装配的 Ssl 对象
         factory.setSsl(ssl);
-        log.info("HTTPS 已启用（ssl.type={}）", sslConfig.getType());
+        log.info(message("https.log.enabled", sslConfig.getType()));
 
         if (sslConfig.isHttpRedirect()) {
             int httpsPort = environment.getProperty("server.port", Integer.class, 6999);
             int httpPort = sslConfig.getHttpRedirectPort();
-            log.info("HTTP→HTTPS 重定向已启用：监听 HTTP 端口 {}，重定向到 HTTPS 端口 {}", httpPort, httpsPort);
+            log.info(message("https.log.redirect.enabled", httpPort, httpsPort));
             factory.addAdditionalTomcatConnectors(createHttpConnector(httpPort, httpsPort));
             factory.addContextCustomizers(context -> {
                 SecurityConstraint constraint = new SecurityConstraint();
@@ -72,7 +74,7 @@ public class HttpsWebServerCustomizer implements WebServerFactoryCustomizer<Tomc
             String cert = environment.getProperty("server.ssl.certificate", "");
             String key  = environment.getProperty("server.ssl.certificate-private-key", "");
             if (cert.isBlank() || key.isBlank()) {
-                log.warn("ssl.type=pem：server.ssl.certificate 或 server.ssl.certificate-private-key 未配置，跳过 HTTPS 启动");
+                log.warn(message("https.log.pem.missing-config"));
                 return null;
             }
             ssl.setCertificate(cert);
@@ -81,7 +83,7 @@ public class HttpsWebServerCustomizer implements WebServerFactoryCustomizer<Tomc
         } else if ("jks".equalsIgnoreCase(type)) {
             String keyStore = environment.getProperty("server.ssl.key-store", "");
             if (keyStore.isBlank()) {
-                log.warn("ssl.type=jks：server.ssl.key-store 未配置，跳过 HTTPS 启动");
+                log.warn(message("https.log.jks.missing-config"));
                 return null;
             }
             ssl.setKeyStore(keyStore);
@@ -89,7 +91,7 @@ public class HttpsWebServerCustomizer implements WebServerFactoryCustomizer<Tomc
             ssl.setKeyStoreType(environment.getProperty("server.ssl.key-store-type", "JKS"));
 
         } else {
-            log.warn("ssl.type={} 不是有效值（pem / jks），跳过 HTTPS 启动", type);
+            log.warn(message("https.log.type.invalid", type));
             return null;
         }
 
@@ -103,5 +105,9 @@ public class HttpsWebServerCustomizer implements WebServerFactoryCustomizer<Tomc
         connector.setSecure(false);
         connector.setRedirectPort(httpsPort);
         return connector;
+    }
+
+    private String message(String code, Object... args) {
+        return messages.getForLog(code, args);
     }
 }

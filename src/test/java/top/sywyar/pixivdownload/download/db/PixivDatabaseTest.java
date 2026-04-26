@@ -5,6 +5,7 @@ import org.apache.ibatis.session.*;
 import org.apache.ibatis.transaction.jdbc.JdbcTransactionFactory;
 import org.junit.jupiter.api.*;
 import org.springframework.jdbc.datasource.SingleConnectionDataSource;
+import top.sywyar.pixivdownload.i18n.TestI18nBeans;
 
 import java.util.List;
 
@@ -33,7 +34,7 @@ class PixivDatabaseTest {
         sqlSession = factory.openSession(true); // auto-commit
         PixivMapper mapper = sqlSession.getMapper(PixivMapper.class);
 
-        pixivDatabase = new PixivDatabase(mapper);
+        pixivDatabase = new PixivDatabase(mapper, TestI18nBeans.appMessages());
         pixivDatabase.init();
     }
 

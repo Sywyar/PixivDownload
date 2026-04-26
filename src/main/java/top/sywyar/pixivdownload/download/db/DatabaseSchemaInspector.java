@@ -1,6 +1,7 @@
 package top.sywyar.pixivdownload.download.db;
 
 import org.sqlite.SQLiteConfig;
+import top.sywyar.pixivdownload.i18n.MessageBundles;
 
 import java.nio.file.Path;
 import java.sql.Connection;
@@ -48,7 +49,7 @@ public final class DatabaseSchemaInspector {
             String tableName = expectedEntry.getKey();
             ManagedDatabaseSchema.TableSpec actualTable = actualTables.get(tableName);
             if (actualTable == null) {
-                differences.add("缺少表: " + tableName);
+                differences.add(MessageBundles.get("download.db.schema.missing-table", tableName));
                 continue;
             }
             compareTable(expectedEntry.getValue(), actualTable, differences);
@@ -56,7 +57,7 @@ public final class DatabaseSchemaInspector {
 
         for (String actualTable : actualTables.keySet()) {
             if (!expectedSchema.tables().containsKey(actualTable)) {
-                differences.add("存在未受管表: " + actualTable);
+                differences.add(MessageBundles.get("download.db.schema.unmanaged-table", actualTable));
             }
         }
 
@@ -151,7 +152,7 @@ public final class DatabaseSchemaInspector {
             String columnName = expectedEntry.getKey();
             ManagedDatabaseSchema.ColumnSpec actualColumn = actualColumns.get(columnName);
             if (actualColumn == null) {
-                differences.add("表 " + expected.name() + " 缺少列: " + columnName);
+                differences.add(MessageBundles.get("download.db.schema.missing-column", expected.name(), columnName));
                 continue;
             }
             compareColumn(expected.name(), expectedEntry.getValue(), actualColumn, differences);
@@ -159,7 +160,7 @@ public final class DatabaseSchemaInspector {
 
         for (String actualColumn : actualColumns.keySet()) {
             if (!expectedColumns.containsKey(actualColumn)) {
-                differences.add("表 " + expected.name() + " 存在未受管列: " + actualColumn);
+                differences.add(MessageBundles.get("download.db.schema.unmanaged-column", expected.name(), actualColumn));
             }
         }
 
@@ -172,12 +173,12 @@ public final class DatabaseSchemaInspector {
 
         for (String expectedIndex : expectedIndexes) {
             if (!actualIndexes.contains(expectedIndex)) {
-                differences.add("表 " + expected.name() + " 缺少索引/唯一约束: " + expectedIndex);
+                differences.add(MessageBundles.get("download.db.schema.missing-index", expected.name(), expectedIndex));
             }
         }
         for (String actualIndex : actualIndexes) {
             if (!expectedIndexes.contains(actualIndex)) {
-                differences.add("表 " + expected.name() + " 存在未受管索引/唯一约束: " + actualIndex);
+                differences.add(MessageBundles.get("download.db.schema.unmanaged-index", expected.name(), actualIndex));
             }
         }
     }
@@ -187,20 +188,20 @@ public final class DatabaseSchemaInspector {
                                       ManagedDatabaseSchema.ColumnSpec actual,
                                       List<String> differences) {
         if (!expected.type().equals(actual.type())) {
-            differences.add("表 " + tableName + " 列 " + expected.name() + " 类型不一致: expected="
-                    + expected.type() + ", actual=" + actual.type());
+            differences.add(MessageBundles.get("download.db.schema.column-type-mismatch",
+                    tableName, expected.name(), expected.type(), actual.type()));
         }
         if (expected.notNull() != actual.notNull()) {
-            differences.add("表 " + tableName + " 列 " + expected.name() + " NOT NULL 不一致: expected="
-                    + expected.notNull() + ", actual=" + actual.notNull());
+            differences.add(MessageBundles.get("download.db.schema.column-not-null-mismatch",
+                    tableName, expected.name(), expected.notNull(), actual.notNull()));
         }
         if (!java.util.Objects.equals(expected.defaultValue(), actual.defaultValue())) {
-            differences.add("表 " + tableName + " 列 " + expected.name() + " 默认值不一致: expected="
-                    + expected.defaultValue() + ", actual=" + actual.defaultValue());
+            differences.add(MessageBundles.get("download.db.schema.column-default-mismatch",
+                    tableName, expected.name(), expected.defaultValue(), actual.defaultValue()));
         }
         if (expected.primaryKeyPosition() != actual.primaryKeyPosition()) {
-            differences.add("表 " + tableName + " 列 " + expected.name() + " 主键顺序不一致: expected="
-                    + expected.primaryKeyPosition() + ", actual=" + actual.primaryKeyPosition());
+            differences.add(MessageBundles.get("download.db.schema.column-primary-key-mismatch",
+                    tableName, expected.name(), expected.primaryKeyPosition(), actual.primaryKeyPosition()));
         }
     }
 
@@ -211,13 +212,14 @@ public final class DatabaseSchemaInspector {
 
         public String summary(int limit) {
             if (differences.isEmpty()) {
-                return "无差异";
+                return MessageBundles.get("download.db.schema.no-difference");
             }
             int max = Math.max(limit, 1);
             List<String> visible = differences.stream().limit(max).toList();
             String summary = String.join("\n", visible);
             if (differences.size() > visible.size()) {
-                summary += "\n... 另有 " + (differences.size() - visible.size()) + " 项差异";
+                summary += "\n" + MessageBundles.get("download.db.schema.more-differences",
+                        differences.size() - visible.size());
             }
             return summary;
         }

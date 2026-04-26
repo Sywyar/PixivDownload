@@ -6,7 +6,10 @@ import top.sywyar.pixivdownload.config.RuntimeFiles;
 import top.sywyar.pixivdownload.gui.BackendLifecycleManager;
 import top.sywyar.pixivdownload.gui.ToolHtmlLogSession;
 import top.sywyar.pixivdownload.gui.config.ConfigFileEditor;
+import top.sywyar.pixivdownload.gui.i18n.GuiMessages;
+import top.sywyar.pixivdownload.i18n.MessageBundles;
 import top.sywyar.pixivdownload.imageclassifier.ImageClassifier;
+import top.sywyar.pixivdownload.migration.JsonToSqliteMigration;
 import top.sywyar.pixivdownload.tools.ArtworksBackFill;
 import top.sywyar.pixivdownload.tools.FolderChecker;
 
@@ -24,30 +27,40 @@ import java.nio.file.Path;
 public class ToolsPanel extends JPanel {
 
     private static final Path BACKFILL_LOG_PATH = Path.of("log", "html", "artworks-backfill-latest.html");
-    private static final String BACKFILL_COUNTING_STATUS = "后端服务器已关闭...正在查询回填条数，查询完毕后打开实时日志文件";
+    private static final Path MIGRATION_LOG_PATH = Path.of("log", "html", "json-to-sqlite-migration-latest.html");
+    private static final String BACKFILL_COUNTING_STATUS = message("gui.tools.backfill.status.counting");
+    private static final String MIGRATION_COUNTING_STATUS = message("gui.tools.migration.status.counting");
 
     private final Path configPath;
 
-    private final JLabel backendStateLabel = new JLabel("后端状态：检测中");
-    private final JLabel exclusiveToolLabel = new JLabel("独占工具：无");
-    private final JLabel backfillStatusLabel = secondaryLabel("回填工具未运行。");
+    private final JLabel backendStateLabel = new JLabel(message("gui.tools.backend-status", message("gui.tools.backend-status.detecting")));
+    private final JLabel exclusiveToolLabel = new JLabel(message("gui.tools.exclusive-tool", message("gui.value.none")));
+    private final JLabel backfillStatusLabel = secondaryLabel(message("gui.tools.backfill.status.idle"));
+    private final JLabel migrationStatusLabel = secondaryLabel(message("gui.tools.migration.status.idle"));
 
-    private final JButton imageClassifierButton = new JButton("打开图片分类工具");
-    private final JButton folderCheckerButton = new JButton("打开目录有效检查工具");
-    private final JButton backfillRunButton = new JButton("开始数据回填");
-    private final JButton backfillLogButton = new JButton("打开日志页面");
+    private final JButton imageClassifierButton = new JButton(message("gui.tools.action.open-image-classifier"));
+    private final JButton folderCheckerButton = new JButton(message("gui.tools.action.open-folder-checker"));
+    private final JButton backfillRunButton = new JButton(message("gui.tools.action.start-backfill"));
+    private final JButton backfillLogButton = new JButton(message("gui.tools.action.open-log-page"));
+    private final JButton migrationRunButton = new JButton(message("gui.tools.action.start-migration"));
+    private final JButton migrationLogButton = new JButton(message("gui.tools.action.open-migration-log-page"));
 
     private final JTextField dbPathField = new JTextField(34);
-    private final JCheckBox proxyEnabledCheck = new JCheckBox("使用代理");
+    private final JCheckBox proxyEnabledCheck = new JCheckBox(message("gui.tools.form.use-proxy"));
     private final JTextField proxyHostField = new JTextField(16);
     private final JSpinner proxyPortSpinner = new JSpinner(new SpinnerNumberModel(7890, 1, 65535, 1));
     private final JSpinner delaySpinner = new JSpinner(new SpinnerNumberModel(800, 0, 60_000, 100));
     private final JSpinner limitSpinner = new JSpinner(new SpinnerNumberModel(0, 0, Integer.MAX_VALUE, 100));
-    private final JCheckBox dryRunCheck = new JCheckBox("仅试运行，不写数据库");
+    private final JCheckBox dryRunCheck = new JCheckBox(message("gui.tools.form.dry-run"));
+
+    private final JTextField migrationDbPathField = new JTextField(34);
+    private final JTextField migrationRootFolderField = new JTextField(34);
 
     private String exclusiveToolName;
     private boolean backfillRunning;
+    private boolean migrationRunning;
     private volatile ToolHtmlLogSession currentBackfillLogSession;
+    private volatile ToolHtmlLogSession currentMigrationLogSession;
 
     private final BackendLifecycleManager.Listener backendListener = this::handleBackendState;
 
@@ -74,6 +87,8 @@ public class ToolsPanel extends JPanel {
         content.add(buildFolderCheckerCard());
         content.add(Box.createVerticalStrut(12));
         content.add(buildBackfillCard());
+        content.add(Box.createVerticalStrut(12));
+        content.add(buildMigrationCard());
         content.add(Box.createVerticalGlue());
 
         JScrollPane scrollPane = new JScrollPane(content);
@@ -83,12 +98,12 @@ public class ToolsPanel extends JPanel {
     }
 
     private JComponent buildOverviewCard() {
-        JPanel panel = createCard("工具说明");
+        JPanel panel = createCard(message("gui.tools.card.overview.title"));
         panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
         backendStateLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
         exclusiveToolLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        JLabel hint = secondaryLabel("<html>目录有效检查工具和数据库数据回填工具会在运行前暂时停止 Spring Boot 后端，避免占用 SQLite。<br>目录检查窗口关闭后会自动恢复后端；数据回填完成后也会自动恢复。</html>");
+        JLabel hint = secondaryLabel(message("gui.tools.card.overview.hint"));
         hint.setAlignmentX(Component.LEFT_ALIGNMENT);
 
         panel.add(backendStateLabel);
@@ -100,10 +115,10 @@ public class ToolsPanel extends JPanel {
     }
 
     private JComponent buildImageClassifierCard() {
-        JPanel panel = createCard("图片分类工具");
+        JPanel panel = createCard(message("gui.tools.card.image-classifier.title"));
         panel.setLayout(new BorderLayout(0, 10));
 
-        JLabel desc = secondaryLabel("<html>打开独立的图片分类窗口。这个工具不会主动停止后端，仍可继续使用现有的接口联动。</html>");
+        JLabel desc = secondaryLabel(message("gui.tools.card.image-classifier.description"));
         panel.add(desc, BorderLayout.CENTER);
 
         JPanel actions = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
@@ -115,10 +130,10 @@ public class ToolsPanel extends JPanel {
     }
 
     private JComponent buildFolderCheckerCard() {
-        JPanel panel = createCard("数据库目录有效检查工具");
+        JPanel panel = createCard(message("gui.tools.card.folder-checker.title"));
         panel.setLayout(new BorderLayout(0, 10));
 
-        JLabel desc = secondaryLabel("<html>检查数据库中的目录字段是否仍然可访问。运行前会先停止后端，关闭该工具窗口后自动重新启动后端。</html>");
+        JLabel desc = secondaryLabel(message("gui.tools.card.folder-checker.description"));
         panel.add(desc, BorderLayout.CENTER);
 
         JPanel actions = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
@@ -130,7 +145,7 @@ public class ToolsPanel extends JPanel {
     }
 
     private JComponent buildBackfillCard() {
-        JPanel panel = createCard("数据库数据回填工具");
+        JPanel panel = createCard(message("gui.tools.card.backfill.title"));
         panel.setLayout(new BorderLayout(0, 12));
 
         JPanel form = new JPanel(new GridBagLayout());
@@ -144,27 +159,27 @@ public class ToolsPanel extends JPanel {
         int row = 0;
         g.gridx = 0;
         g.gridy = row;
-        form.add(new JLabel("数据库路径"), g);
+        form.add(new JLabel(message("gui.tools.form.database-path")), g);
         g.gridx = 1;
         g.weightx = 1;
         form.add(dbPathField, g);
         g.gridx = 2;
         g.weightx = 0;
-        JButton browseDbButton = new JButton("浏览...");
+        JButton browseDbButton = new JButton(message("gui.button.browse"));
         browseDbButton.addActionListener(e -> browseDatabase());
         form.add(browseDbButton, g);
 
         row++;
         g.gridy = row;
         g.gridx = 0;
-        form.add(new JLabel("代理"), g);
+        form.add(new JLabel(message("gui.tools.form.proxy")), g);
         JPanel proxyPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
         proxyPanel.setOpaque(false);
         proxyEnabledCheck.addActionListener(e -> updateProxyFieldState());
         proxyPanel.add(proxyEnabledCheck);
-        proxyPanel.add(new JLabel("Host"));
+        proxyPanel.add(new JLabel(message("gui.tools.form.proxy-host")));
         proxyPanel.add(proxyHostField);
-        proxyPanel.add(new JLabel("Port"));
+        proxyPanel.add(new JLabel(message("gui.tools.form.proxy-port")));
         proxyPanel.add(proxyPortSpinner);
         g.gridx = 1;
         g.gridwidth = 2;
@@ -176,17 +191,17 @@ public class ToolsPanel extends JPanel {
         g.gridy = row;
         g.gridx = 0;
         g.weightx = 0;
-        form.add(new JLabel("请求延迟(ms)"), g);
+        form.add(new JLabel(message("gui.tools.form.delay-ms")), g);
         g.gridx = 1;
         g.weightx = 0;
         form.add(delaySpinner, g);
         g.gridx = 2;
-        form.add(new JLabel("0 表示不限条数"), g);
+        form.add(new JLabel(message("gui.tools.form.limit-hint")), g);
 
         row++;
         g.gridy = row;
         g.gridx = 0;
-        form.add(new JLabel("处理条数"), g);
+        form.add(new JLabel(message("gui.tools.form.limit")), g);
         g.gridx = 1;
         form.add(limitSpinner, g);
         g.gridx = 2;
@@ -213,6 +228,71 @@ public class ToolsPanel extends JPanel {
         return panel;
     }
 
+    private JComponent buildMigrationCard() {
+        JPanel panel = createCard(message("gui.tools.card.migration.title"));
+        panel.setLayout(new BorderLayout(0, 12));
+
+        JLabel desc = secondaryLabel(message("gui.tools.card.migration.description"));
+
+        JPanel form = new JPanel(new GridBagLayout());
+        form.setOpaque(false);
+        GridBagConstraints g = new GridBagConstraints();
+        g.insets = new Insets(4, 0, 4, 8);
+        g.anchor = GridBagConstraints.WEST;
+        g.fill = GridBagConstraints.HORIZONTAL;
+        g.weightx = 0;
+
+        int row = 0;
+        g.gridx = 0;
+        g.gridy = row;
+        form.add(new JLabel(message("gui.tools.form.database-path")), g);
+        g.gridx = 1;
+        g.weightx = 1;
+        form.add(migrationDbPathField, g);
+        g.gridx = 2;
+        g.weightx = 0;
+        JButton browseDbButton = new JButton(message("gui.button.browse"));
+        browseDbButton.addActionListener(e -> browseMigrationDatabase());
+        form.add(browseDbButton, g);
+
+        row++;
+        g.gridy = row;
+        g.gridx = 0;
+        g.weightx = 0;
+        form.add(new JLabel(message("gui.tools.form.root-folder")), g);
+        g.gridx = 1;
+        g.weightx = 1;
+        form.add(migrationRootFolderField, g);
+        g.gridx = 2;
+        g.weightx = 0;
+        JButton browseRootButton = new JButton(message("gui.button.browse"));
+        browseRootButton.addActionListener(e -> browseMigrationRootFolder());
+        form.add(browseRootButton, g);
+
+        JPanel actions = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        actions.setOpaque(false);
+        migrationRunButton.addActionListener(e -> startMigration());
+        migrationLogButton.addActionListener(e -> openMigrationLogPage());
+        actions.add(migrationRunButton);
+        actions.add(migrationLogButton);
+
+        JPanel bottom = new JPanel();
+        bottom.setOpaque(false);
+        bottom.setLayout(new BoxLayout(bottom, BoxLayout.Y_AXIS));
+        desc.setAlignmentX(Component.LEFT_ALIGNMENT);
+        migrationStatusLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        actions.setAlignmentX(Component.LEFT_ALIGNMENT);
+        bottom.add(desc);
+        bottom.add(Box.createVerticalStrut(8));
+        bottom.add(migrationStatusLabel);
+        bottom.add(Box.createVerticalStrut(8));
+        bottom.add(actions);
+
+        panel.add(form, BorderLayout.CENTER);
+        panel.add(bottom, BorderLayout.SOUTH);
+        return panel;
+    }
+
     private JPanel createCard(String title) {
         JPanel panel = new JPanel();
         panel.setOpaque(false);
@@ -229,7 +309,10 @@ public class ToolsPanel extends JPanel {
 
     private void loadDefaults() {
         String rootFolder = RuntimeFiles.readDownloadRootFromConfig(configPath, RuntimeFiles.DEFAULT_DOWNLOAD_ROOT);
-        dbPathField.setText(RuntimeFiles.resolveDatabasePath(rootFolder).toString());
+        String resolvedDbPath = RuntimeFiles.resolveDatabasePath(rootFolder).toString();
+        dbPathField.setText(resolvedDbPath);
+        migrationDbPathField.setText(resolvedDbPath);
+        migrationRootFolderField.setText(rootFolder);
 
         ArtworksBackFill.Options defaults = ArtworksBackFill.Options.defaults();
         proxyEnabledCheck.setSelected(defaults.useProxy());
@@ -246,14 +329,14 @@ public class ToolsPanel extends JPanel {
                 proxyHostField.setText(defaultIfBlank(editor.read("proxy.host"), defaults.proxyHost()));
                 proxyPortSpinner.setValue(Integer.parseInt(defaultIfBlank(editor.read("proxy.port"), String.valueOf(defaults.proxyPort()))));
             } catch (Exception e) {
-                log.debug("Failed to load proxy defaults for tools panel: {}", e.getMessage());
+                log.debug(logMessage("gui.tools.log.proxy-defaults.failed", e.getMessage()));
             }
         }
         updateProxyFieldState();
     }
 
     private void openImageClassifier() {
-        if (!ensureNoExclusiveTool("图片分类工具")) {
+        if (!ensureNoExclusiveTool(message("gui.tools.card.image-classifier.title"))) {
             return;
         }
         SwingUtilities.invokeLater(() -> {
@@ -263,48 +346,48 @@ public class ToolsPanel extends JPanel {
     }
 
     private void openFolderChecker() {
-        if (!beginExclusiveTool("数据库目录有效检查工具")) {
+        if (!beginExclusiveTool(message("gui.tools.card.folder-checker.title"))) {
             return;
         }
 
-        setBackfillStatus("正在停止后端，准备打开目录检查工具...");
+        setBackfillStatus(message("gui.tools.folder-checker.status.preparing"));
         boolean accepted = BackendLifecycleManager.stopAsync(() -> {
             try {
                 FolderChecker checker = new FolderChecker(JFrame.DISPOSE_ON_CLOSE, this::handleFolderCheckerClosed);
                 checker.showWindow();
-                setBackfillStatus("目录检查工具已打开，关闭窗口后会自动恢复后端。");
+                setBackfillStatus(message("gui.tools.folder-checker.status.opened"));
             } catch (Exception e) {
                 exclusiveToolName = null;
                 refreshActionStates();
-                setBackfillStatus("目录检查工具打开失败。");
-                log.error("Failed to open folder checker", e);
+                setBackfillStatus(message("gui.tools.folder-checker.status.open-failed"));
+                log.error(logMessage("gui.tools.log.folder-checker.open-failed"), e);
                 BackendLifecycleManager.startAsync();
                 JOptionPane.showMessageDialog(this,
-                        "无法打开目录有效检查工具：" + e.getMessage(),
-                        "错误", JOptionPane.ERROR_MESSAGE);
+                        message("gui.tools.dialog.folder-checker-open-failed.message", e.getMessage()),
+                        message("gui.dialog.error.title"), JOptionPane.ERROR_MESSAGE);
             }
         });
         if (!accepted) {
             exclusiveToolName = null;
             refreshActionStates();
             JOptionPane.showMessageDialog(this,
-                    "后端当前正在启动或停止，请稍后重试。",
-                    "请稍后", JOptionPane.INFORMATION_MESSAGE);
+                    message("gui.message.backend-busy"),
+                    message("gui.dialog.please-wait.title"), JOptionPane.INFORMATION_MESSAGE);
         }
     }
 
     private void handleFolderCheckerClosed() {
         exclusiveToolName = null;
         refreshActionStates();
-        setBackfillStatus("目录检查工具已关闭，正在恢复后端...");
+        setBackfillStatus(message("gui.tools.folder-checker.status.restoring"));
         if (!BackendLifecycleManager.startAsync(() ->
-                setBackfillStatus("目录检查工具已完成，后端已恢复。"))) {
-            setBackfillStatus("目录检查工具已关闭。");
+                setBackfillStatus(message("gui.tools.folder-checker.status.completed")))) {
+            setBackfillStatus(message("gui.tools.folder-checker.status.closed"));
         }
     }
 
     private void startBackfill() {
-        if (!beginExclusiveTool("数据库数据回填工具")) {
+        if (!beginExclusiveTool(message("gui.tools.card.backfill.title"))) {
             return;
         }
 
@@ -315,14 +398,14 @@ public class ToolsPanel extends JPanel {
             exclusiveToolName = null;
             refreshActionStates();
             JOptionPane.showMessageDialog(this,
-                    "回填参数无效：" + e.getMessage(),
-                    "错误", JOptionPane.ERROR_MESSAGE);
+                    message("gui.tools.dialog.backfill.invalid-params.message", e.getMessage()),
+                    message("gui.dialog.error.title"), JOptionPane.ERROR_MESSAGE);
             return;
         }
 
         backfillRunning = true;
         refreshActionStates();
-        setBackfillStatus("正在停止后端，准备执行数据回填...");
+        setBackfillStatus(message("gui.tools.backfill.status.preparing"));
 
         boolean accepted = BackendLifecycleManager.stopAsync(() -> prepareBackfillInBackground(options));
         if (!accepted) {
@@ -331,8 +414,8 @@ public class ToolsPanel extends JPanel {
             closeBackfillLogSession();
             refreshActionStates();
             JOptionPane.showMessageDialog(this,
-                    "后端当前正在启动或停止，请稍后重试。",
-                    "请稍后", JOptionPane.INFORMATION_MESSAGE);
+                    message("gui.message.backend-busy"),
+                    message("gui.dialog.please-wait.title"), JOptionPane.INFORMATION_MESSAGE);
         }
     }
 
@@ -344,14 +427,18 @@ public class ToolsPanel extends JPanel {
             try {
                 totalCandidates = ArtworksBackFill.countCandidates(options);
             } catch (Throwable error) {
-                handleBackfillPreparationFailure("回填条数查询失败，后端已尝试恢复。", "无法查询回填条数：", error);
+                handleBackfillPreparationFailure(
+                        message("gui.tools.backfill.status.count-failed"),
+                        message("gui.tools.dialog.backfill.count-failed.prefix"),
+                        error
+                );
                 return;
             }
 
             if (totalCandidates > 0) {
-                setBackfillStatus("已查询到 " + totalCandidates + " 条待回填记录，正在打开实时日志并执行数据回填...");
+                setBackfillStatus(message("gui.tools.backfill.status.pending-found", totalCandidates));
             } else {
-                setBackfillStatus("查询完成，未发现需要回填的记录，正在打开实时日志文件...");
+                setBackfillStatus(message("gui.tools.backfill.status.none-found"));
             }
 
             try {
@@ -359,7 +446,11 @@ public class ToolsPanel extends JPanel {
                 SwingUtilities.invokeLater(this::refreshActionStates);
                 currentBackfillLogSession.openLatestInBrowser();
             } catch (Exception error) {
-                handleBackfillPreparationFailure("回填日志打开失败，后端已尝试恢复。", "无法创建或打开回填日志页面：", error);
+                handleBackfillPreparationFailure(
+                        message("gui.tools.backfill.status.log-open-failed"),
+                        message("gui.tools.dialog.backfill.log-open-failed.prefix"),
+                        error
+                );
                 return;
             }
 
@@ -379,7 +470,7 @@ public class ToolsPanel extends JPanel {
             setBackfillStatus(statusText);
             JOptionPane.showMessageDialog(this,
                     dialogPrefix + failure.getMessage(),
-                    "错误", JOptionPane.ERROR_MESSAGE);
+                    message("gui.dialog.error.title"), JOptionPane.ERROR_MESSAGE);
         });
         if (!BackendLifecycleManager.startAsync(afterRestart)) {
             afterRestart.run();
@@ -387,7 +478,7 @@ public class ToolsPanel extends JPanel {
     }
 
     private void runBackfillInBackground(ArtworksBackFill.Options options) {
-        setBackfillStatus("后端服务器已关闭，正在执行数据回填...");
+        setBackfillStatus(message("gui.tools.backfill.status.running"));
 
         Thread worker = new Thread(() -> {
             ArtworksBackFill.Summary summary = null;
@@ -395,13 +486,13 @@ public class ToolsPanel extends JPanel {
             var toolLogger = LoggerFactory.getLogger(ArtworksBackFill.class);
 
             try {
-                toolLogger.info("Backfill requested from ToolsPanel.");
+                toolLogger.info(logMessage("gui.tools.log.backfill.requested"));
                 summary = ArtworksBackFill.run(options);
             } catch (Throwable error) {
                 failure = error;
-                toolLogger.error("Backfill failed", error);
+                toolLogger.error(logMessage("gui.tools.log.backfill.failed"), error);
             } finally {
-                toolLogger.info("Backfill finished, requesting backend restart.");
+                toolLogger.info(logMessage("gui.tools.log.backfill.finished"));
                 closeBackfillLogSession();
                 backfillRunning = false;
                 exclusiveToolName = null;
@@ -421,31 +512,31 @@ public class ToolsPanel extends JPanel {
 
     private void finishBackfill(ArtworksBackFill.Summary summary, Throwable failure) {
         if (failure != null) {
-            setBackfillStatus("数据回填失败，后端已尝试恢复。");
+            setBackfillStatus(message("gui.tools.backfill.status.failed"));
             JOptionPane.showMessageDialog(this,
-                    "数据库数据回填失败：" + failure.getMessage(),
-                    "错误", JOptionPane.ERROR_MESSAGE);
+                    message("gui.tools.dialog.backfill.failed.message", failure.getMessage()),
+                    message("gui.dialog.error.title"), JOptionPane.ERROR_MESSAGE);
             return;
         }
 
         if (summary == null) {
-            setBackfillStatus("数据回填已结束。");
+            setBackfillStatus(message("gui.tools.backfill.status.finished"));
             return;
         }
 
         String result = summary.rateLimited()
-                ? "数据回填因限流提前结束，后端已恢复。"
-                : "数据回填完成，后端已恢复。";
+                ? message("gui.tools.backfill.result.rate-limited")
+                : message("gui.tools.backfill.result.completed");
         setBackfillStatus(result);
         JOptionPane.showMessageDialog(this,
-                result + "\n已处理：" + summary.processed() + " / " + summary.totalCandidates(),
-                "回填完成", JOptionPane.INFORMATION_MESSAGE);
+                message("gui.tools.dialog.backfill.completed.message", result, summary.processed(), summary.totalCandidates()),
+                message("gui.tools.dialog.backfill.completed.title"), JOptionPane.INFORMATION_MESSAGE);
     }
 
     private ArtworksBackFill.Options buildBackfillOptions() {
         String dbPath = dbPathField.getText().trim();
         if (dbPath.isBlank()) {
-            throw new IllegalArgumentException("数据库路径不能为空");
+            throw new IllegalArgumentException(message("gui.tools.validation.database-path.required"));
         }
 
         return new ArtworksBackFill.Options(
@@ -461,7 +552,7 @@ public class ToolsPanel extends JPanel {
 
     private void browseDatabase() {
         JFileChooser chooser = new JFileChooser();
-        chooser.setDialogTitle("选择 SQLite 数据库");
+        chooser.setDialogTitle(message("gui.tools.dialog.select-sqlite-database.title"));
         chooser.setFileSelectionMode(JFileChooser.FILES_ONLY);
         File current = new File(dbPathField.getText().trim());
         File parent = current.isDirectory() ? current : current.getParentFile();
@@ -481,29 +572,240 @@ public class ToolsPanel extends JPanel {
             }
             if (!Files.exists(BACKFILL_LOG_PATH)) {
                 JOptionPane.showMessageDialog(this,
-                        "暂无回填日志页面，请先运行一次数据库数据回填工具。",
-                        "提示", JOptionPane.INFORMATION_MESSAGE);
+                        message("gui.tools.dialog.backfill-log.missing"),
+                        message("gui.dialog.info.title"), JOptionPane.INFORMATION_MESSAGE);
                 return;
             }
             Desktop.getDesktop().browse(BACKFILL_LOG_PATH.toUri());
         } catch (Exception e) {
             JOptionPane.showMessageDialog(this,
-                    "无法打开回填日志页面：" + e.getMessage(),
-                    "错误", JOptionPane.ERROR_MESSAGE);
+                    message("gui.tools.dialog.backfill-log.open-failed", e.getMessage()),
+                    message("gui.dialog.error.title"), JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    private void browseMigrationDatabase() {
+        JFileChooser chooser = new JFileChooser();
+        chooser.setDialogTitle(message("gui.tools.dialog.select-sqlite-database.title"));
+        chooser.setFileSelectionMode(JFileChooser.FILES_ONLY);
+        File current = new File(migrationDbPathField.getText().trim());
+        File parent = current.isDirectory() ? current : current.getParentFile();
+        if (parent != null && parent.exists()) {
+            chooser.setCurrentDirectory(parent);
+        }
+        if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
+            migrationDbPathField.setText(chooser.getSelectedFile().getAbsolutePath());
+        }
+    }
+
+    private void browseMigrationRootFolder() {
+        JFileChooser chooser = new JFileChooser();
+        chooser.setDialogTitle(message("gui.tools.dialog.select-root-folder.title"));
+        chooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+        File current = new File(migrationRootFolderField.getText().trim());
+        if (current.exists()) {
+            chooser.setCurrentDirectory(current.isDirectory() ? current : current.getParentFile());
+        }
+        if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
+            migrationRootFolderField.setText(chooser.getSelectedFile().getAbsolutePath());
+        }
+    }
+
+    private void startMigration() {
+        if (!beginExclusiveTool(message("gui.tools.card.migration.title"))) {
+            return;
+        }
+
+        JsonToSqliteMigration.Options options;
+        try {
+            options = buildMigrationOptions();
+        } catch (Exception e) {
+            exclusiveToolName = null;
+            refreshActionStates();
+            JOptionPane.showMessageDialog(this,
+                    message("gui.tools.dialog.migration.invalid-params.message", e.getMessage()),
+                    message("gui.dialog.error.title"), JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        migrationRunning = true;
+        refreshActionStates();
+        setMigrationStatus(message("gui.tools.migration.status.preparing"));
+
+        boolean accepted = BackendLifecycleManager.stopAsync(() -> prepareMigrationInBackground(options));
+        if (!accepted) {
+            migrationRunning = false;
+            exclusiveToolName = null;
+            closeMigrationLogSession();
+            refreshActionStates();
+            JOptionPane.showMessageDialog(this,
+                    message("gui.message.backend-busy"),
+                    message("gui.dialog.please-wait.title"), JOptionPane.INFORMATION_MESSAGE);
+        }
+    }
+
+    private void prepareMigrationInBackground(JsonToSqliteMigration.Options options) {
+        setMigrationStatus(MIGRATION_COUNTING_STATUS);
+
+        Thread worker = new Thread(() -> {
+            int totalCandidates;
+            try {
+                totalCandidates = JsonToSqliteMigration.countCandidates(options);
+            } catch (Throwable error) {
+                handleMigrationPreparationFailure(
+                        message("gui.tools.migration.status.count-failed"),
+                        message("gui.tools.dialog.migration.count-failed.prefix"),
+                        error
+                );
+                return;
+            }
+
+            if (totalCandidates > 0) {
+                setMigrationStatus(message("gui.tools.migration.status.pending-found", totalCandidates));
+            } else {
+                setMigrationStatus(message("gui.tools.migration.status.none-found"));
+            }
+
+            try {
+                currentMigrationLogSession = ToolHtmlLogSession.open("json-to-sqlite-migration", JsonToSqliteMigration.class);
+                SwingUtilities.invokeLater(this::refreshActionStates);
+                currentMigrationLogSession.openLatestInBrowser();
+            } catch (Exception error) {
+                handleMigrationPreparationFailure(
+                        message("gui.tools.migration.status.log-open-failed"),
+                        message("gui.tools.dialog.migration.log-open-failed.prefix"),
+                        error
+                );
+                return;
+            }
+
+            runMigrationInBackground(options);
+        }, "tools-json-to-sqlite-migration-prepare");
+        worker.setDaemon(true);
+        worker.start();
+    }
+
+    private void handleMigrationPreparationFailure(String statusText, String dialogPrefix, Throwable failure) {
+        closeMigrationLogSession();
+        migrationRunning = false;
+        exclusiveToolName = null;
+        SwingUtilities.invokeLater(this::refreshActionStates);
+
+        Runnable afterRestart = () -> SwingUtilities.invokeLater(() -> {
+            setMigrationStatus(statusText);
+            JOptionPane.showMessageDialog(this,
+                    dialogPrefix + failure.getMessage(),
+                    message("gui.dialog.error.title"), JOptionPane.ERROR_MESSAGE);
+        });
+        if (!BackendLifecycleManager.startAsync(afterRestart)) {
+            afterRestart.run();
+        }
+    }
+
+    private void runMigrationInBackground(JsonToSqliteMigration.Options options) {
+        setMigrationStatus(message("gui.tools.migration.status.running"));
+
+        Thread worker = new Thread(() -> {
+            JsonToSqliteMigration.Summary summary = null;
+            Throwable failure = null;
+            var toolLogger = LoggerFactory.getLogger(JsonToSqliteMigration.class);
+
+            try {
+                toolLogger.info(logMessage("gui.tools.log.migration.requested"));
+                summary = JsonToSqliteMigration.run(options, toolLogger::info);
+            } catch (Throwable error) {
+                failure = error;
+                toolLogger.error(logMessage("gui.tools.log.migration.failed"), error);
+            } finally {
+                toolLogger.info(logMessage("gui.tools.log.migration.finished"));
+                closeMigrationLogSession();
+                migrationRunning = false;
+                exclusiveToolName = null;
+                SwingUtilities.invokeLater(this::refreshActionStates);
+
+                JsonToSqliteMigration.Summary finalSummary = summary;
+                Throwable finalFailure = failure;
+                if (!BackendLifecycleManager.startAsync(() ->
+                        SwingUtilities.invokeLater(() -> finishMigration(finalSummary, finalFailure)))) {
+                    SwingUtilities.invokeLater(() -> finishMigration(finalSummary, finalFailure));
+                }
+            }
+        }, "tools-json-to-sqlite-migration");
+        worker.setDaemon(true);
+        worker.start();
+    }
+
+    private void finishMigration(JsonToSqliteMigration.Summary summary, Throwable failure) {
+        if (failure != null) {
+            setMigrationStatus(message("gui.tools.migration.status.failed"));
+            JOptionPane.showMessageDialog(this,
+                    message("gui.tools.dialog.migration.failed.message", failure.getMessage()),
+                    message("gui.dialog.error.title"), JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        if (summary == null) {
+            setMigrationStatus(message("gui.tools.migration.status.finished"));
+            return;
+        }
+
+        if (summary.historyFileMissing()) {
+            setMigrationStatus(message("gui.tools.migration.status.history-missing"));
+            return;
+        }
+
+        String result = message("gui.tools.migration.result.completed");
+        setMigrationStatus(result);
+        JOptionPane.showMessageDialog(this,
+                message("gui.tools.dialog.migration.completed.message",
+                        result, summary.migrated(), summary.skipped(), summary.totalCandidates()),
+                message("gui.tools.dialog.migration.completed.title"), JOptionPane.INFORMATION_MESSAGE);
+    }
+
+    private JsonToSqliteMigration.Options buildMigrationOptions() {
+        String dbPath = migrationDbPathField.getText().trim();
+        if (dbPath.isBlank()) {
+            throw new IllegalArgumentException(message("gui.tools.validation.database-path.required"));
+        }
+        String rootFolder = migrationRootFolderField.getText().trim();
+        if (rootFolder.isBlank()) {
+            throw new IllegalArgumentException(message("gui.tools.validation.root-folder.required"));
+        }
+        return new JsonToSqliteMigration.Options(dbPath, rootFolder);
+    }
+
+    private void openMigrationLogPage() {
+        try {
+            if (currentMigrationLogSession != null) {
+                currentMigrationLogSession.openLatestInBrowser();
+                return;
+            }
+            if (!Files.exists(MIGRATION_LOG_PATH)) {
+                JOptionPane.showMessageDialog(this,
+                        message("gui.tools.dialog.migration-log.missing"),
+                        message("gui.dialog.info.title"), JOptionPane.INFORMATION_MESSAGE);
+                return;
+            }
+            Desktop.getDesktop().browse(MIGRATION_LOG_PATH.toUri());
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this,
+                    message("gui.tools.dialog.migration-log.open-failed", e.getMessage()),
+                    message("gui.dialog.error.title"), JOptionPane.ERROR_MESSAGE);
         }
     }
 
     private void handleBackendState(BackendLifecycleManager.Snapshot snapshot) {
-        backendStateLabel.setText("后端状态：" + switch (snapshot.state()) {
-            case RUNNING -> "运行中";
-            case STARTING -> "启动中";
-            case STOPPING -> "停止中";
-            case STOPPED -> "已停止";
-            case FAILED -> "启动失败";
-        });
+        backendStateLabel.setText(message("gui.tools.backend-status", switch (snapshot.state()) {
+            case RUNNING -> message("gui.backend.state.running");
+            case STARTING -> message("gui.tools.backend-status.starting");
+            case STOPPING -> message("gui.tools.backend-status.stopping");
+            case STOPPED -> message("gui.backend.state.stopped");
+            case FAILED -> message("gui.backend.state.failed");
+        }));
 
-        if (snapshot.state() == BackendLifecycleManager.State.FAILED && !backfillRunning && exclusiveToolName == null) {
-            setBackfillStatus("后端启动失败，请查看日志。");
+        if (snapshot.state() == BackendLifecycleManager.State.FAILED && !backfillRunning && !migrationRunning && exclusiveToolName == null) {
+            setBackfillStatus(message("gui.tools.backfill.status.backend-failed"));
+            setMigrationStatus(message("gui.tools.migration.status.backend-failed"));
         }
 
         refreshActionStates();
@@ -516,8 +818,8 @@ public class ToolsPanel extends JPanel {
         BackendLifecycleManager.State state = BackendLifecycleManager.state();
         if (state == BackendLifecycleManager.State.STARTING || state == BackendLifecycleManager.State.STOPPING) {
             JOptionPane.showMessageDialog(this,
-                    "后端当前正在启动或停止，请稍后重试。",
-                    "请稍后", JOptionPane.INFORMATION_MESSAGE);
+                    message("gui.message.backend-busy"),
+                    message("gui.dialog.please-wait.title"), JOptionPane.INFORMATION_MESSAGE);
             return false;
         }
         exclusiveToolName = toolName;
@@ -528,8 +830,8 @@ public class ToolsPanel extends JPanel {
     private boolean ensureNoExclusiveTool(String requestedTool) {
         if (exclusiveToolName != null) {
             JOptionPane.showMessageDialog(this,
-                    "当前已有工具在独占运行：" + exclusiveToolName + "\n请先完成后再打开 " + requestedTool + "。",
-                    "工具忙", JOptionPane.INFORMATION_MESSAGE);
+                    message("gui.tools.dialog.exclusive-busy.message", exclusiveToolName, requestedTool),
+                    message("gui.tools.dialog.exclusive-busy.title"), JOptionPane.INFORMATION_MESSAGE);
             return false;
         }
         return true;
@@ -539,22 +841,29 @@ public class ToolsPanel extends JPanel {
         BackendLifecycleManager.State state = BackendLifecycleManager.state();
         boolean backendTransitioning = state == BackendLifecycleManager.State.STARTING
                 || state == BackendLifecycleManager.State.STOPPING;
-        boolean exclusiveBusy = exclusiveToolName != null || backfillRunning;
+        boolean exclusiveBusy = exclusiveToolName != null || backfillRunning || migrationRunning;
 
         imageClassifierButton.setEnabled(!exclusiveBusy && !backendTransitioning);
         folderCheckerButton.setEnabled(!exclusiveBusy && !backendTransitioning);
         backfillRunButton.setEnabled(!exclusiveBusy && !backendTransitioning);
         backfillLogButton.setEnabled(currentBackfillLogSession != null || Files.exists(BACKFILL_LOG_PATH));
+        migrationRunButton.setEnabled(!exclusiveBusy && !backendTransitioning);
+        migrationLogButton.setEnabled(currentMigrationLogSession != null || Files.exists(MIGRATION_LOG_PATH));
 
-        boolean editable = !backfillRunning && !backendTransitioning;
-        dbPathField.setEnabled(editable);
-        proxyEnabledCheck.setEnabled(editable);
-        dryRunCheck.setEnabled(editable);
-        delaySpinner.setEnabled(editable);
-        limitSpinner.setEnabled(editable);
+        boolean backfillEditable = !backfillRunning && !backendTransitioning;
+        dbPathField.setEnabled(backfillEditable);
+        proxyEnabledCheck.setEnabled(backfillEditable);
+        dryRunCheck.setEnabled(backfillEditable);
+        delaySpinner.setEnabled(backfillEditable);
+        limitSpinner.setEnabled(backfillEditable);
         updateProxyFieldState();
 
-        exclusiveToolLabel.setText("独占工具：" + (exclusiveToolName == null ? "无" : exclusiveToolName));
+        boolean migrationEditable = !migrationRunning && !backendTransitioning;
+        migrationDbPathField.setEnabled(migrationEditable);
+        migrationRootFolderField.setEnabled(migrationEditable);
+
+        exclusiveToolLabel.setText(message("gui.tools.exclusive-tool",
+                exclusiveToolName == null ? message("gui.value.none") : exclusiveToolName));
     }
 
     private void updateProxyFieldState() {
@@ -575,8 +884,24 @@ public class ToolsPanel extends JPanel {
         }
     }
 
+    private void closeMigrationLogSession() {
+        if (currentMigrationLogSession == null) {
+            return;
+        }
+        try {
+            currentMigrationLogSession.close();
+        } catch (Exception ignored) {
+        } finally {
+            currentMigrationLogSession = null;
+        }
+    }
+
     private void setBackfillStatus(String text) {
         SwingUtilities.invokeLater(() -> backfillStatusLabel.setText(text));
+    }
+
+    private void setMigrationStatus(String text) {
+        SwingUtilities.invokeLater(() -> migrationStatusLabel.setText(text));
     }
 
     private static JLabel secondaryLabel(String text) {
@@ -604,5 +929,14 @@ public class ToolsPanel extends JPanel {
     public void dispose() {
         BackendLifecycleManager.removeListener(backendListener);
         closeBackfillLogSession();
+        closeMigrationLogSession();
+    }
+
+    private static String message(String code, Object... args) {
+        return GuiMessages.get(code, args);
+    }
+
+    private static String logMessage(String code, Object... args) {
+        return MessageBundles.get(code, args);
     }
 }

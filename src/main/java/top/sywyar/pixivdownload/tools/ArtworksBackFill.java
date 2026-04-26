@@ -12,6 +12,7 @@ import org.apache.hc.core5.http.io.entity.EntityUtils;
 import org.apache.hc.core5.util.Timeout;
 import org.sqlite.SQLiteConfig;
 import top.sywyar.pixivdownload.config.RuntimeFiles;
+import top.sywyar.pixivdownload.i18n.MessageBundles;
 
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -81,13 +82,17 @@ public class ArtworksBackFill {
     }
 
     public static Summary run(Options options) throws Exception {
-        log.info("回填开始: db={} 代理={} 延迟={}ms 限制={} 试运行={}",
+        log.info(message(
+                "artworks-backfill.log.started",
                 options.dbPath(),
-                options.useProxy() ? options.proxyHost() + ":" + options.proxyPort() : "无",
+                options.useProxy()
+                        ? options.proxyHost() + ":" + options.proxyPort()
+                        : message("artworks-backfill.option.proxy.none"),
                 options.delayMs(),
-                options.limit() > 0 ? options.limit() : "ALL",
-                options.dryRun());
-        log.info("提示：运行 ArtworksBackFill 前请先停止后端服务，避免与 SQLite 同时写入。");
+                options.limit() > 0 ? options.limit() : message("artworks-backfill.option.limit.all"),
+                options.dryRun()
+        ));
+        log.info(message("artworks-backfill.log.stop-backend-hint"));
 
         SQLiteConfig sqliteConfig = new SQLiteConfig();
         sqliteConfig.setBusyTimeout(5000);
@@ -98,7 +103,7 @@ public class ArtworksBackFill {
 
             ensureSchema(conn);
             List<Candidate> candidates = findCandidates(conn, options.limit());
-            log.info("共 {} 条记录需要补全", candidates.size());
+            log.info(message("artworks-backfill.log.candidates.count", candidates.size()));
             if (candidates.isEmpty()) {
                 Summary summary = new Summary(0, 0, 0, 0, 0, 0, 0, 0, 0, options.dryRun(), false);
                 logSummary(summary);
@@ -130,26 +135,26 @@ public class ArtworksBackFill {
 
                         List<String> changes = new ArrayList<>();
                         if (didAuthor) {
-                            changes.add("author=" + result.authorName + "(#" + result.authorId + ")");
+                            changes.add(message("artworks-backfill.log.change.author", result.authorName, result.authorId));
                         }
                         if (didR18) {
-                            changes.add("R18=" + result.xRestrict);
+                            changes.add(message("artworks-backfill.log.change.r18", result.xRestrict));
                         }
                         if (didAi) {
-                            changes.add("AI=" + (result.isAi ? 1 : 0));
+                            changes.add(message("artworks-backfill.log.change.ai", result.isAi ? 1 : 0));
                         }
                         if (didDesc) {
-                            changes.add("desc=" + result.description.length() + "字符");
+                            changes.add(message("artworks-backfill.log.change.description", result.description.length()));
                         }
                         if (didTags) {
-                            changes.add("tags=" + result.tags.size() + "个");
+                            changes.add(message("artworks-backfill.log.change.tags", result.tags.size()));
                         }
 
                         if (changes.isEmpty()) {
-                            log.info("{} 无可补全数据", prefix);
+                            log.info(message("artworks-backfill.log.no-fillable-data", prefix));
                             skipped++;
                         } else {
-                            log.info("{} {}", prefix, String.join(", ", changes));
+                            log.info(message("artworks-backfill.log.changes", prefix, String.join(", ", changes)));
                             if (!options.dryRun()) {
                                 applyUpdates(conn, candidate, result, didAuthor, didR18, didAi, didDesc, didTags);
                             }
@@ -162,30 +167,32 @@ public class ArtworksBackFill {
                     }
                     case R18_ONLY -> {
                         if (candidate.r18Missing) {
-                            log.info("{} R18 (via error msg: {})", prefix, result.message);
+                            log.info(message("artworks-backfill.log.r18-only", prefix, result.message));
                             filledR18++;
                             if (!options.dryRun()) {
                                 applyR18Only(conn, candidate.artworkId);
                             }
                         } else {
-                            log.info("{} 跳过 ({}，R18 已有值)", prefix, result.message);
+                            log.info(message("artworks-backfill.log.skip.r18-already-filled", prefix, result.message));
                             skipped++;
                         }
                     }
                     case DELETED -> {
-                        log.info("{} 已删除/不可访问 — 跳过 ({})", prefix, result.message);
+                        log.info(message("artworks-backfill.log.deleted-skip", prefix, result.message));
                         deletedCount++;
                     }
                     case SKIP -> {
-                        log.info("{} 跳过 ({})", prefix, result.message);
+                        log.info(message("artworks-backfill.log.skip", prefix, result.message));
                         skipped++;
                     }
                     case RATE_LIMITED -> {
-                        log.warn("{} 触发限流（429），已停止", prefix);
-                        log.info("已处理 {}/{} 条：author={}  R18={}  AI={}  desc={}  tags={}  已删除={}  跳过={}",
-                                i, candidates.size(), filledAuthor, filledR18, filledAi, filledDescription, filledTags, deletedCount, skipped);
+                        log.warn(message("artworks-backfill.log.rate-limited", prefix));
+                        log.info(message(
+                                "artworks-backfill.log.progress",
+                                i, candidates.size(), filledAuthor, filledR18, filledAi, filledDescription, filledTags, deletedCount, skipped
+                        ));
                         if (options.dryRun()) {
-                            log.info("（试运行模式，未写入数据库）");
+                            log.info(message("artworks-backfill.log.dry-run"));
                         }
                         Summary summary = new Summary(
                                 candidates.size(),
@@ -245,11 +252,19 @@ public class ArtworksBackFill {
     }
 
     private static void logSummary(Summary summary) {
-        log.info("完成：扫描={}  author={}  R18={}  AI={}  desc={}  tags={}  已删除={}  跳过={}",
-                summary.totalCandidates(), summary.filledAuthor(), summary.filledR18(), summary.filledAi(),
-                summary.filledDescription(), summary.filledTags(), summary.deletedCount(), summary.skipped());
+        log.info(message(
+                "artworks-backfill.log.summary",
+                summary.totalCandidates(),
+                summary.filledAuthor(),
+                summary.filledR18(),
+                summary.filledAi(),
+                summary.filledDescription(),
+                summary.filledTags(),
+                summary.deletedCount(),
+                summary.skipped()
+        ));
         if (summary.dryRun()) {
-            log.info("（试运行模式，未写入数据库）");
+            log.info(message("artworks-backfill.log.dry-run"));
         }
     }
 
@@ -372,7 +387,7 @@ public class ArtworksBackFill {
 
                 JsonNode root = mapper.readTree(body);
                 if (root == null) {
-                    return LookupResult.skip("空响应");
+                    return LookupResult.skip(message("artworks-backfill.lookup.empty-response"));
                 }
                 if (root.path("error").asBoolean(false)) {
                     String message = root.path("message").asText("pixiv ajax error");
@@ -403,7 +418,7 @@ public class ArtworksBackFill {
                 return LookupResult.found(authorId, authorName, xRestrict, isAi, description, tags);
             });
         } catch (Exception e) {
-            return LookupResult.skip("请求异常: " + e.getMessage());
+            return LookupResult.skip(message("artworks-backfill.lookup.request-error", e.getMessage()));
         }
     }
 
@@ -523,7 +538,7 @@ public class ArtworksBackFill {
     }
 
     private static void printUsage() {
-        System.out.println("用法: ArtworksBackFill [--db <path>] [--proxy <host:port>] [--no-proxy] [--delay <ms>] [--limit <n>] [--dry-run]");
+        System.out.println(message("artworks-backfill.cli.usage"));
     }
 
     public record Options(String dbPath,
@@ -561,7 +576,7 @@ public class ArtworksBackFill {
                     case "--proxy" -> {
                         String[] parts = requireValue(args, ++i, "--proxy").split(":");
                         if (parts.length != 2) {
-                            throw new IllegalArgumentException("Invalid proxy");
+                            throw new IllegalArgumentException(message("artworks-backfill.cli.error.invalid-proxy"));
                         }
                         proxyHost = parts[0];
                         proxyPort = Integer.parseInt(parts[1]);
@@ -570,7 +585,7 @@ public class ArtworksBackFill {
                     case "--delay" -> delayMs = Long.parseLong(requireValue(args, ++i, "--delay"));
                     case "--limit" -> limit = Integer.parseInt(requireValue(args, ++i, "--limit"));
                     case "--dry-run" -> dryRun = true;
-                    default -> throw new IllegalArgumentException("Unknown option: " + args[i]);
+                    default -> throw new IllegalArgumentException(message("artworks-backfill.cli.error.unknown-option", args[i]));
                 }
             }
             return new Options(dbPath, proxyHost, proxyPort, useProxy, delayMs, limit, dryRun);
@@ -578,7 +593,7 @@ public class ArtworksBackFill {
 
         private static String requireValue(String[] args, int index, String option) {
             if (index >= args.length) {
-                throw new IllegalArgumentException("Missing value for " + option);
+                throw new IllegalArgumentException(message("artworks-backfill.cli.error.missing-value", option));
             }
             return args[index];
         }
@@ -668,4 +683,8 @@ public class ArtworksBackFill {
     }
 
     private record TagEntry(String name, String translatedName) {}
+
+    private static String message(String code, Object... args) {
+        return MessageBundles.get(code, args);
+    }
 }

@@ -10,11 +10,9 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import top.sywyar.pixivdownload.common.NetworkUtils;
-
-import java.io.IOException;
+import top.sywyar.pixivdownload.i18n.LocalizedException;
 
 @RestController
 @RequestMapping("/api/migration")
@@ -30,10 +28,8 @@ public class MigrationController {
      * 仅允许本地 IP 调用。
      */
     @PostMapping("/json-to-sqlite")
-    public ResponseEntity<MigrationResponse> migrate(HttpServletRequest request) throws IOException {
-        if (!NetworkUtils.isLocalAddress(request.getRemoteAddr())) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Forbidden: local access only");
-        }
+    public ResponseEntity<MigrationResponse> migrate(HttpServletRequest request) throws Exception {
+        ensureLocal(request);
         return ResponseEntity.ok(migration.migrate());
     }
 
@@ -44,11 +40,19 @@ public class MigrationController {
      */
     @GetMapping(value = "/json-to-sqlite/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter migrateWithProgress(HttpServletRequest request) {
-        if (!NetworkUtils.isLocalAddress(request.getRemoteAddr())) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Forbidden: local access only");
-        }
+        ensureLocal(request);
         SseEmitter emitter = new SseEmitter(600_000L);
         migration.migrateAsync(emitter);
         return emitter;
+    }
+
+    private static void ensureLocal(HttpServletRequest request) {
+        if (!NetworkUtils.isLocalAddress(request.getRemoteAddr())) {
+            throw new LocalizedException(
+                    HttpStatus.FORBIDDEN,
+                    "migration.error.local-only",
+                    "Forbidden: local access only"
+            );
+        }
     }
 }

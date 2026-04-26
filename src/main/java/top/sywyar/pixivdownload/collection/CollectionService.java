@@ -3,8 +3,11 @@ package top.sywyar.pixivdownload.collection;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
+import top.sywyar.pixivdownload.i18n.AppMessages;
+import top.sywyar.pixivdownload.i18n.LocalizedException;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -22,6 +25,7 @@ public class CollectionService {
 
     private final CollectionMapper collectionMapper;
     private final CollectionIconService iconService;
+    private final AppMessages messages;
 
     @PostConstruct
     public void init() {
@@ -45,7 +49,7 @@ public class CollectionService {
     public Collection create(String name) {
         String clean = validateName(name);
         if (collectionMapper.countByName(clean) > 0) {
-            throw new IllegalArgumentException("同名收藏夹已存在");
+            throw LocalizedException.badRequest("collection.name.duplicate", "同名收藏夹已存在");
         }
         CollectionInsert insert = new CollectionInsert();
         insert.setName(clean);
@@ -55,9 +59,13 @@ public class CollectionService {
         collectionMapper.insert(insert);
         Long newId = insert.getId();
         if (newId == null) {
-            throw new IllegalStateException("创建收藏夹失败");
+            throw new LocalizedException(
+                    HttpStatus.INTERNAL_SERVER_ERROR,
+                    "collection.create.failed",
+                    "创建收藏夹失败"
+            );
         }
-        log.info("创建收藏夹: id={}, name={}", newId, clean);
+        log.info(message("collection.log.created", newId, clean));
         return collectionMapper.findById(newId);
     }
 
@@ -65,7 +73,7 @@ public class CollectionService {
         requireExists(id);
         String clean = validateName(name);
         if (collectionMapper.countByNameExcludingId(clean, id) > 0) {
-            throw new IllegalArgumentException("同名收藏夹已存在");
+            throw LocalizedException.badRequest("collection.name.duplicate", "同名收藏夹已存在");
         }
         collectionMapper.updateName(id, clean);
         return collectionMapper.findById(id);
@@ -82,7 +90,7 @@ public class CollectionService {
         collectionMapper.deleteArtworkLinksByCollection(id);
         collectionMapper.deleteById(id);
         iconService.deleteAll(id);
-        log.info("删除收藏夹: id={}", id);
+        log.info(message("collection.log.deleted", id));
     }
 
     public Collection setIcon(long id, String originalFilename, byte[] data) {
@@ -91,7 +99,12 @@ public class CollectionService {
             String ext = iconService.saveIcon(id, originalFilename, data);
             collectionMapper.updateIconExt(id, ext);
         } catch (java.io.IOException e) {
-            throw new IllegalStateException("保存图标失败: " + e.getMessage(), e);
+            throw new LocalizedException(
+                    HttpStatus.INTERNAL_SERVER_ERROR,
+                    "collection.icon.save.failed",
+                    "保存图标失败: {0}",
+                    e.getMessage()
+            );
         }
         return collectionMapper.findById(id);
     }
@@ -142,18 +155,29 @@ public class CollectionService {
 
     private void requireExists(long id) {
         if (!exists(id)) {
-            throw new IllegalArgumentException("收藏夹不存在: " + id);
+            throw LocalizedException.badRequest("collection.not-found", "收藏夹不存在: {0}", id);
         }
     }
 
     private String validateName(String name) {
         if (!StringUtils.hasText(name)) {
-            throw new IllegalArgumentException("收藏夹名称不能为空");
+            throw LocalizedException.badRequest(
+                    "validation.collection.name.required",
+                    "收藏夹名称不能为空"
+            );
         }
         String clean = name.trim();
         if (clean.length() > MAX_NAME_LENGTH) {
-            throw new IllegalArgumentException("收藏夹名称过长（最多 " + MAX_NAME_LENGTH + " 字符）");
+            throw LocalizedException.badRequest(
+                    "collection.name.too-long",
+                    "收藏夹名称过长（最多 {0} 字符）",
+                    MAX_NAME_LENGTH
+            );
         }
         return clean;
+    }
+
+    private String message(String code, Object... args) {
+        return messages.getForLog(code, args);
     }
 }

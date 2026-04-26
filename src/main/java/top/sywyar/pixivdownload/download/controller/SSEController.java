@@ -6,6 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.web.bind.annotation.*;
 import top.sywyar.pixivdownload.common.UuidUtils;
@@ -13,11 +14,14 @@ import top.sywyar.pixivdownload.download.DownloadProgressEvent;
 import top.sywyar.pixivdownload.download.DownloadStatus;
 import top.sywyar.pixivdownload.download.response.DownloadResponse;
 import top.sywyar.pixivdownload.download.response.SseStatusData;
+import top.sywyar.pixivdownload.i18n.AppLocale;
+import top.sywyar.pixivdownload.i18n.AppMessages;
 import top.sywyar.pixivdownload.setup.SetupService;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
 import java.time.Duration;
+import java.util.Locale;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledFuture;
@@ -30,8 +34,9 @@ public class SSEController {
 
     private final TaskScheduler taskScheduler;
     private final SetupService setupService;
+    private final AppMessages messages;
 
-    private final ConcurrentHashMap<Long, SseEmitter> emitters = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Long, ArtworkSubscription> emitters = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<Long, ScheduledFuture<?>> heartbeatTasks = new ConcurrentHashMap<>();
 
     /** 聚合订阅：key 为该连接的随机 ID，value 持有 emitter 和该连接的归属信息。
@@ -40,8 +45,10 @@ public class SSEController {
     private final ConcurrentHashMap<String, AggregatedSubscription> aggregatedEmitters = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, ScheduledFuture<?>> aggregatedHeartbeats = new ConcurrentHashMap<>();
 
+    private record ArtworkSubscription(SseEmitter emitter, Locale locale) {}
+
     /** 聚合连接的归属信息：admin 可见所有事件；非 admin 仅可见自己 UUID 的事件。 */
-    private record AggregatedSubscription(SseEmitter emitter, String ownerUuid, boolean admin) {}
+    private record AggregatedSubscription(SseEmitter emitter, String ownerUuid, boolean admin, Locale locale) {}
 
     /**
      * 为特定作品创建SSE连接，实时推送下载进度
@@ -49,25 +56,25 @@ public class SSEController {
     @GetMapping(value = "/download/{artworkId}", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter createSSEConnection(@PathVariable Long artworkId) throws IOException {
         SseEmitter emitter = new SseEmitter(300000L); // 5分钟超时
-        emitters.put(artworkId, emitter);
+        emitters.put(artworkId, new ArtworkSubscription(emitter, currentRequestLocale()));
 
         // 设置完成和超时处理
         emitter.onCompletion(() -> {
             cancelHeartbeat(artworkId);
             safeRemoveEmitter(artworkId);
-            log.info("SSE连接完成: {}", artworkId);
+            log.info(logMessage("sse.log.connection.completed", id(artworkId)));
         });
 
         emitter.onTimeout(() -> {
             cancelHeartbeat(artworkId);
             safeRemoveEmitter(artworkId);
-            log.error("SSE连接超时: {}", artworkId);
+            log.error(logMessage("sse.log.connection.timeout", id(artworkId)));
         });
 
         emitter.onError((e) -> {
             cancelHeartbeat(artworkId);
             safeRemoveEmitter(artworkId);
-            log.error("SSE连接错误: {}, {}", artworkId, e.getMessage());
+            log.error(logMessage("sse.log.connection.error", id(artworkId), e.getMessage()));
         });
 
         // 立即发送初始状态
@@ -110,22 +117,23 @@ public class SSEController {
         // （首次连接时 AuthFilter 通过 Set-Cookie 设置的值不会出现在当前 request 上），
         // 用同样的 fingerprint 算法兜底，确保 owner UUID 与 DownloadController 看到的 UUID 一致
         String ownerUuid = admin ? null : UuidUtils.extractOrGenerateUuid(request);
-        aggregatedEmitters.put(connectionId, new AggregatedSubscription(emitter, ownerUuid, admin));
+        aggregatedEmitters.put(connectionId, new AggregatedSubscription(
+                emitter, ownerUuid, admin, currentRequestLocale()));
 
         emitter.onCompletion(() -> {
             cancelAggregatedHeartbeat(connectionId);
             aggregatedEmitters.remove(connectionId);
-            log.debug("聚合 SSE 连接完成: {}", connectionId);
+            log.debug(logMessage("sse.log.aggregated.completed", connectionId));
         });
         emitter.onTimeout(() -> {
             cancelAggregatedHeartbeat(connectionId);
             safeRemoveAggregatedEmitter(connectionId);
-            log.debug("聚合 SSE 连接超时: {}", connectionId);
+            log.debug(logMessage("sse.log.aggregated.timeout", connectionId));
         });
         emitter.onError((e) -> {
             cancelAggregatedHeartbeat(connectionId);
             aggregatedEmitters.remove(connectionId);
-            log.debug("聚合 SSE 连接错误: {} - {}", connectionId, e.getMessage());
+            log.debug(logMessage("sse.log.aggregated.error", connectionId, e.getMessage()));
         });
 
         // 立即发送一个握手事件，便于前端确认连接成功
@@ -136,7 +144,7 @@ public class SSEController {
                     .data(connectionId));
         } catch (IOException e) {
             aggregatedEmitters.remove(connectionId);
-            log.warn("聚合 SSE 初始事件发送失败: {} - {}", connectionId, e.getMessage());
+            log.warn(logMessage("sse.log.aggregated.initial-send-failed", connectionId, e.getMessage()));
         }
 
         ScheduledFuture<?> heartbeat = taskScheduler.scheduleAtFixedRate(() -> {
@@ -164,8 +172,11 @@ public class SSEController {
     @PostMapping("/close/{artworkId}")
     public ResponseEntity<DownloadResponse> closeSSEConnection(@PathVariable Long artworkId) {
         safeRemoveEmitter(artworkId);
-        log.info("SSE连接安全关闭: {}", artworkId);
-        return ResponseEntity.ok(DownloadResponse.builder().success(true).message("SSE连接已安全关闭").build());
+        log.info(logMessage("sse.log.connection.closed", id(artworkId)));
+        return ResponseEntity.ok(DownloadResponse.builder()
+                .success(true)
+                .message(messages.get("sse.connection.closed"))
+                .build());
     }
 
     private void cancelHeartbeat(Long artworkId) {
@@ -179,10 +190,10 @@ public class SSEController {
     }
 
     private void safeRemoveEmitter(Long artworkId) {
-        SseEmitter emitter = emitters.remove(artworkId);
-        if (emitter != null) {
+        ArtworkSubscription subscription = emitters.remove(artworkId);
+        if (subscription != null) {
             try {
-                emitter.complete();
+                subscription.emitter().complete();
             } catch (IllegalStateException ignored) {
                 // emitter 已经完成或关闭，无需再次完成，属于预期情况
             }
@@ -208,18 +219,12 @@ public class SSEController {
      * 发送初始状态更新到前端
      */
     public void sendStatusUpdate(Long artworkId) throws IOException {
-        SseEmitter emitter = emitters.get(artworkId);
-        if (emitter == null) return;
-        SseStatusData data = SseStatusData.builder()
-                .artworkId(artworkId)
-                .status("连接中")
-                .message("SSE连接已建立")
-                .success(true)
-                .build();
-        emitter.send(SseEmitter.event()
+        ArtworkSubscription subscription = emitters.get(artworkId);
+        if (subscription == null) return;
+        subscription.emitter().send(SseEmitter.event()
                 .id(String.valueOf(System.currentTimeMillis()))
                 .name("download-status")
-                .data(data));
+                .data(buildConnectionEstablishedPayload(artworkId, subscription.locale())));
     }
 
     /**
@@ -230,39 +235,18 @@ public class SSEController {
         Long artworkId = event.getArtworkId();
         DownloadStatus downloadStatus = event.getDownloadStatus();
 
-        SseStatusData.SseStatusDataBuilder builder = SseStatusData.builder()
-                .artworkId(artworkId)
-                .status("进度更新")
-                .message("下载进度已更新")
-                .success(true);
-
-        if (downloadStatus != null) {
-            builder.currentImageIndex(downloadStatus.getCurrentImageIndex())
-                    .totalImages(downloadStatus.getTotalImages())
-                    .downloadedCount(downloadStatus.getDownloadedCount())
-                    .completed(downloadStatus.isCompleted())
-                    .failed(downloadStatus.isFailed())
-                    .cancelled(downloadStatus.isCancelled())
-                    .folderName(downloadStatus.getFolderName());
-
-            if (downloadStatus.getTotalImages() > 0) {
-                int progress = (int) ((double) downloadStatus.getDownloadedCount()
-                        / downloadStatus.getTotalImages() * 100);
-                builder.progress(progress);
-            }
-        }
-
-        SseStatusData payload = builder.build();
-        SseEmitter.SseEventBuilder eventBuilder = SseEmitter.event()
-                .id(String.valueOf(System.currentTimeMillis()))
-                .name("download-status")
-                .data(payload);
-
         // 1) 发送给订阅了该作品的旧式 per-artwork emitter（向后兼容）
-        SseEmitter perArtworkEmitter = emitters.get(artworkId);
-        if (perArtworkEmitter != null) {
+        ArtworkSubscription perArtworkSubscription = emitters.get(artworkId);
+        if (perArtworkSubscription != null) {
             try {
-                perArtworkEmitter.send(eventBuilder);
+                perArtworkSubscription.emitter().send(SseEmitter.event()
+                        .id(String.valueOf(System.currentTimeMillis()))
+                        .name("download-status")
+                        .data(buildProgressPayload(
+                                artworkId,
+                                downloadStatus,
+                                perArtworkSubscription.locale()
+                        )));
             } catch (IOException e) {
                 emitters.remove(artworkId);
             }
@@ -280,7 +264,7 @@ public class SSEController {
                     sub.emitter().send(SseEmitter.event()
                             .id(String.valueOf(System.currentTimeMillis()))
                             .name("download-status")
-                            .data(payload));
+                            .data(buildProgressPayload(artworkId, downloadStatus, sub.locale())));
                 } catch (IOException e) {
                     cancelAggregatedHeartbeat(connectionId);
                     aggregatedEmitters.remove(connectionId);
@@ -300,5 +284,52 @@ public class SSEController {
      */
     public void notifyProgressUpdate(Long artworkId) {
         handleDownloadProgressEvent(new DownloadProgressEvent(this, artworkId));
+    }
+
+    private Locale currentRequestLocale() {
+        return AppLocale.normalize(LocaleContextHolder.getLocale());
+    }
+
+    private SseStatusData buildConnectionEstablishedPayload(Long artworkId, Locale locale) {
+        return SseStatusData.builder()
+                .artworkId(artworkId)
+                .status(messages.get(locale, "sse.connection.connecting"))
+                .message(messages.get(locale, "sse.connection.established"))
+                .success(true)
+                .build();
+    }
+
+    private SseStatusData buildProgressPayload(Long artworkId, DownloadStatus downloadStatus, Locale locale) {
+        SseStatusData.SseStatusDataBuilder builder = SseStatusData.builder()
+                .artworkId(artworkId)
+                .status(messages.get(locale, "sse.progress.status"))
+                .message(messages.get(locale, "sse.progress.updated"))
+                .success(true);
+
+        if (downloadStatus != null) {
+            builder.currentImageIndex(downloadStatus.getCurrentImageIndex())
+                    .totalImages(downloadStatus.getTotalImages())
+                    .downloadedCount(downloadStatus.getDownloadedCount())
+                    .completed(downloadStatus.isCompleted())
+                    .failed(downloadStatus.isFailed())
+                    .cancelled(downloadStatus.isCancelled())
+                    .folderName(downloadStatus.getFolderName());
+
+            if (downloadStatus.getTotalImages() > 0) {
+                int progress = (int) ((double) downloadStatus.getDownloadedCount()
+                        / downloadStatus.getTotalImages() * 100);
+                builder.progress(progress);
+            }
+        }
+
+        return builder.build();
+    }
+
+    private String logMessage(String code, Object... args) {
+        return messages.getForLog(code, args);
+    }
+
+    private String id(Long value) {
+        return value == null ? "null" : String.valueOf(value);
     }
 }

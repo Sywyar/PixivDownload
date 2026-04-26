@@ -11,7 +11,6 @@ import java.util.Properties;
 @UtilityClass
 public class AppVersion {
 
-    private static final String UNKNOWN_VERSION = "unknown";
     private static final String JPACKAGE_APP_VERSION = "jpackage.app-version";
     private static final String APP_VERSION_PROPERTIES = "/app-version.properties";
     private static final String APP_VERSION_KEY = "app.version";
@@ -22,7 +21,7 @@ public class AppVersion {
      * 返回展示给用户的应用版本。
      * 优先使用 jpackage 注入的发布版本，其次读取 Maven 编译时写入的版本文件。
      */
-    public static String getDisplayVersion() {
+    public static String getDisplayVersionOrNull() {
         String version = firstNonBlank(
                 System.getProperty(JPACKAGE_APP_VERSION),
                 readVersionFromProperties(APP_VERSION_PROPERTIES, APP_VERSION_KEY),
@@ -30,6 +29,11 @@ public class AppVersion {
                 readVersionFromProperties(MAVEN_POM_PROPERTIES, "version")
         );
         return normalize(version);
+    }
+
+    public static String getDisplayVersionOrDefault(String defaultVersion) {
+        String version = getDisplayVersionOrNull();
+        return version != null ? version : defaultVersion;
     }
 
     private static String readVersionFromProperties(String resourcePath, String key) {
@@ -56,7 +60,7 @@ public class AppVersion {
 
     private static String normalize(String version) {
         if (version == null || version.isBlank()) {
-            return UNKNOWN_VERSION;
+            return null;
         }
 
         String normalized = version.trim();

@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 import top.sywyar.pixivdownload.common.SessionUtils;
 import top.sywyar.pixivdownload.config.RuntimeFiles;
 import top.sywyar.pixivdownload.download.config.DownloadConfig;
+import top.sywyar.pixivdownload.i18n.AppMessages;
 
 import org.springframework.boot.ApplicationArguments;
 
@@ -29,6 +30,7 @@ public class SetupService {
 
     private final Path configFile;
     private final ObjectMapper objectMapper;
+    private final AppMessages messages;
 
     private static final BCryptPasswordEncoder BCRYPT = new BCryptPasswordEncoder(12);
 
@@ -51,9 +53,13 @@ public class SetupService {
     private static final long SESSION_SHORT = 2L  * 3600 * 1000;       // 2 小时
     private static final long SESSION_LONG  = 30L * 24 * 3600 * 1000;  // 30 天
 
-    public SetupService(DownloadConfig downloadConfig, ObjectMapper objectMapper, ApplicationArguments args) {
+    public SetupService(DownloadConfig downloadConfig,
+                        ObjectMapper objectMapper,
+                        ApplicationArguments args,
+                        AppMessages messages) {
         this.configFile = RuntimeFiles.resolveSetupConfigPath(downloadConfig.getRootFolder());
         this.objectMapper = objectMapper;
+        this.messages = messages;
         this.introMode = Arrays.asList(args.getSourceArgs()).contains("--intro");
         load();
     }
@@ -79,12 +85,16 @@ public class SetupService {
                         persistentSessions.put(token, expiry);
                     }
                 });
-                log.info("Setup config loaded: mode={}, restored {} session(s)", this.mode, persistentSessions.size());
+                log.info(message(
+                        "setup.log.config.loaded.restored",
+                        this.mode,
+                        persistentSessions.size()
+                ));
             } else {
-                log.info("Setup config loaded: mode={}", this.mode);
+                log.info(message("setup.log.config.loaded", this.mode));
             }
         } catch (IOException e) {
-            log.warn("Failed to load setup config: {}", e.getMessage());
+            log.warn(message("setup.log.config.load.failed", e.getMessage()));
         }
     }
 
@@ -117,7 +127,7 @@ public class SetupService {
         this.mode         = usageMode;
         this.setupComplete = true;
         save();
-        log.info("Setup completed: mode={}", usageMode);
+        log.info(message("setup.log.completed", usageMode));
     }
 
     // ---- 登录验证 -------------------------------------------------------
@@ -132,8 +142,12 @@ public class SetupService {
         if (passwordHash.equals(legacySha256Hash(pwd, salt))) {
             this.salt         = null;
             this.passwordHash = BCRYPT.encode(pwd);
-            try { save(); } catch (IOException e) { log.warn("升级密码哈希失败: {}", e.getMessage()); }
-            log.info("密码哈希已从 SHA-256 升级为 BCrypt");
+            try {
+                save();
+            } catch (IOException e) {
+                log.warn(message("setup.log.password-hash.upgrade.failed", e.getMessage()));
+            }
+            log.info(message("setup.log.password-hash.upgraded"));
             return true;
         }
         return false;
@@ -147,7 +161,11 @@ public class SetupService {
         sessions.put(token, expiry);
         if (remember) {
             persistentSessions.put(token, expiry);
-            try { save(); } catch (IOException e) { log.warn("保存 session 失败: {}", e.getMessage()); }
+            try {
+                save();
+            } catch (IOException e) {
+                log.warn(message("setup.log.session.save.failed", e.getMessage()));
+            }
         }
         return token;
     }
@@ -159,7 +177,11 @@ public class SetupService {
         if (System.currentTimeMillis() > exp) {
             sessions.remove(token);
             if (persistentSessions.remove(token) != null) {
-                try { save(); } catch (IOException e) { log.warn("清理过期 session 失败: {}", e.getMessage()); }
+                try {
+                    save();
+                } catch (IOException e) {
+                    log.warn(message("setup.log.session.expired-cleanup.failed", e.getMessage()));
+                }
             }
             return false;
         }
@@ -175,7 +197,11 @@ public class SetupService {
         if (token == null) return;
         sessions.remove(token);
         if (persistentSessions.remove(token) != null) {
-            try { save(); } catch (IOException e) { log.warn("移除 session 失败: {}", e.getMessage()); }
+            try {
+                save();
+            } catch (IOException e) {
+                log.warn(message("setup.log.session.remove.failed", e.getMessage()));
+            }
         }
     }
 
@@ -192,5 +218,9 @@ public class SetupService {
         } catch (NoSuchAlgorithmException e) {
             throw new RuntimeException(e);
         }
+    }
+
+    private String message(String code, Object... args) {
+        return messages.getForLog(code, args);
     }
 }

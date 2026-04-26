@@ -18,6 +18,7 @@ import top.sywyar.pixivdownload.download.request.ArtworkBatchRequest;
 import top.sywyar.pixivdownload.download.request.DownloadRequest;
 import top.sywyar.pixivdownload.download.request.MoveArtworkRequest;
 import top.sywyar.pixivdownload.download.response.*;
+import top.sywyar.pixivdownload.i18n.AppMessages;
 import top.sywyar.pixivdownload.quota.MultiModeConfig;
 import top.sywyar.pixivdownload.quota.UserQuotaService;
 import top.sywyar.pixivdownload.setup.SetupService;
@@ -44,12 +45,13 @@ public class DownloadController {
     private final MultiModeConfig multiModeConfig;
     private final PixivDatabase pixivDatabase;
     private final AuthorService authorService;
+    private final AppMessages messages;
 
     @PostMapping("/download/pixiv")
     public ResponseEntity<?> downloadPixivImages(
             @Valid @RequestBody DownloadRequest request,
             HttpServletRequest httpRequest) {
-        // SSRF 防护：同步校验所有下载 URL，非法 URL 抛出 SecurityException（由全局处理器返回 400）
+        // SSRF 防护：同步校验所有下载 URL，非法 URL 抛出 LocalizedException（由全局处理器返回 400）
         if (request.getOther().isUgoira() && request.getOther().getUgoiraZipUrl() != null) {
             DownloadService.validatePixivUrl(request.getOther().getUgoiraZipUrl());
         } else {
@@ -61,7 +63,8 @@ public class DownloadController {
             String pdMode = multiModeConfig.getPostDownloadMode();
             if ("never-delete".equals(pdMode) || "timed-delete".equals(pdMode)) {
                 if (pixivDatabase.hasArtwork(request.getArtworkId())) {
-                    return ResponseEntity.ok(new AlreadyDownloadedResponse(true, true, "作品已下载，无需重复下载"));
+                    return ResponseEntity.ok(new AlreadyDownloadedResponse(
+                            true, true, messages.get("download.already-downloaded")));
                 }
             }
         }
@@ -80,7 +83,7 @@ public class DownloadController {
                 String archiveToken = userQuotaService.triggerArchive(userUuid);
                 return ResponseEntity.status(429).body(new QuotaExceededResponse(
                         true,
-                        "已达到下载限额，请下载已打包的文件后等待配额重置",
+                        messages.get("download.quota.exceeded"),
                         archiveToken,
                         (long) multiModeConfig.getQuota().getArchiveExpireMinutes() * 60,
                         check.artworksUsed(),
@@ -103,8 +106,8 @@ public class DownloadController {
 
         return ResponseEntity.ok(DownloadResponse.builder()
                 .success(true)
-                .message("下载任务已开始处理")
-                .downloadPath("正在下载到作品 " + request.getArtworkId() + " 文件夹")
+                .message(messages.get("download.task.started"))
+                .downloadPath(messages.get("download.download-path.pending", String.valueOf(request.getArtworkId())))
                 .downloadedCount(request.getImageUrls().size())
                 .build());
     }
@@ -116,7 +119,10 @@ public class DownloadController {
 
     @GetMapping("/download/status")
     public ResponseEntity<DownloadResponse> getStatus() {
-        return ResponseEntity.ok(DownloadResponse.builder().success(true).message("服务运行正常").build());
+        return ResponseEntity.ok(DownloadResponse.builder()
+                .success(true)
+                .message(messages.get("download.service.healthy"))
+                .build());
     }
 
     //获取作品下载状态
@@ -125,13 +131,16 @@ public class DownloadController {
         DownloadStatus status = downloadService.getDownloadStatus(artworkId);
         if (status == null) {
             return ResponseEntity.ok(DownloadStatusResponse.builder()
-                    .success(false).message("未找到该作品的下载状态").artworkId(artworkId).build());
+                    .success(false)
+                    .message(messages.get("download.status.not-found"))
+                    .artworkId(artworkId)
+                    .build());
         }
 
         log.info("artworkId: {},totalImages: {},downloadedCount: {}", artworkId, status.getTotalImages(), status.getDownloadedCount());
         return ResponseEntity.ok(DownloadStatusResponse.builder()
                 .success(true)
-                .message(status.getStatusDescription())
+                .message(messages.get(status.getStatusMessageCode(), status.getStatusMessageArgs()))
                 .artworkId(artworkId)
                 .title(status.getTitle())
                 .totalImages(status.getTotalImages())
@@ -154,7 +163,10 @@ public class DownloadController {
     @PostMapping("/cancel/{artworkId}")
     public ResponseEntity<DownloadResponse> cancelDownload(@PathVariable Long artworkId) {
         downloadService.cancelDownload(artworkId);
-        return ResponseEntity.ok(DownloadResponse.builder().success(true).message("下载任务已取消").build());
+        return ResponseEntity.ok(DownloadResponse.builder()
+                .success(true)
+                .message(messages.get("download.cancelled"))
+                .build());
     }
 
     @GetMapping("/downloaded/{artworkId}")
@@ -205,7 +217,10 @@ public class DownloadController {
             @Valid @RequestBody MoveArtworkRequest request) {
         String movePath = request.getMovePath().replaceAll("[/\\\\]+$", "");
         downloadService.moveArtWork(artworkId, movePath, request.getMoveTime());
-        return ResponseEntity.ok(DownloadResponse.builder().success(true).message("已尝试记录移动操作").build());
+        return ResponseEntity.ok(DownloadResponse.builder()
+                .success(true)
+                .message(messages.get("download.move.record-attempted"))
+                .build());
     }
 
     @GetMapping("/downloaded/history")

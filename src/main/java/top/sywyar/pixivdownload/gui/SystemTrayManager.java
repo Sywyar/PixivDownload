@@ -1,11 +1,14 @@
 package top.sywyar.pixivdownload.gui;
 
 import lombok.extern.slf4j.Slf4j;
+import top.sywyar.pixivdownload.gui.i18n.GuiMessages;
+import top.sywyar.pixivdownload.i18n.MessageBundles;
 
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.awt.event.MouseListener;
 import java.awt.image.BufferedImage;
 import java.net.URI;
 
@@ -18,6 +21,12 @@ import java.net.URI;
 @Slf4j
 public final class SystemTrayManager {
 
+    /** 已安装的托盘图标，供热重载语言时刷新文案。 */
+    private static volatile TrayIcon installedTrayIcon;
+    /** 关联的主窗口与下载目录，重建菜单时复用。 */
+    private static volatile MainFrame installedFrame;
+    private static volatile String installedRootFolder;
+
     private SystemTrayManager() {}
 
     /**
@@ -29,12 +38,12 @@ public final class SystemTrayManager {
      */
     public static boolean install(MainFrame frame, String rootFolder) {
         if (!SystemTray.isSupported()) {
-            log.warn("当前系统不支持系统托盘");
+            log.warn(logMessage("gui.tray.log.unsupported"));
             return false;
         }
 
         Image icon = loadIcon();
-        TrayIcon trayIcon = new TrayIcon(icon, "PixivDownload");
+        TrayIcon trayIcon = new TrayIcon(icon, message("app.name"));
         trayIcon.setImageAutoSize(true);
 
         // Swing 弹出菜单（支持中文，无需依赖 AWT ANSI 码页）
@@ -59,34 +68,69 @@ public final class SystemTrayManager {
 
         try {
             SystemTray.getSystemTray().add(trayIcon);
-            log.debug("系统托盘图标已安装");
+            installedTrayIcon = trayIcon;
+            installedFrame = frame;
+            installedRootFolder = rootFolder;
+            log.debug(logMessage("gui.tray.log.installed"));
             return true;
         } catch (AWTException e) {
-            log.warn("安装托盘图标失败: {}", e.getMessage());
+            log.warn(logMessage("gui.tray.log.install-failed", e.getMessage()));
             return false;
         }
+    }
+
+    /**
+     * 在 GUI 语言切换后重建托盘菜单与 tooltip 文案，使其反映新 locale。
+     * 若托盘未安装（headless 或不支持），静默忽略。
+     */
+    public static void refreshLocale() {
+        TrayIcon trayIcon = installedTrayIcon;
+        MainFrame frame = installedFrame;
+        String rootFolder = installedRootFolder;
+        if (trayIcon == null || frame == null) {
+            return;
+        }
+        trayIcon.setToolTip(message("app.name"));
+        // JPopupMenu 在每次右键时通过闭包捕获新菜单引用即可刷新；
+        // 这里重建菜单并替换原 mouseListener 中引用的菜单。
+        JPopupMenu newMenu = buildPopupMenu(frame, rootFolder, trayIcon);
+        for (MouseListener listener : trayIcon.getMouseListeners()) {
+            trayIcon.removeMouseListener(listener);
+        }
+        trayIcon.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseReleased(MouseEvent e) { maybeShow(e); }
+            @Override
+            public void mousePressed(MouseEvent e) { maybeShow(e); }
+            private void maybeShow(MouseEvent e) {
+                if (e.isPopupTrigger()) {
+                    Point p = MouseInfo.getPointerInfo().getLocation();
+                    showAt(newMenu, p.x, p.y);
+                }
+            }
+        });
     }
 
     private static JPopupMenu buildPopupMenu(MainFrame frame,
                                              String rootFolder, TrayIcon trayIcon) {
         JPopupMenu menu = new JPopupMenu();
 
-        JMenuItem showItem = new JMenuItem("显示主窗口");
+        JMenuItem showItem = new JMenuItem(message("gui.tray.menu.show-main-window"));
         showItem.addActionListener(e -> showFrame(frame));
         menu.add(showItem);
 
-        JMenuItem browserItem = new JMenuItem("打开 Web 控制台");
+        JMenuItem browserItem = new JMenuItem(message("gui.action.open-web-console"));
         // 点击时才调用 frame.getMonitorUrl()，确保读到 Spring 启动后更新的 scheme/domain
         browserItem.addActionListener(e -> openBrowser(frame.getMonitorUrl()));
         menu.add(browserItem);
 
-        JMenuItem folderItem = new JMenuItem("打开下载目录");
+        JMenuItem folderItem = new JMenuItem(message("gui.action.open-download-directory"));
         folderItem.addActionListener(e -> openFolder(rootFolder));
         menu.add(folderItem);
 
         menu.addSeparator();
 
-        JMenuItem exitItem = new JMenuItem("退出");
+        JMenuItem exitItem = new JMenuItem(message("gui.action.exit"));
         exitItem.addActionListener(e -> {
             SystemTray.getSystemTray().remove(trayIcon);
             System.exit(0);
@@ -142,7 +186,7 @@ public final class SystemTrayManager {
         try {
             Desktop.getDesktop().browse(new URI(url));
         } catch (Exception e) {
-            log.warn("无法打开浏览器: {}", e.getMessage());
+            log.warn(logMessage("gui.tray.log.open-browser.failed", e.getMessage()));
         }
     }
 
@@ -150,7 +194,7 @@ public final class SystemTrayManager {
         try {
             Desktop.getDesktop().open(new java.io.File(rootFolder));
         } catch (Exception e) {
-            log.warn("无法打开目录: {}", e.getMessage());
+            log.warn(logMessage("gui.tray.log.open-folder.failed", e.getMessage()));
         }
     }
 
@@ -170,10 +214,10 @@ public final class SystemTrayManager {
                 if (!tracker.isErrorAny()) {
                     return img;
                 }
-                log.warn("加载 favicon.ico 出错，使用备用图标");
+                log.warn(logMessage("gui.tray.log.favicon-fallback"));
             }
         } catch (Exception e) {
-            log.warn("加载托盘图标失败，使用默认图标: {}", e.getMessage());
+            log.warn(logMessage("gui.tray.log.icon-load.failed", e.getMessage()));
         }
         return createFallbackIcon();
     }
@@ -191,5 +235,13 @@ public final class SystemTrayManager {
         g.drawString(text, (size - fm.stringWidth(text)) / 2, (size + fm.getAscent()) / 2 - 1);
         g.dispose();
         return img;
+    }
+
+    private static String message(String code, Object... args) {
+        return GuiMessages.get(code, args);
+    }
+
+    private static String logMessage(String code, Object... args) {
+        return MessageBundles.get(code, args);
     }
 }

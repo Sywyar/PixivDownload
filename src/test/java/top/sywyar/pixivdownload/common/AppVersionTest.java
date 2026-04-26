@@ -24,7 +24,7 @@ class AppVersionTest {
     void shouldPreferJpackageReleaseVersion() {
         System.setProperty("jpackage.app-version", "1.2.3");
 
-        assertThat(AppVersion.getDisplayVersion()).isEqualTo("1.2.3");
+        assertThat(AppVersion.getDisplayVersionOrNull()).isEqualTo("1.2.3");
     }
 
     @Test
@@ -38,7 +38,7 @@ class AppVersionTest {
         }
 
         assertThat(properties.getProperty("app.version"))
-                .isEqualTo(AppVersion.getDisplayVersion())
+                .isEqualTo(AppVersion.getDisplayVersionOrNull())
                 .doesNotContain("@");
     }
 
@@ -47,7 +47,7 @@ class AppVersionTest {
     void shouldNormalizeLeadingVPrefix() {
         System.setProperty("jpackage.app-version", "v2.0.1");
 
-        assertThat(AppVersion.getDisplayVersion()).isEqualTo("2.0.1");
+        assertThat(AppVersion.getDisplayVersionOrNull()).isEqualTo("2.0.1");
     }
 
     private static void restoreProperty(String key, String value) {

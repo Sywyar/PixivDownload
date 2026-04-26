@@ -10,4 +10,12 @@ public record ScriptResource(
         String description,
         String version
 ) {
+
+    public String displayNameCode() {
+        return "script.meta." + id + ".name";
+    }
+
+    public String descriptionCode() {
+        return "script.meta." + id + ".description";
+    }
 }

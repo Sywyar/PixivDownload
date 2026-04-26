@@ -1,6 +1,7 @@
 package top.sywyar.pixivdownload.config;
 
 import lombok.extern.slf4j.Slf4j;
+import top.sywyar.pixivdownload.i18n.MessageBundles;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -132,7 +133,11 @@ public final class RuntimeFiles {
                 }
             }
         } catch (IOException e) {
-            log.warn("Failed to read download.root-folder from {}: {}", configPath.toAbsolutePath(), e.getMessage());
+            log.warn(message(
+                    "runtime.log.download-root.read-failed",
+                    configPath.toAbsolutePath(),
+                    e.getMessage()
+            ));
         }
 
         return fallback;
@@ -165,7 +170,7 @@ public final class RuntimeFiles {
             }
             return target.normalize();
         } catch (IOException e) {
-            throw new UncheckedIOException("Failed to resolve runtime file: " + target, e);
+            throw new UncheckedIOException(message("runtime.error.resolve-file.failed", target), e);
         }
     }
 
@@ -183,20 +188,20 @@ public final class RuntimeFiles {
         if (!Files.exists(target)) {
             Files.move(legacy, target, StandardCopyOption.REPLACE_EXISTING);
             moveCompanionFiles(legacy, target, companionSuffixes);
-            log.info("Migrated runtime file {} -> {}", normalizedLegacy, normalizedTarget);
+            log.info(message("runtime.log.file.migrated", normalizedLegacy, normalizedTarget));
             return;
         }
 
         if (Files.size(target) == Files.size(legacy) && Files.mismatch(target, legacy) == -1) {
             Files.deleteIfExists(legacy);
             deleteCompanionFiles(legacy, companionSuffixes);
-            log.info("Deleted legacy runtime file duplicate {}", normalizedLegacy);
+            log.info(message("runtime.log.legacy-duplicate.deleted", normalizedLegacy));
             return;
         }
 
         Files.deleteIfExists(legacy);
         deleteCompanionFiles(legacy, companionSuffixes);
-        log.warn("Deleted legacy runtime file {} because {} is the authoritative copy", normalizedLegacy, normalizedTarget);
+        log.warn(message("runtime.log.legacy-authoritative.deleted", normalizedLegacy, normalizedTarget));
     }
 
     private static List<Path> rootAndDownloadLegacyCandidates(Path targetDirectory, String rootFolder, String fileName) {
@@ -261,5 +266,9 @@ public final class RuntimeFiles {
 
     private static boolean isWindows(String osName) {
         return osName != null && osName.toLowerCase().contains("win");
+    }
+
+    private static String message(String code, Object... args) {
+        return MessageBundles.get(code, args);
     }
 }

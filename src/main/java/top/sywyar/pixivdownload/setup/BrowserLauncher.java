@@ -6,6 +6,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.stereotype.Component;
+import top.sywyar.pixivdownload.i18n.AppMessages;
 
 import java.awt.Desktop;
 import java.net.URI;
@@ -16,6 +17,7 @@ import java.net.URI;
 public class BrowserLauncher implements ApplicationRunner {
 
     private final SetupService setupService;
+    private final AppMessages messages;
     @Value("${server.port:6999}")
     private int port;
 
@@ -24,7 +26,7 @@ public class BrowserLauncher implements ApplicationRunner {
         if (setupService.isSetupComplete()) return;
 
         String url = "http://localhost:" + port + "/setup.html";
-        log.info("First launch detected, opening browser: {}", url);
+        log.info(message("setup.browser.log.first-launch.opening", url));
 
         // 尝试用 Desktop API 打开（适用于有 GUI 的系统）
         if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
@@ -32,7 +34,7 @@ public class BrowserLauncher implements ApplicationRunner {
                 Desktop.getDesktop().browse(new URI(url));
                 return;
             } catch (Exception e) {
-                log.warn("Desktop.browse failed: {}", e.getMessage());
+                log.warn(message("setup.browser.log.desktop-browse.failed", e.getMessage()));
             }
         }
 
@@ -47,8 +49,12 @@ public class BrowserLauncher implements ApplicationRunner {
                 Runtime.getRuntime().exec(new String[]{"xdg-open", url});
             }
         } catch (Exception e) {
-            log.warn("Failed to open browser via shell: {}", e.getMessage());
-            log.info("Please open manually: {}", url);
+            log.warn(message("setup.browser.log.shell-open.failed", e.getMessage()));
+            log.info(message("setup.browser.log.manual-open.required", url));
         }
+    }
+
+    private String message(String code, Object... args) {
+        return messages.getForLog(code, args);
     }
 }

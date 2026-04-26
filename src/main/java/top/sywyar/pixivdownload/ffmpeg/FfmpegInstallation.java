@@ -16,23 +16,23 @@ public record FfmpegInstallation(Path ffmpegPath, Path ffprobePath, Path homeDir
         return ffprobePath != null && Files.isRegularFile(ffprobePath);
     }
 
-    public String sourceLabel() {
-        return source.displayName();
+    public String sourceMessageCode() {
+        return source.messageCode();
     }
 
     public enum Source {
-        MANAGED("软件目录"),
-        BUNDLED("安装包内置"),
-        SYSTEM("系统 PATH");
+        MANAGED("ffmpeg.source.managed"),
+        BUNDLED("ffmpeg.source.bundled"),
+        SYSTEM("ffmpeg.source.system");
 
-        private final String displayName;
+        private final String messageCode;
 
-        Source(String displayName) {
-            this.displayName = displayName;
+        Source(String messageCode) {
+            this.messageCode = messageCode;
         }
 
-        public String displayName() {
-            return displayName;
+        public String messageCode() {
+            return messageCode;
         }
     }
 }

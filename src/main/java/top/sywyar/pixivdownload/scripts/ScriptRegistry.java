@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 import org.springframework.stereotype.Component;
+import top.sywyar.pixivdownload.i18n.AppMessages;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -43,9 +44,11 @@ public class ScriptRegistry {
             "Pixiv URL 批量导入作品下载器.user.js", "import-batch"
     );
 
+    private final AppMessages messages;
     private final List<ScriptResource> scripts;
 
-    public ScriptRegistry() {
+    public ScriptRegistry(AppMessages messages) {
+        this.messages = messages;
         this.scripts = List.copyOf(loadScripts());
     }
 
@@ -60,15 +63,19 @@ public class ScriptRegistry {
                 try {
                     ScriptResource sr = parseScript(resource, fileName);
                     result.add(sr);
-                    log.debug("Registered user script: id={}, file={}", sr.id(), fileName);
+                    log.debug(message("script.log.registered", sr.id(), fileName));
                 } catch (IOException e) {
-                    log.warn("Failed to parse user script: {}", fileName, e);
+                    log.warn(message("script.log.parse.failed", fileName), e);
                 }
             }
         } catch (IOException e) {
-            log.warn("No user scripts found at classpath:/static/userscripts/", e);
+            log.warn(message("script.log.scan.failed"), e);
         }
-        log.info("Loaded {} user script(s)", result.size());
+        if (result.isEmpty()) {
+            log.warn(message("script.log.scan.empty"));
+        } else {
+            log.info(message("script.log.loaded", result.size()));
+        }
         return result;
     }
 
@@ -162,5 +169,9 @@ public class ScriptRegistry {
 
     public Optional<ScriptResource> findById(String id) {
         return scripts.stream().filter(s -> s.id().equals(id)).findFirst();
+    }
+
+    private String message(String code, Object... args) {
+        return messages.getForLog(code, args);
     }
 }

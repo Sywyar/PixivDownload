@@ -43,6 +43,7 @@ class UserQuotaServiceTest {
         multiModeConfig.getQuota().setMaxArtworks(3);
         multiModeConfig.getQuota().setResetPeriodHours(24);
         multiModeConfig.getQuota().setArchiveExpireMinutes(60);
+        multiModeConfig.getQuota().setMaxProxyRequests(3);
 
         userQuotaService = new UserQuotaService(multiModeConfig, downloadConfig, pixivDatabase);
     }

@@ -9,7 +9,8 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.server.ResponseStatusException;
+import top.sywyar.pixivdownload.i18n.AppMessages;
+import top.sywyar.pixivdownload.i18n.LocalizedException;
 import top.sywyar.pixivdownload.quota.RateLimitService;
 
 import java.io.IOException;
@@ -29,6 +30,7 @@ public class ScriptController {
 
     private final ScriptRegistry scriptRegistry;
     private final RateLimitService rateLimitService;
+    private final AppMessages messages;
 
     /**
      * 返回可安装的脚本列表及当前请求的 host（用于前端提示 @connect 将指向的地址）。
@@ -38,7 +40,12 @@ public class ScriptController {
         checkRateLimit(request);
         String host = request.getServerName();
         List<ScriptListResponse.ScriptItem> items = scriptRegistry.getScripts().stream()
-                .map(s -> new ScriptListResponse.ScriptItem(s.id(), s.displayName(), s.description(), s.version()))
+                .map(s -> new ScriptListResponse.ScriptItem(
+                        s.id(),
+                        messages.getOrDefault(s.displayNameCode(), s.displayName()),
+                        messages.getOrDefault(s.descriptionCode(), s.description()),
+                        s.version()
+                ))
                 .toList();
         return new ScriptListResponse(items, host);
     }
@@ -71,7 +78,7 @@ public class ScriptController {
         try {
             content = loadScriptContent(resource.fileName());
         } catch (IOException e) {
-            log.error("Failed to read script file: {}", resource.fileName(), e);
+            log.error(message("script.log.content.read.failed", resource.fileName()), e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
 
@@ -107,7 +114,7 @@ public class ScriptController {
                 }
             }
         }
-        throw new IOException("Script file not found: " + fileName);
+        throw new IOException(message("script.log.content.not-found", fileName));
     }
 
     /**
@@ -117,8 +124,12 @@ public class ScriptController {
     private void checkRateLimit(HttpServletRequest request) {
         String ip = request.getRemoteAddr();
         if (!rateLimitService.isAllowed(ip)) {
-            log.warn("脚本接口速率限制：IP={}", ip);
-            throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS, "Too Many Requests");
+            log.warn(message("script.log.rate-limit.exceeded", ip));
+            throw new LocalizedException(
+                    HttpStatus.TOO_MANY_REQUESTS,
+                    "auth.too-many-requests",
+                    "请求过于频繁，请稍后再试"
+            );
         }
     }
 
@@ -142,5 +153,9 @@ public class ScriptController {
                 "$1+host-" + host
         );
         return replaced;
+    }
+
+    private String message(String code, Object... args) {
+        return messages.getForLog(code, args);
     }
 }

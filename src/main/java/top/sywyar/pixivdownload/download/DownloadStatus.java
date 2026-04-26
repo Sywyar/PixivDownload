@@ -40,12 +40,24 @@ public class DownloadStatus {
         return (double) downloadedCount / totalImages * 100;
     }
 
-    // 获取当前状态描述
-    public String getStatusDescription() {
-        if (cancelled) return "已取消";
-        if (failed) return "失败: " + errorMessage;
-        if (completed) return "已完成 (" + successCount + "/" + totalImages + ")";
-        if (currentImageIndex >= 0) return "下载中 (" + (currentImageIndex + 1) + "/" + totalImages + ")";
-        return "等待开始";
+    public String getStatusMessageCode() {
+        if (cancelled) return "download.status.cancelled";
+        if (failed) return "download.status.failed";
+        if (completed) return "download.status.completed";
+        if (currentImageIndex >= 0) return "download.status.in-progress";
+        return "download.status.pending";
+    }
+
+    public Object[] getStatusMessageArgs() {
+        if (failed) {
+            return new Object[]{errorMessage == null ? "" : errorMessage};
+        }
+        if (completed) {
+            return new Object[]{String.valueOf(successCount), String.valueOf(totalImages)};
+        }
+        if (currentImageIndex >= 0) {
+            return new Object[]{String.valueOf(currentImageIndex + 1), String.valueOf(totalImages)};
+        }
+        return new Object[0];
     }
 }

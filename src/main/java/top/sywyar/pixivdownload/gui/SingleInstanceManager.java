@@ -3,6 +3,7 @@ package top.sywyar.pixivdownload.gui;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import top.sywyar.pixivdownload.config.RuntimeFiles;
+import top.sywyar.pixivdownload.i18n.MessageBundles;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
@@ -126,12 +127,12 @@ final class SingleInstanceManager implements AutoCloseable {
                 handleActivation(socket);
             } catch (SocketException e) {
                 if (!closed.get()) {
-                    log.warn("Single-instance activation socket closed unexpectedly: {}", e.getMessage());
+                    log.warn(logMessage("gui.single-instance.log.activation-socket.closed", e.getMessage()));
                 }
                 return;
             } catch (IOException e) {
                 if (!closed.get()) {
-                    log.warn("Failed to process activation request: {}", e.getMessage());
+                    log.warn(logMessage("gui.single-instance.log.activation-request.failed", e.getMessage()));
                 }
             }
         }
@@ -165,7 +166,8 @@ final class SingleInstanceManager implements AutoCloseable {
         try {
             Files.deleteIfExists(activationFile);
         } catch (IOException e) {
-            log.debug("Failed to delete activation file {}: {}", activationFile, e.getMessage());
+            log.debug(logMessage("gui.single-instance.log.activation-file.delete-failed",
+                    activationFile, e.getMessage()));
         }
         closeQuietly(activationServer);
         closeQuietly(lock);
@@ -207,7 +209,8 @@ final class SingleInstanceManager implements AutoCloseable {
             }
             return new ActivationTarget(port, token);
         } catch (Exception e) {
-            log.debug("Failed to read activation target {}: {}", activationFile, e.getMessage());
+            log.debug(logMessage("gui.single-instance.log.activation-target.read-failed",
+                    activationFile, e.getMessage()));
             return null;
         }
     }
@@ -224,7 +227,8 @@ final class SingleInstanceManager implements AutoCloseable {
                 return "OK".equals(reader.readLine());
             }
         } catch (IOException e) {
-            log.debug("Failed to signal existing instance on port {}: {}", target.port(), e.getMessage());
+            log.debug(logMessage("gui.single-instance.log.signal-existing.failed",
+                    target.port(), e.getMessage()));
             return false;
         }
     }
@@ -251,5 +255,9 @@ final class SingleInstanceManager implements AutoCloseable {
     }
 
     private record ActivationTarget(int port, String token) {
+    }
+
+    private static String logMessage(String code, Object... args) {
+        return MessageBundles.get(code, args);
     }
 }

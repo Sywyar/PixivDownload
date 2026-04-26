@@ -20,11 +20,19 @@ import java.util.List;
  */
 public class MainFrame extends JFrame {
 
-    private final StatusPanel statusPanel;
-    private final ToolsPanel toolsPanel;
+    private final int serverPort;
+    private final String rootFolder;
+    private final Path configPath;
+
+    private JTabbedPane tabs;
+    private StatusPanel statusPanel;
+    private ToolsPanel toolsPanel;
 
     public MainFrame(int serverPort, String rootFolder, Path configPath) {
         super(GuiMessages.get("app.name"));
+        this.serverPort = serverPort;
+        this.rootFolder = rootFolder;
+        this.configPath = configPath;
         setSize(800, 600);
         setMinimumSize(new Dimension(640, 480));
         setLocationRelativeTo(null);
@@ -48,15 +56,46 @@ public class MainFrame extends JFrame {
             ));
         }
 
-        JTabbedPane tabs = new JTabbedPane();
-        statusPanel = new StatusPanel(serverPort, rootFolder, configPath);
+        setContentPane(buildTabs());
+    }
+
+    private JTabbedPane buildTabs() {
+        tabs = new JTabbedPane();
+        statusPanel = new StatusPanel(serverPort, rootFolder, configPath, this::reloadLocale);
         toolsPanel = new ToolsPanel(configPath);
         tabs.addTab(GuiMessages.get("gui.tab.status"), statusPanel);
         tabs.addTab(GuiMessages.get("gui.tab.config"), new ConfigPanel(configPath));
         tabs.addTab(GuiMessages.get("gui.tab.tools"), toolsPanel);
         tabs.addTab(GuiMessages.get("gui.tab.about"), new AboutPanel());
+        return tabs;
+    }
 
-        setContentPane(tabs);
+    /**
+     * 在 GUI 语言切换后重建所有面板与标签页文案，使新 locale 立即生效，
+     * 无需重启 JVM。同时刷新 JFrame 标题和系统托盘菜单。
+     * 必须在 EDT 上调用。
+     */
+    public void reloadLocale() {
+        int previousTab = tabs == null ? 0 : tabs.getSelectedIndex();
+
+        if (statusPanel != null) {
+            statusPanel.dispose();
+        }
+        if (toolsPanel != null) {
+            toolsPanel.dispose();
+        }
+
+        setTitle(GuiMessages.get("app.name"));
+        setContentPane(buildTabs());
+
+        if (previousTab >= 0 && previousTab < tabs.getTabCount()) {
+            tabs.setSelectedIndex(previousTab);
+        }
+
+        SystemTrayManager.refreshLocale();
+
+        revalidate();
+        repaint();
     }
 
     public String getMonitorUrl() {

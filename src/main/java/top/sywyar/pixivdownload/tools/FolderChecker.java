@@ -2,6 +2,7 @@ package top.sywyar.pixivdownload.tools;
 
 import org.sqlite.SQLiteConfig;
 import top.sywyar.pixivdownload.config.RuntimeFiles;
+import top.sywyar.pixivdownload.gui.i18n.GuiMessages;
 
 import javax.swing.*;
 import javax.swing.filechooser.FileNameExtensionFilter;
@@ -32,8 +33,11 @@ public class FolderChecker {
         String checkPath() {
             return moved && moveFolder != null ? moveFolder : folder;
         }
-        String pathType() {
-            return moved ? "Moved To" : "Original Path";
+
+        String pathTypeKey() {
+            return moved
+                    ? "gui.folder-checker.path-type.moved"
+                    : "gui.folder-checker.path-type.original";
         }
     }
 
@@ -52,12 +56,12 @@ public class FolderChecker {
     private final Runnable onClose;
 
     // ---- 表格列索引 ----
-    private static final int COL_ID     = 0;
-    private static final int COL_TITLE  = 1;
-    private static final int COL_TYPE   = 2;
-    private static final int COL_PATH   = 3;
+    private static final int COL_ID = 0;
+    private static final int COL_TITLE = 1;
+    private static final int COL_TYPE = 2;
+    private static final int COL_PATH = 3;
     private static final int COL_STATUS = 4;
-    private static final int COL_COPY   = 5;
+    private static final int COL_COPY = 5;
 
     public FolderChecker() {
         this(JFrame.EXIT_ON_CLOSE, null);
@@ -71,7 +75,8 @@ public class FolderChecker {
     public static void main(String[] args) {
         try {
             UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
-        } catch (Exception ignored) {}
+        } catch (Exception ignored) {
+        }
         SwingUtilities.invokeLater(() -> new FolderChecker().showWindow());
     }
 
@@ -83,7 +88,7 @@ public class FolderChecker {
             return;
         }
 
-        frame = new JFrame("Pixiv Folder Checker");
+        frame = new JFrame(message("gui.tools.card.folder-checker.title"));
         frame.setDefaultCloseOperation(closeOperation);
         frame.setSize(1000, 600);
         frame.setLayout(new BorderLayout(5, 5));
@@ -111,20 +116,20 @@ public class FolderChecker {
         panel.setBorder(BorderFactory.createEmptyBorder(8, 8, 4, 8));
 
         JPanel dbRow = new JPanel(new BorderLayout(5, 0));
-        dbRow.add(new JLabel("Database: "), BorderLayout.WEST);
+        dbRow.add(new JLabel(message("gui.tools.form.database-path") + message("gui.punctuation.colon")), BorderLayout.WEST);
         dbPathField = new JTextField(RuntimeFiles.dataDirectory().resolve(RuntimeFiles.PIXIV_DOWNLOAD_DB).toString());
         dbRow.add(dbPathField, BorderLayout.CENTER);
 
         JPanel btnRow = new JPanel(new FlowLayout(FlowLayout.RIGHT, 5, 0));
-        JButton browseBtn = new JButton("Browse...");
+        JButton browseBtn = new JButton(message("gui.button.browse"));
         browseBtn.addActionListener(e -> browseDatabase());
-        JButton checkBtn = new JButton("Check Folders");
+        JButton checkBtn = new JButton(message("gui.folder-checker.button.check-folders"));
         checkBtn.addActionListener(e -> checkFolders());
         btnRow.add(browseBtn);
         btnRow.add(checkBtn);
         dbRow.add(btnRow, BorderLayout.EAST);
 
-        statusLabel = new JLabel("Please select a database file and click \"Check Folders\".");
+        statusLabel = new JLabel(message("gui.folder-checker.status.initial"));
         statusLabel.setBorder(BorderFactory.createEmptyBorder(4, 2, 0, 0));
 
         panel.add(dbRow, BorderLayout.CENTER);
@@ -134,10 +139,24 @@ public class FolderChecker {
 
     // ---- 中部：结果表格 ----
     private JScrollPane buildTablePanel() {
-        String[] columns = {"Artwork ID", "Title", "Path Type", "Path", "Status", "Copy ID"};
+        String[] columns = {
+                message("gui.folder-checker.column.artwork-id"),
+                message("gui.folder-checker.column.title"),
+                message("gui.folder-checker.column.path-type"),
+                message("gui.folder-checker.column.path"),
+                message("gui.folder-checker.column.status"),
+                message("gui.folder-checker.column.copy-id")
+        };
         tableModel = new DefaultTableModel(columns, 0) {
-            @Override public boolean isCellEditable(int row, int col) { return col == COL_COPY; }
-            @Override public Class<?> getColumnClass(int col) { return String.class; }
+            @Override
+            public boolean isCellEditable(int row, int col) {
+                return col == COL_COPY;
+            }
+
+            @Override
+            public Class<?> getColumnClass(int col) {
+                return String.class;
+            }
         };
 
         table = new JTable(tableModel);
@@ -145,7 +164,6 @@ public class FolderChecker {
         table.setAutoResizeMode(JTable.AUTO_RESIZE_LAST_COLUMN);
         table.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
 
-        // 列宽
         table.getColumnModel().getColumn(COL_ID).setPreferredWidth(90);
         table.getColumnModel().getColumn(COL_TITLE).setPreferredWidth(200);
         table.getColumnModel().getColumn(COL_TYPE).setPreferredWidth(100);
@@ -153,42 +171,43 @@ public class FolderChecker {
         table.getColumnModel().getColumn(COL_STATUS).setPreferredWidth(90);
         table.getColumnModel().getColumn(COL_COPY).setPreferredWidth(80);
 
-        // Status 列：NOT FOUND 染红
         table.getColumnModel().getColumn(COL_STATUS).setCellRenderer(new DefaultTableCellRenderer() {
             @Override
             public Component getTableCellRendererComponent(JTable t, Object value,
-                    boolean sel, boolean focus, int row, int col) {
+                                                           boolean sel, boolean focus, int row, int col) {
                 Component c = super.getTableCellRendererComponent(t, value, sel, focus, row, col);
-                if (!sel) c.setForeground("NOT FOUND".equals(value) ? Color.RED.darker() : Color.GREEN.darker());
+                if (!sel) {
+                    c.setForeground(message("gui.folder-checker.status.not-found").equals(value)
+                            ? Color.RED.darker()
+                            : new Color(0, 130, 0));
+                }
                 return c;
             }
         });
 
-        // Path 列：tooltip 显示完整路径
         table.getColumnModel().getColumn(COL_PATH).setCellRenderer(new DefaultTableCellRenderer() {
             @Override
             public Component getTableCellRendererComponent(JTable t, Object value,
-                    boolean sel, boolean focus, int row, int col) {
+                                                           boolean sel, boolean focus, int row, int col) {
                 Component c = super.getTableCellRendererComponent(t, value, sel, focus, row, col);
-                if (c instanceof JLabel lbl && value != null) lbl.setToolTipText(value.toString());
+                if (c instanceof JLabel lbl && value != null) {
+                    lbl.setToolTipText(value.toString());
+                }
                 return c;
             }
         });
 
-        // Copy ID 列：按钮渲染与编辑
         table.getColumnModel().getColumn(COL_COPY).setCellRenderer(new ButtonRenderer());
         table.getColumnModel().getColumn(COL_COPY).setCellEditor(new CopyButtonEditor());
 
-        // 行选中：同步到底部面板
         table.getSelectionModel().addListSelectionListener(e -> {
             if (!e.getValueIsAdjusting()) {
                 selectedRow = table.getSelectedRow();
                 if (selectedRow >= 0 && selectedRow < brokenArtworks.size()) {
                     ArtworkInfo info = brokenArtworks.get(selectedRow);
-                    selectedIdLabel.setText("Selected ID: " + info.artworkId());
-                    //newPathField.setText(info.checkPath() != null ? info.checkPath() : "");
+                    selectedIdLabel.setText(selectedIdText(String.valueOf(info.artworkId())));
                 } else {
-                    selectedIdLabel.setText("Selected ID: (none)");
+                    selectedIdLabel.setText(selectedIdText(message("gui.value.none")));
                 }
             }
         });
@@ -201,27 +220,27 @@ public class FolderChecker {
         JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 6));
         panel.setBorder(BorderFactory.createMatteBorder(1, 0, 0, 0, Color.LIGHT_GRAY));
 
-        selectedIdLabel = new JLabel("Selected ID: (none)");
+        selectedIdLabel = new JLabel(selectedIdText(message("gui.value.none")));
         panel.add(selectedIdLabel);
 
-        JButton copyIdBtn = new JButton("Copy ID");
-        copyIdBtn.setToolTipText("Copy the selected artwork's ID to clipboard");
+        JButton copyIdBtn = new JButton(message("gui.folder-checker.button.copy-id"));
+        copyIdBtn.setToolTipText(message("gui.folder-checker.tooltip.copy-selected-id"));
         copyIdBtn.addActionListener(e -> copySelectedId());
         panel.add(copyIdBtn);
 
         panel.add(Box.createHorizontalStrut(12));
-        panel.add(new JLabel("New Path:"));
+        panel.add(new JLabel(message("gui.folder-checker.label.new-path") + message("gui.punctuation.colon")));
 
         newPathField = new JTextField(28);
-        newPathField.setToolTipText("Enter the correct folder path for the selected artwork");
+        newPathField.setToolTipText(message("gui.folder-checker.tooltip.new-path"));
         panel.add(newPathField);
 
-        JButton browsePathBtn = new JButton("Browse...");
+        JButton browsePathBtn = new JButton(message("gui.button.browse"));
         browsePathBtn.addActionListener(e -> browsePath());
         panel.add(browsePathBtn);
 
-        JButton updateBtn = new JButton("Update DB");
-        updateBtn.setToolTipText("Update the selected artwork's path in the database");
+        JButton updateBtn = new JButton(message("gui.folder-checker.button.update-db"));
+        updateBtn.setToolTipText(message("gui.folder-checker.tooltip.update-db"));
         updateBtn.addActionListener(e -> updatePath());
         panel.add(updateBtn);
 
@@ -231,9 +250,16 @@ public class FolderChecker {
     // ---- 操作：选择数据库文件 ----
     private void browseDatabase() {
         JFileChooser chooser = new JFileChooser();
-        chooser.setDialogTitle("Select SQLite Database");
-        chooser.setFileFilter(new FileNameExtensionFilter("SQLite Database (*.db)", "db"));
-        chooser.setCurrentDirectory(new File(dbPathField.getText()).getParentFile());
+        chooser.setDialogTitle(message("gui.tools.dialog.select-sqlite-database.title"));
+        chooser.setFileFilter(new FileNameExtensionFilter(
+                message("gui.folder-checker.file-filter.sqlite"),
+                "db"
+        ));
+        File currentFile = new File(dbPathField.getText());
+        File currentDir = currentFile.getParentFile();
+        if (currentDir != null && currentDir.exists()) {
+            chooser.setCurrentDirectory(currentDir);
+        }
         if (chooser.showOpenDialog(frame) == JFileChooser.APPROVE_OPTION) {
             dbPathField.setText(chooser.getSelectedFile().getAbsolutePath());
         }
@@ -242,10 +268,12 @@ public class FolderChecker {
     // ---- 操作：选择目录 ----
     private void browsePath() {
         JFileChooser chooser = new JFileChooser();
-        chooser.setDialogTitle("Select Artwork Folder");
+        chooser.setDialogTitle(message("gui.folder-checker.dialog.select-artwork-folder.title"));
         chooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
         String current = newPathField.getText().trim();
-        if (!current.isEmpty()) chooser.setCurrentDirectory(new File(current));
+        if (!current.isEmpty()) {
+            chooser.setCurrentDirectory(new File(current));
+        }
         if (chooser.showOpenDialog(frame) == JFileChooser.APPROVE_OPTION) {
             newPathField.setText(stripTrailingSlash(chooser.getSelectedFile().getAbsolutePath()));
         }
@@ -255,12 +283,14 @@ public class FolderChecker {
     private void checkFolders() {
         String dbPath = dbPathField.getText().trim();
         if (dbPath.isEmpty()) {
-            showError("Please enter or select a database file path.");
+            showError(message("gui.folder-checker.error.database-path.required"));
             return;
         }
 
         try {
-            if (conn != null && !conn.isClosed()) conn.close();
+            if (conn != null && !conn.isClosed()) {
+                conn.close();
+            }
 
             SQLiteConfig cfg = new SQLiteConfig();
             cfg.setBusyTimeout(5000);
@@ -272,7 +302,7 @@ public class FolderChecker {
             brokenArtworks.clear();
             tableModel.setRowCount(0);
             selectedRow = -1;
-            selectedIdLabel.setText("Selected ID: (none)");
+            selectedIdLabel.setText(selectedIdText(message("gui.value.none")));
             newPathField.setText("");
 
             for (ArtworkInfo info : all) {
@@ -283,26 +313,26 @@ public class FolderChecker {
                     tableModel.addRow(new Object[]{
                             String.valueOf(info.artworkId()),
                             info.title(),
-                            info.pathType(),
-                            path != null ? path : "(null)",
-                            "NOT FOUND",
-                            "Copy ID"
+                            message(info.pathTypeKey()),
+                            path != null ? path : message("gui.folder-checker.value.null-path"),
+                            message("gui.folder-checker.status.not-found"),
+                            message("gui.folder-checker.button.copy-id")
                     });
                 }
             }
 
             int broken = brokenArtworks.size();
-            int total  = all.size();
+            int total = all.size();
             if (broken == 0) {
-                statusLabel.setText("All " + total + " artworks have accessible folders.");
+                statusLabel.setText(message("gui.folder-checker.status.all-accessible", total));
                 statusLabel.setForeground(new Color(0, 130, 0));
             } else {
-                statusLabel.setText(broken + " artwork(s) with inaccessible folders  (out of " + total + " total)");
+                statusLabel.setText(message("gui.folder-checker.status.inaccessible-count", broken, total));
                 statusLabel.setForeground(Color.RED.darker());
             }
 
         } catch (SQLException ex) {
-            showError("Database error: " + ex.getMessage());
+            showError(message("gui.folder-checker.error.database", ex.getMessage()));
         }
     }
 
@@ -326,38 +356,52 @@ public class FolderChecker {
     // ---- 操作：复制选中行的 ID ----
     private void copySelectedId() {
         if (selectedRow < 0 || selectedRow >= brokenArtworks.size()) {
-            showError("Please select a row first.");
+            showError(message("gui.folder-checker.error.row-required"));
             return;
         }
         String id = String.valueOf(brokenArtworks.get(selectedRow).artworkId());
         copyToClipboard(id);
-        JOptionPane.showMessageDialog(frame, "Copied: " + id, "Copied", JOptionPane.INFORMATION_MESSAGE);
+        JOptionPane.showMessageDialog(
+                frame,
+                message("gui.folder-checker.dialog.copied.message", id),
+                message("gui.folder-checker.dialog.copied.title"),
+                JOptionPane.INFORMATION_MESSAGE
+        );
     }
 
     // ---- 操作：更新数据库中的路径 ----
     private void updatePath() {
         if (selectedRow < 0 || selectedRow >= brokenArtworks.size()) {
-            showError("Please select a row first.");
+            showError(message("gui.folder-checker.error.row-required"));
             return;
         }
         if (conn == null) {
-            showError("No database connection. Please run Check Folders first.");
+            showError(message("gui.folder-checker.error.no-connection"));
             return;
         }
         String newPath = stripTrailingSlash(newPathField.getText().trim());
         if (newPath.isEmpty()) {
-            showError("Please enter a new folder path.");
+            showError(message("gui.folder-checker.error.new-path.required"));
             return;
         }
         if (!new File(newPath).isDirectory()) {
-            int confirm = JOptionPane.showConfirmDialog(frame,
-                    "The path does not exist as a directory:\n" + newPath + "\n\nUpdate anyway?",
-                    "Path Not Found", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
-            if (confirm != JOptionPane.YES_OPTION) return;
+            int confirm = JOptionPane.showConfirmDialog(
+                    frame,
+                    message("gui.folder-checker.dialog.path-not-found.message", newPath),
+                    message("gui.folder-checker.dialog.path-not-found.title"),
+                    JOptionPane.YES_NO_OPTION,
+                    JOptionPane.WARNING_MESSAGE
+            );
+            if (confirm != JOptionPane.YES_OPTION) {
+                return;
+            }
         }
 
         ArtworkInfo info = brokenArtworks.get(selectedRow);
         String column = info.moved() ? "move_folder" : "folder";
+        String columnLabel = info.moved()
+                ? message("gui.folder-checker.column-name.move-folder")
+                : message("gui.folder-checker.column-name.folder");
         try {
             try (PreparedStatement ps = conn.prepareStatement(
                     "UPDATE artworks SET " + column + " = ? WHERE artwork_id = ?")) {
@@ -365,12 +409,15 @@ public class FolderChecker {
                 ps.setLong(2, info.artworkId());
                 ps.executeUpdate();
             }
-            JOptionPane.showMessageDialog(frame,
-                    "Updated artwork " + info.artworkId() + "\n" + column + " → " + newPath,
-                    "Success", JOptionPane.INFORMATION_MESSAGE);
-            checkFolders(); // 刷新列表
+            JOptionPane.showMessageDialog(
+                    frame,
+                    message("gui.folder-checker.dialog.update-success.message", info.artworkId(), columnLabel, newPath),
+                    message("gui.folder-checker.dialog.update-success.title"),
+                    JOptionPane.INFORMATION_MESSAGE
+            );
+            checkFolders();
         } catch (SQLException ex) {
-            showError("Update failed: " + ex.getMessage());
+            showError(message("gui.folder-checker.error.update-failed", ex.getMessage()));
         }
     }
 
@@ -398,19 +445,27 @@ public class FolderChecker {
     }
 
     private void showError(String msg) {
-        JOptionPane.showMessageDialog(frame, msg, "Error", JOptionPane.ERROR_MESSAGE);
+        JOptionPane.showMessageDialog(frame, msg, message("gui.dialog.error.title"), JOptionPane.ERROR_MESSAGE);
+    }
+
+    private static String selectedIdText(String value) {
+        return message("gui.folder-checker.label.selected-id", value);
+    }
+
+    private static String message(String code, Object... args) {
+        return GuiMessages.get(code, args);
     }
 
     // ---- 表格按钮渲染器 ----
     static class ButtonRenderer extends JButton implements TableCellRenderer {
-        public ButtonRenderer() {
+        ButtonRenderer() {
             setOpaque(true);
             setMargin(new Insets(1, 4, 1, 4));
         }
 
         @Override
         public Component getTableCellRendererComponent(JTable table, Object value,
-                boolean isSelected, boolean hasFocus, int row, int col) {
+                                                       boolean isSelected, boolean hasFocus, int row, int col) {
             setText(value != null ? value.toString() : "");
             setBackground(isSelected ? table.getSelectionBackground() : UIManager.getColor("Button.background"));
             return this;
@@ -425,13 +480,12 @@ public class FolderChecker {
         CopyButtonEditor() {
             super(new JCheckBox());
             setClickCountToStart(1);
-            button = new JButton("Copy ID");
+            button = new JButton(message("gui.folder-checker.button.copy-id"));
             button.setMargin(new Insets(1, 4, 1, 4));
             button.addActionListener(e -> {
                 if (editingRow >= 0 && editingRow < brokenArtworks.size()) {
                     String id = String.valueOf(brokenArtworks.get(editingRow).artworkId());
                     copyToClipboard(id);
-                    // 更新选中行
                     table.setRowSelectionInterval(editingRow, editingRow);
                 }
                 fireEditingStopped();
@@ -440,14 +494,14 @@ public class FolderChecker {
 
         @Override
         public Component getTableCellEditorComponent(JTable t, Object value,
-                boolean isSelected, int row, int col) {
+                                                     boolean isSelected, int row, int col) {
             editingRow = row;
             return button;
         }
 
         @Override
         public Object getCellEditorValue() {
-            return "Copy ID";
+            return message("gui.folder-checker.button.copy-id");
         }
     }
 }

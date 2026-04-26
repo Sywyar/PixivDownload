@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import top.sywyar.pixivdownload.i18n.AppMessages;
 
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -19,6 +20,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class RateLimitService {
 
     private final MultiModeConfig multiModeConfig;
+    private final AppMessages messages;
 
     /** UUID → 当前分钟窗口计数器 */
     private final ConcurrentHashMap<String, WindowCounter> counters = new ConcurrentHashMap<>();
@@ -55,8 +57,12 @@ public class RateLimitService {
             }
         }
         if (removed > 0) {
-            log.debug("速率限制：清理 {} 个过期计数器", removed);
+            log.debug(message("quota.log.rate-limit.cleanup-expired", removed));
         }
+    }
+
+    private String message(String code, Object... args) {
+        return messages.getForLog(code, args);
     }
 
     @RequiredArgsConstructor

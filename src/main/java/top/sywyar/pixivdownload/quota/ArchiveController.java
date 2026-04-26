@@ -1,6 +1,7 @@
 package top.sywyar.pixivdownload.quota;
 
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.FileSystemResource;
@@ -13,6 +14,7 @@ import top.sywyar.pixivdownload.common.UuidUtils;
 import top.sywyar.pixivdownload.download.db.ArtworkRecord;
 import top.sywyar.pixivdownload.download.db.PixivDatabase;
 import top.sywyar.pixivdownload.download.response.ErrorResponse;
+import top.sywyar.pixivdownload.i18n.AppMessages;
 import top.sywyar.pixivdownload.quota.request.AdminPackRequest;
 import top.sywyar.pixivdownload.quota.response.ArchiveStatusResponse;
 import top.sywyar.pixivdownload.quota.response.PackRateLimitResponse;
@@ -37,6 +39,7 @@ public class ArchiveController {
     private final MultiModeConfig multiModeConfig;
     private final SetupService setupService;
     private final PixivDatabase pixivDatabase;
+    private final AppMessages messages;
 
     /**
      * 初始化配额会话：返回当前用户的 UUID 和配额状态。
@@ -84,13 +87,15 @@ public class ArchiveController {
 
         if (!"multi".equals(setupService.getMode())
                 || !multiModeConfig.getQuota().isEnabled()) {
-            return ResponseEntity.status(403).body(new ErrorResponse("multi-mode quota not enabled"));
+            return ResponseEntity.status(403)
+                    .body(new ErrorResponse(messages.get("quota.multi-mode.not-enabled")));
         }
 
         // UUID 必须已存在，不自动生成
         String uuid = UuidUtils.extractExistingUuid(request);
         if (uuid == null) {
-            return ResponseEntity.status(401).body(new ErrorResponse("missing user UUID"));
+            return ResponseEntity.status(401)
+                    .body(new ErrorResponse(messages.get("pixiv.proxy.user-uuid.missing")));
         }
 
         // 频率限制：archiveExpireMinutes 窗口内最多 maxArtworks 次
@@ -98,7 +103,7 @@ public class ArchiveController {
             int max = multiModeConfig.getQuota().getMaxArtworks();
             int windowMin = multiModeConfig.getQuota().getArchiveExpireMinutes();
             return ResponseEntity.status(429).body(new PackRateLimitResponse(
-                    "pack rate limit exceeded", max, windowMin));
+                    messages.get("archive.pack.rate-limit.exceeded"), max, windowMin));
         }
 
         UserQuotaService.UserQuota quota = userQuotaService.getQuotaForUser(uuid);
@@ -113,14 +118,15 @@ public class ArchiveController {
     }
 
     @PostMapping("/api/archive/pack-artworks")
-    public ResponseEntity<?> triggerAdminPack(@RequestBody AdminPackRequest request,
+    public ResponseEntity<?> triggerAdminPack(@Valid @RequestBody AdminPackRequest request,
                                               HttpServletRequest httpRequest) {
         if (!setupService.isAdminLoggedIn(httpRequest)) {
-            return ResponseEntity.status(401).body(new ErrorResponse("Unauthorized"));
+            return ResponseEntity.status(401).body(new ErrorResponse(messages.get("auth.unauthorized")));
         }
 
         if (request == null || request.getArtworkIds() == null || request.getArtworkIds().isEmpty()) {
-            return ResponseEntity.badRequest().body(new ErrorResponse("no artworks to pack"));
+            return ResponseEntity.badRequest()
+                    .body(new ErrorResponse(messages.get("validation.archive.pack.artwork-ids.required")));
         }
 
         Set<Path> uniqueFolders = new LinkedHashSet<>();
@@ -130,19 +136,19 @@ public class ArchiveController {
             }
             ArtworkRecord artwork = pixivDatabase.getArtwork(artworkId);
             if (artwork == null) {
-                log.info("管理员打包跳过不存在的作品记录: artworkId={}", artworkId);
+                log.info(message("archive.log.admin-pack.skip.artwork-missing", artworkId));
                 continue;
             }
 
             String folderString = resolveArtworkFolder(artwork);
             if (folderString == null || folderString.isBlank()) {
-                log.info("管理员打包跳过缺少文件夹的作品记录: artworkId={}", artworkId);
+                log.info(message("archive.log.admin-pack.skip.folder-missing", artworkId));
                 continue;
             }
 
             Path folder = Path.of(folderString);
             if (!Files.isDirectory(folder)) {
-                log.info("管理员打包跳过不存在的文件夹: artworkId={}, folder={}", artworkId, folder);
+                log.info(message("archive.log.admin-pack.skip.folder-not-found", artworkId, folder));
                 continue;
             }
             uniqueFolders.add(folder);
@@ -186,16 +192,19 @@ public class ArchiveController {
     public ResponseEntity<?> downloadArchive(@PathVariable String token) {
         UserQuotaService.ArchiveEntry entry = userQuotaService.getArchive(token);
         if (entry == null || System.currentTimeMillis() > entry.getExpireTime()) {
-            return ResponseEntity.status(410).body(new ErrorResponse("压缩包已过期或不存在"));
+            return ResponseEntity.status(410)
+                    .body(new ErrorResponse(messages.get("archive.download.expired-or-missing")));
         }
         if (!"ready".equals(entry.getStatus())) {
-            return ResponseEntity.status(202).body(new ErrorResponse("压缩包正在准备中，请稍后再试"));
+            return ResponseEntity.status(202)
+                    .body(new ErrorResponse(messages.get("archive.download.preparing")));
         }
         if (entry.getArchivePath() == null || !entry.getArchivePath().toFile().exists()) {
             if ("empty".equals(entry.getStatus())) {
                 return ResponseEntity.status(204).build();
             }
-            return ResponseEntity.status(404).body(new ErrorResponse("压缩包文件不存在"));
+            return ResponseEntity.status(404)
+                    .body(new ErrorResponse(messages.get("archive.download.file.missing")));
         }
 
         String filename = "pixiv_download_" + token.substring(0, 8) + ".zip";
@@ -221,5 +230,9 @@ public class ArchiveController {
             return artwork.moveFolder();
         }
         return artwork.folder();
+    }
+
+    private String message(String code, Object... args) {
+        return messages.getForLog(code, args);
     }
 }

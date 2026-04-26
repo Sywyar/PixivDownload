@@ -1,5 +1,7 @@
 package top.sywyar.pixivdownload.imageclassifier;
 
+import top.sywyar.pixivdownload.gui.i18n.GuiMessages;
+
 import javax.imageio.ImageIO;
 import javax.swing.*;
 import java.awt.*;
@@ -140,7 +142,7 @@ public class ThumbnailManager {
         if (imageFile == null || !imageFile.exists()) {
             SwingUtilities.invokeLater(() -> {
                 targetLabel.setIcon(null);
-                targetLabel.setText("无图片");
+                targetLabel.setText(message("gui.image-classifier.thumbnail.empty"));
             });
             return;
         }
@@ -158,7 +160,7 @@ public class ThumbnailManager {
         // set a lightweight placeholder immediately (so UI stays responsive)
         SwingUtilities.invokeLater(() -> {
             targetLabel.setIcon(null);
-            targetLabel.setText("加载中...");
+            targetLabel.setText(message("gui.image-classifier.thumbnail.loading"));
         });
 
         // Submit a background task to read+scale the image and update the label
@@ -178,7 +180,7 @@ public class ThumbnailManager {
                 // on error show a small message instead of freezing the UI
                 SwingUtilities.invokeLater(() -> {
                     targetLabel.setIcon(null);
-                    targetLabel.setText("加载失败");
+                    targetLabel.setText(message("gui.image-classifier.thumbnail.load-failed"));
                 });
             }
         });
@@ -242,5 +244,9 @@ public class ThumbnailManager {
         int w = (int) Math.max(1, Math.round(srcW * r));
         int h = (int) Math.max(1, Math.round(srcH * r));
         return new int[]{w, h};
+    }
+
+    private static String message(String code, Object... args) {
+        return GuiMessages.get(code, args);
     }
 }

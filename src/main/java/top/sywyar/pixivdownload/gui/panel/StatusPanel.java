@@ -8,6 +8,10 @@ import top.sywyar.pixivdownload.ffmpeg.FfmpegInstaller;
 import top.sywyar.pixivdownload.ffmpeg.FfmpegLocator;
 import top.sywyar.pixivdownload.gui.BackendLifecycleManager;
 import top.sywyar.pixivdownload.gui.config.ConfigFileEditor;
+import top.sywyar.pixivdownload.gui.i18n.GuiMessages;
+import top.sywyar.pixivdownload.i18n.AppLocale;
+import top.sywyar.pixivdownload.i18n.MessageBundles;
+import top.sywyar.pixivdownload.i18n.SystemLocaleDetector;
 
 import javax.net.ssl.HttpsURLConnection;
 import javax.net.ssl.SSLContext;
@@ -25,6 +29,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.cert.X509Certificate;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.ExecutionException;
 
 /**
@@ -37,22 +42,33 @@ public class StatusPanel extends JPanel {
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final SSLContext TRUST_ALL_SSL = buildTrustAllSslContext();
 
+    private static String message(String code, Object... args) {
+        return GuiMessages.get(code, args);
+    }
+
+    private static String logMessage(String code, Object... args) {
+        return MessageBundles.get(code, args);
+    }
+
     private final JLabel portLabel = valueLabel("--");
     private final JLabel modeLabel = valueLabel("--");
     private final JLabel uptimeLabel = valueLabel("--");
     private final JLabel httpsLabel = valueLabel("--");
-    private final JLabel statusBadge = new JLabel("正在启动...");
+    private final JLabel statusBadge = new JLabel(message("gui.status.state.starting"));
 
-    private final JLabel ffmpegBadge = new JLabel("正在检测 FFmpeg...");
-    private final JLabel ffmpegSourceLabel = secondaryLabel("动图转 WebP 需要 FFmpeg，普通图片下载不受影响。");
-    private final JLabel ffmpegPathLabel = secondaryLabel("软件目录安装位置将显示在这里。");
-    private final JButton ffmpegActionButton = new JButton("下载 FFmpeg");
-    private final JButton openFfmpegDirButton = new JButton("打开 FFmpeg 目录");
+    private final JLabel ffmpegBadge = new JLabel(message("gui.ffmpeg.badge.detecting"));
+    private final JLabel ffmpegSourceLabel = secondaryLabel(message("gui.ffmpeg.hint.default"));
+    private final JLabel ffmpegPathLabel = secondaryLabel(message("gui.ffmpeg.path.pending"));
+    private final JButton ffmpegActionButton = new JButton(message("gui.ffmpeg.action.download"));
+    private final JButton openFfmpegDirButton = new JButton(message("gui.ffmpeg.action.open-dir"));
     private final JProgressBar ffmpegProgress = new JProgressBar();
+
+    private final JComboBox<LocaleOption> languageCombo = new JComboBox<>();
 
     private final int serverPort;
     private final String rootFolder;
     private final Path configPath;
+    private final Runnable onLocaleChanged;
 
     private volatile String currentScheme = "http";
     private volatile String serverDomain = "localhost";
@@ -61,10 +77,11 @@ public class StatusPanel extends JPanel {
     private Timer pollTimer;
     private final BackendLifecycleManager.Listener backendListener = this::applyBackendSnapshot;
 
-    public StatusPanel(int serverPort, String rootFolder, Path configPath) {
+    public StatusPanel(int serverPort, String rootFolder, Path configPath, Runnable onLocaleChanged) {
         this.serverPort = serverPort;
         this.rootFolder = rootFolder;
         this.configPath = configPath;
+        this.onLocaleChanged = onLocaleChanged;
         buildUi();
         BackendLifecycleManager.addListener(backendListener);
         startPolling();
@@ -77,9 +94,10 @@ public class StatusPanel extends JPanel {
 
         statusBadge.setFont(statusBadge.getFont().deriveFont(Font.BOLD, 12f));
         statusBadge.setForeground(new Color(180, 100, 0));
-        JPanel badgeRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+        JPanel badgeRow = new JPanel(new BorderLayout(12, 0));
         badgeRow.setOpaque(false);
-        badgeRow.add(statusBadge);
+        badgeRow.add(statusBadge, BorderLayout.WEST);
+        badgeRow.add(buildLanguageSelector(), BorderLayout.EAST);
 
         JPanel content = new JPanel(new GridBagLayout());
         content.setOpaque(false);
@@ -120,12 +138,12 @@ public class StatusPanel extends JPanel {
         g.anchor = GridBagConstraints.WEST;
 
         int row = 0;
-        addRow(grid, g, row++, "运行端口", portLabel);
-        addRow(grid, g, row++, "运行模式", modeLabel);
-        addRow(grid, g, row++, "启动时间", uptimeLabel);
-        addRow(grid, g, row++, "HTTPS", httpsLabel);
+        addRow(grid, g, row++, message("gui.status.label.port"), portLabel);
+        addRow(grid, g, row++, message("gui.status.label.mode"), modeLabel);
+        addRow(grid, g, row++, message("gui.status.label.start-time"), uptimeLabel);
+        addRow(grid, g, row++, message("gui.status.label.https"), httpsLabel);
 
-        JLabel hint = secondaryLabel("下载队列、历史记录等详细信息请打开 Web 控制台查看。");
+        JLabel hint = secondaryLabel(message("gui.status.hint.web-console"));
         GridBagConstraints hc = new GridBagConstraints();
         hc.gridy = row++;
         hc.gridx = 0;
@@ -140,7 +158,7 @@ public class StatusPanel extends JPanel {
         JPanel panel = new JPanel(new BorderLayout(0, 10));
         panel.setOpaque(false);
         panel.setAlignmentX(Component.LEFT_ALIGNMENT);
-        TitledBorder titledBorder = BorderFactory.createTitledBorder("FFmpeg / 动图适配");
+        TitledBorder titledBorder = BorderFactory.createTitledBorder(message("gui.ffmpeg.panel.title"));
         titledBorder.setTitleJustification(TitledBorder.LEFT);
         titledBorder.setTitlePosition(TitledBorder.TOP);
         panel.setBorder(BorderFactory.createCompoundBorder(
@@ -153,8 +171,7 @@ public class StatusPanel extends JPanel {
         text.setLayout(new BoxLayout(text, BoxLayout.Y_AXIS));
         text.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        JLabel intro = new JLabel("<html><b>Ugoira 动图转 WebP 依赖 FFmpeg。</b><br/>"
-                + "在线便携版默认不内置 FFmpeg，MSI 也可以在安装时跳过此组件；需要时可在这里补齐。</html>");
+        JLabel intro = new JLabel(message("gui.ffmpeg.panel.intro"));
         intro.setAlignmentX(Component.LEFT_ALIGNMENT);
 
         ffmpegBadge.setFont(ffmpegBadge.getFont().deriveFont(Font.BOLD, 13f));
@@ -192,19 +209,132 @@ public class StatusPanel extends JPanel {
         JPanel buttons = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
         buttons.setOpaque(false);
 
-        JButton openMonitor = new JButton("打开 Web 控制台");
+        JButton openMonitor = new JButton(message("gui.action.open-web-console"));
         openMonitor.addActionListener(e -> openMonitor());
 
-        JButton openFolder = new JButton("打开下载目录");
+        JButton openFolder = new JButton(message("gui.action.open-download-directory"));
         openFolder.addActionListener(e -> openDownloadFolder());
 
-        JButton restart = new JButton("重启服务");
+        JButton restart = new JButton(message("gui.action.restart-service"));
         restart.addActionListener(e -> restartService());
 
         buttons.add(openMonitor);
         buttons.add(openFolder);
         buttons.add(restart);
         return buttons;
+    }
+
+    private JComponent buildLanguageSelector() {
+        JPanel row = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
+        row.setOpaque(false);
+
+        JLabel label = new JLabel(message("gui.status.language.label"));
+        label.setForeground(Color.GRAY);
+
+        // null locale 表示"跟随系统"：写空值到 config.yaml，由 SystemLocaleDetector 兜底解析
+        LocaleOption[] options = {
+                new LocaleOption(null, message("gui.status.language.option.follow-system")),
+                new LocaleOption(Locale.US, message("gui.status.language.option.en")),
+                new LocaleOption(Locale.SIMPLIFIED_CHINESE, message("gui.status.language.option.zh-cn")),
+        };
+        for (LocaleOption option : options) {
+            languageCombo.addItem(option);
+        }
+        selectInitialLanguageOption(options);
+        languageCombo.setToolTipText(message("gui.status.language.tooltip"));
+        languageCombo.addActionListener(e -> applyLanguageSelection());
+
+        row.add(label);
+        row.add(languageCombo);
+        return row;
+    }
+
+    /**
+     * 根据 config.yaml 中已持久化的 app.language 决定初始选中项：
+     * 配置为空（或文件缺失）则选"跟随系统"；否则匹配对应 locale。
+     */
+    private void selectInitialLanguageOption(LocaleOption[] options) {
+        String persisted = readPersistedLanguageTag();
+        if (persisted == null || persisted.isBlank()) {
+            languageCombo.setSelectedItem(options[0]);
+            return;
+        }
+        Locale parsed = AppLocale.parse(persisted);
+        if (parsed == null) {
+            languageCombo.setSelectedItem(options[0]);
+            return;
+        }
+        Locale normalized = AppLocale.normalize(parsed);
+        for (LocaleOption option : options) {
+            if (option.locale() != null && option.locale().equals(normalized)) {
+                languageCombo.setSelectedItem(option);
+                return;
+            }
+        }
+        languageCombo.setSelectedItem(options[0]);
+    }
+
+    private String readPersistedLanguageTag() {
+        if (configPath == null || !Files.exists(configPath)) {
+            return null;
+        }
+        try {
+            return new ConfigFileEditor(configPath).read("app.language");
+        } catch (Exception e) {
+            log.debug(logMessage("gui.status.log.language.persist-failed", e.getMessage()));
+            return null;
+        }
+    }
+
+    private void applyLanguageSelection() {
+        LocaleOption option = (LocaleOption) languageCombo.getSelectedItem();
+        if (option == null) {
+            return;
+        }
+
+        // 持久化：跟随系统 = 写空字符串（与 AppLocale.parse(null) 行为一致）
+        String persistValue = option.locale() == null ? "" : option.locale().toLanguageTag();
+        boolean persisted = persistLanguagePreference(persistValue);
+
+        // 推算本次会话应用的 locale。
+        // 显式选择 → 直接使用；跟随系统 → 复用 SystemLocaleDetector 的解析链路。
+        if (option.locale() != null) {
+            Locale.setDefault(option.locale());
+        } else {
+            SystemLocaleDetector.detectAndApply();
+        }
+        GuiMessages.clearLocaleOverride();
+
+        if (!persisted && configPath != null) {
+            JOptionPane.showMessageDialog(this,
+                    message("gui.status.language.persist-failed.message"),
+                    message("gui.dialog.error.title"), JOptionPane.WARNING_MESSAGE);
+        }
+
+        if (onLocaleChanged != null) {
+            // 回调将销毁本 Panel 并重建标签页，因此异步触发，避免在控件回调链中改变父容器
+            SwingUtilities.invokeLater(onLocaleChanged);
+        }
+    }
+
+    private boolean persistLanguagePreference(String value) {
+        if (configPath == null || !Files.exists(configPath)) {
+            return false;
+        }
+        try {
+            new ConfigFileEditor(configPath).write("app.language", value == null ? "" : value);
+            return true;
+        } catch (Exception e) {
+            log.warn(logMessage("gui.status.log.language.persist-failed", e.getMessage()));
+            return false;
+        }
+    }
+
+    private record LocaleOption(Locale locale, String label) {
+        @Override
+        public String toString() {
+            return label;
+        }
     }
 
     private static void addRow(JPanel grid, GridBagConstraints g, int row, String key, JLabel value) {
@@ -280,7 +410,7 @@ public class StatusPanel extends JPanel {
     }
 
     private void updateLabels(JsonNode node) {
-        statusBadge.setText("运行中");
+        statusBadge.setText(message("gui.backend.state.running"));
         statusBadge.setForeground(new Color(0, 140, 0));
 
         portLabel.setText(textOf(node, "port"));
@@ -288,7 +418,7 @@ public class StatusPanel extends JPanel {
         uptimeLabel.setText(textOf(node, "startTime"));
 
         boolean https = node.path("httpsEnabled").asBoolean(false);
-        httpsLabel.setText(https ? "启用" : "未启用");
+        httpsLabel.setText(https ? message("gui.status.https.enabled") : message("gui.status.https.disabled"));
         httpsLabel.setForeground(https ? new Color(0, 140, 0) : Color.GRAY);
 
         String domain = textOf(node, "domain");
@@ -304,21 +434,21 @@ public class StatusPanel extends JPanel {
     private void applyBackendSnapshot(BackendLifecycleManager.Snapshot snapshot) {
         switch (snapshot.state()) {
             case STARTING -> {
-                statusBadge.setText("正在启动...");
+                statusBadge.setText(message("gui.backend.state.starting"));
                 statusBadge.setForeground(new Color(180, 100, 0));
             }
             case STOPPING -> {
-                statusBadge.setText("正在停止...");
+                statusBadge.setText(message("gui.backend.state.stopping"));
                 statusBadge.setForeground(new Color(180, 100, 0));
             }
             case STOPPED -> applyOfflineState(snapshot);
             case FAILED -> {
-                statusBadge.setText("启动失败");
+                statusBadge.setText(message("gui.backend.state.failed"));
                 statusBadge.setForeground(new Color(180, 60, 60));
                 clearStatusValues();
             }
             case RUNNING -> {
-                statusBadge.setText("连接中...");
+                statusBadge.setText(message("gui.status.state.connecting"));
                 statusBadge.setForeground(new Color(180, 100, 0));
             }
         }
@@ -326,19 +456,19 @@ public class StatusPanel extends JPanel {
 
     private void applyOfflineState(BackendLifecycleManager.Snapshot snapshot) {
         if (snapshot.state() == BackendLifecycleManager.State.RUNNING) {
-            statusBadge.setText("连接失败");
+            statusBadge.setText(message("gui.status.state.connection-failed"));
             statusBadge.setForeground(new Color(180, 60, 60));
         } else if (snapshot.state() == BackendLifecycleManager.State.STOPPED) {
-            statusBadge.setText("已停止");
+            statusBadge.setText(message("gui.backend.state.stopped"));
             statusBadge.setForeground(Color.GRAY);
         } else if (snapshot.state() == BackendLifecycleManager.State.STOPPING) {
-            statusBadge.setText("正在停止...");
+            statusBadge.setText(message("gui.backend.state.stopping"));
             statusBadge.setForeground(new Color(180, 100, 0));
         } else if (snapshot.state() == BackendLifecycleManager.State.STARTING) {
-            statusBadge.setText("正在启动...");
+            statusBadge.setText(message("gui.backend.state.starting"));
             statusBadge.setForeground(new Color(180, 100, 0));
         } else {
-            statusBadge.setText("启动失败");
+            statusBadge.setText(message("gui.backend.state.failed"));
             statusBadge.setForeground(new Color(180, 60, 60));
         }
         clearStatusValues();
@@ -359,8 +489,8 @@ public class StatusPanel extends JPanel {
 
     private static String modeName(String mode) {
         return switch (mode) {
-            case "solo" -> "solo（自用模式）";
-            case "multi" -> "multi（多人模式）";
+            case "solo" -> message("gui.mode.solo");
+            case "multi" -> message("gui.mode.multi");
             default -> mode;
         };
     }
@@ -372,29 +502,31 @@ public class StatusPanel extends JPanel {
 
         FfmpegInstallation installation = FfmpegLocator.locate().orElse(null);
         if (installation == null) {
-            ffmpegBadge.setText("未检测到 FFmpeg");
+            ffmpegBadge.setText(message("gui.ffmpeg.badge.missing"));
             ffmpegBadge.setForeground(new Color(180, 100, 0));
-            ffmpegSourceLabel.setText("普通图片下载不受影响；需要处理 Ugoira 动图时，再点击右侧按钮即可。");
-            ffmpegPathLabel.setText("软件目录安装位置：" + FfmpegLocator.managedToolsDir());
+            ffmpegSourceLabel.setText(message("gui.ffmpeg.hint.missing"));
+            ffmpegPathLabel.setText(message("gui.ffmpeg.path.managed", FfmpegLocator.managedToolsDir()));
             ffmpegPathLabel.setToolTipText(FfmpegLocator.managedToolsDir().toString());
-            ffmpegActionButton.setText(FfmpegInstaller.supportsManagedDownload() ? "下载 FFmpeg" : "请手动安装 FFmpeg");
+            ffmpegActionButton.setText(FfmpegInstaller.supportsManagedDownload()
+                    ? message("gui.ffmpeg.action.download")
+                    : message("gui.ffmpeg.action.manual"));
             ffmpegActionButton.setEnabled(FfmpegInstaller.supportsManagedDownload());
             openFfmpegDirButton.setEnabled(true);
             return;
         }
 
-        ffmpegBadge.setText("FFmpeg 已就绪");
+        ffmpegBadge.setText(message("gui.ffmpeg.badge.ready"));
         ffmpegBadge.setForeground(new Color(0, 140, 0));
-        String sourceMessage = "来源：" + installation.sourceLabel();
-        if (!installation.hasFfprobe()) {
-            sourceMessage += "（未检测到 ffprobe）";
-        }
+        String sourceLabel = message(installation.sourceMessageCode());
+        String sourceMessage = installation.hasFfprobe()
+                ? message("gui.ffmpeg.source.label", sourceLabel)
+                : message("gui.ffmpeg.source.label.missing-ffprobe", sourceLabel);
         ffmpegSourceLabel.setText(sourceMessage);
-        ffmpegPathLabel.setText("位置：" + installation.ffmpegPath());
+        ffmpegPathLabel.setText(message("gui.ffmpeg.path.label", installation.ffmpegPath()));
         ffmpegPathLabel.setToolTipText(installation.ffmpegPath().toString());
         ffmpegActionButton.setText(switch (installation.source()) {
-            case MANAGED -> "重新下载 FFmpeg";
-            case BUNDLED, SYSTEM -> "下载到软件目录";
+            case MANAGED -> message("gui.ffmpeg.action.redownload");
+            case BUNDLED, SYSTEM -> message("gui.ffmpeg.action.download-to-managed");
         });
         ffmpegActionButton.setEnabled(FfmpegInstaller.supportsManagedDownload());
         openFfmpegDirButton.setEnabled(true);
@@ -403,8 +535,8 @@ public class StatusPanel extends JPanel {
     private void triggerFfmpegInstall() {
         if (!FfmpegInstaller.supportsManagedDownload()) {
             JOptionPane.showMessageDialog(this,
-                    "当前系统暂不支持自动下载 FFmpeg，请手动安装到 PATH 后再使用动图转 WebP。",
-                    "提示", JOptionPane.INFORMATION_MESSAGE);
+                    message("gui.ffmpeg.dialog.unsupported.message"),
+                    message("gui.dialog.info.title"), JOptionPane.INFORMATION_MESSAGE);
             return;
         }
         if (ffmpegInstalling) {
@@ -412,8 +544,8 @@ public class StatusPanel extends JPanel {
         }
 
         int confirm = JOptionPane.showConfirmDialog(this,
-                "将下载 FFmpeg 到软件目录，用于 Ugoira 动图转 WebP。普通图片下载不会受到影响。\n\n是否继续？",
-                "下载 FFmpeg", JOptionPane.YES_NO_OPTION);
+                message("gui.ffmpeg.dialog.install.confirm.message"),
+                message("gui.ffmpeg.dialog.install.title"), JOptionPane.YES_NO_OPTION);
         if (confirm != JOptionPane.YES_OPTION) {
             return;
         }
@@ -421,11 +553,11 @@ public class StatusPanel extends JPanel {
         ffmpegInstalling = true;
         ffmpegActionButton.setEnabled(false);
         openFfmpegDirButton.setEnabled(false);
-        ffmpegBadge.setText("正在安装 FFmpeg...");
+        ffmpegBadge.setText(message("gui.ffmpeg.badge.installing"));
         ffmpegBadge.setForeground(new Color(180, 100, 0));
         ffmpegProgress.setValue(0);
         ffmpegProgress.setIndeterminate(true);
-        ffmpegProgress.setString("准备中...");
+        ffmpegProgress.setString(message("gui.ffmpeg.progress.preparing"));
         ffmpegProgress.setVisible(true);
 
         SwingWorker<FfmpegInstallation, FfmpegProgress> worker = new SwingWorker<>() {
@@ -450,8 +582,9 @@ public class StatusPanel extends JPanel {
                     FfmpegInstallation installation = get();
                     refreshFfmpegState();
                     JOptionPane.showMessageDialog(StatusPanel.this,
-                            "FFmpeg 已安装完成。\n\n当前来源：" + installation.sourceLabel() + "\n位置：" + installation.ffmpegPath(),
-                            "下载完成", JOptionPane.INFORMATION_MESSAGE);
+                            message("gui.ffmpeg.dialog.install-success.message",
+                                    message(installation.sourceMessageCode()), installation.ffmpegPath()),
+                            message("gui.ffmpeg.dialog.install-success.title"), JOptionPane.INFORMATION_MESSAGE);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     handleFfmpegInstallFailure(e);
@@ -476,13 +609,13 @@ public class StatusPanel extends JPanel {
 
     private void handleFfmpegInstallFailure(Throwable error) {
         refreshFfmpegState();
-        String message = error == null ? "未知错误" : error.getMessage();
-        if (message == null || message.isBlank()) {
-            message = error == null ? "未知错误" : error.getClass().getSimpleName();
+        String detail = error == null ? message("gui.ffmpeg.error.unknown") : error.getMessage();
+        if (detail == null || detail.isBlank()) {
+            detail = error == null ? message("gui.ffmpeg.error.unknown") : error.getClass().getSimpleName();
         }
         JOptionPane.showMessageDialog(this,
-                "FFmpeg 下载失败：\n" + message + "\n\n可检查 config.yaml 中的代理配置后重试。",
-                "下载失败", JOptionPane.ERROR_MESSAGE);
+                message("gui.ffmpeg.dialog.install-failed.message", detail),
+                message("gui.ffmpeg.dialog.install-failed.title"), JOptionPane.ERROR_MESSAGE);
     }
 
     private FfmpegInstaller.ProxySettings loadProxySettings() {
@@ -504,7 +637,7 @@ public class StatusPanel extends JPanel {
             }
             return new FfmpegInstaller.ProxySettings(true, host, port);
         } catch (Exception e) {
-            log.warn("读取 FFmpeg 下载代理配置失败: {}", e.getMessage());
+            log.warn(logMessage("gui.status.log.ffmpeg-proxy.read-failed", e.getMessage()));
             return FfmpegInstaller.ProxySettings.disabled();
         }
     }
@@ -517,23 +650,23 @@ public class StatusPanel extends JPanel {
         try {
             Desktop.getDesktop().browse(new URI(serverScheme + "://" + serverDomain + ":" + serverPort + "/monitor.html"));
         } catch (Exception e) {
-            JOptionPane.showMessageDialog(this, "无法打开浏览器：" + e.getMessage(),
-                    "错误", JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(this, message("gui.error.open-browser", e.getMessage()),
+                    message("gui.dialog.error.title"), JOptionPane.ERROR_MESSAGE);
         }
     }
 
     private void openDownloadFolder() {
         File folder = new File(rootFolder);
         if (!folder.exists()) {
-            JOptionPane.showMessageDialog(this, "下载目录不存在：" + folder.getAbsolutePath(),
-                    "提示", JOptionPane.WARNING_MESSAGE);
+            JOptionPane.showMessageDialog(this, message("gui.status.dialog.download-folder-missing", folder.getAbsolutePath()),
+                    message("gui.dialog.info.title"), JOptionPane.WARNING_MESSAGE);
             return;
         }
         try {
             Desktop.getDesktop().open(folder);
         } catch (Exception e) {
-            JOptionPane.showMessageDialog(this, "无法打开目录：" + e.getMessage(),
-                    "错误", JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(this, message("gui.error.open-folder", e.getMessage()),
+                    message("gui.dialog.error.title"), JOptionPane.ERROR_MESSAGE);
         }
     }
 
@@ -554,15 +687,15 @@ public class StatusPanel extends JPanel {
             Files.createDirectories(dir);
             Desktop.getDesktop().open(dir.toFile());
         } catch (Exception e) {
-            JOptionPane.showMessageDialog(this, "无法打开 FFmpeg 目录：" + e.getMessage(),
-                    "错误", JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(this, message("gui.ffmpeg.dialog.open-dir-failed.message", e.getMessage()),
+                    message("gui.dialog.error.title"), JOptionPane.ERROR_MESSAGE);
         }
     }
 
     private void restartService() {
         int confirm = JOptionPane.showConfirmDialog(this,
-                "确认重启服务？重启期间将短暂无法访问。",
-                "重启服务", JOptionPane.YES_NO_OPTION);
+                message("gui.status.dialog.restart.confirm.message"),
+                message("gui.action.restart-service"), JOptionPane.YES_NO_OPTION);
         if (confirm != JOptionPane.YES_OPTION) {
             return;
         }
@@ -571,15 +704,15 @@ public class StatusPanel extends JPanel {
             try {
                 if (!BackendLifecycleManager.restartAsync()) {
                     SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(StatusPanel.this,
-                            "后端当前正在启动或停止，请稍后再试。",
-                            "请稍后", JOptionPane.INFORMATION_MESSAGE));
+                            message("gui.message.backend-busy"),
+                            message("gui.dialog.please-wait.title"), JOptionPane.INFORMATION_MESSAGE));
                     return;
                 }
             } catch (Exception e) {
-                log.warn("重启请求失败: {}", e.getMessage());
+                log.warn(logMessage("gui.status.log.restart-request.failed", e.getMessage()));
             }
             SwingUtilities.invokeLater(() -> {
-                statusBadge.setText("正在重启...");
+                statusBadge.setText(message("gui.status.state.restarting"));
                 statusBadge.setForeground(new Color(180, 100, 0));
             });
         }, "gui-restart");
@@ -610,7 +743,7 @@ public class StatusPanel extends JPanel {
             }, null);
             return ctx;
         } catch (Exception e) {
-            log.warn("无法创建 trust-all SSLContext，HTTPS 轮询可能失败: {}", e.getMessage());
+            log.warn(logMessage("gui.status.log.trust-all-ssl.failed", e.getMessage()));
             return null;
         }
     }

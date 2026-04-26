@@ -2,6 +2,7 @@ package top.sywyar.pixivdownload.gui.theme;
 
 import com.formdev.flatlaf.FlatLightLaf;
 import lombok.extern.slf4j.Slf4j;
+import top.sywyar.pixivdownload.i18n.MessageBundles;
 
 import javax.swing.*;
 import java.awt.*;
@@ -39,7 +40,7 @@ public final class FlatLafSetup {
         try {
             FlatLightLaf.setup();
         } catch (Exception e) {
-            log.warn("FlatLaf 初始化失败，使用系统默认 L&F: {}", e.getMessage());
+            log.warn(logMessage("gui.theme.log.flatlaf.init-failed", e.getMessage()));
         }
         applyChineseFont();
     }
@@ -54,10 +55,14 @@ public final class FlatLafSetup {
             if (availableSet.contains(name)) {
                 Font font = new Font(name, Font.PLAIN, 13);
                 UIManager.put("defaultFont", font);
-                log.debug("GUI 字体已设置为: {}", name);
+                log.debug(logMessage("gui.theme.log.font.applied", name));
                 return;
             }
         }
-        log.warn("未找到任何预设中文字体，使用系统默认字体");
+        log.warn(logMessage("gui.theme.log.font.fallback"));
+    }
+
+    private static String logMessage(String code, Object... args) {
+        return MessageBundles.get(code, args);
     }
 }

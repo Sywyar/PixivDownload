@@ -6,7 +6,7 @@
 
     function normalizeLang(lang) {
         if (!lang) {
-            return 'zh-CN';
+            return 'en-US';
         }
         return String(lang).trim().replace('_', '-');
     }

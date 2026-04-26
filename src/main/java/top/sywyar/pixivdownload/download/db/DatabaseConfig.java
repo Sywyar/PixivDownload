@@ -8,6 +8,7 @@ import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.sqlite.SQLiteConfig;
 import top.sywyar.pixivdownload.config.RuntimeFiles;
 import top.sywyar.pixivdownload.download.config.DownloadConfig;
+import top.sywyar.pixivdownload.i18n.AppMessages;
 
 import javax.sql.DataSource;
 import java.io.IOException;
@@ -20,13 +21,14 @@ import java.nio.file.Path;
 public class DatabaseConfig {
 
     private final DownloadConfig downloadConfig;
+    private final AppMessages messages;
 
     @Bean
     public DataSource dataSource() throws IOException {
         Path databasePath = RuntimeFiles.resolveDatabasePath(downloadConfig.getRootFolder());
         Files.createDirectories(databasePath.getParent());
         String url = "jdbc:sqlite:" + databasePath;
-        log.info("SQLite 数据库路径: {}", url);
+        log.info(messages.getForLog("download.db.log.path", url));
 
         // 每条新连接都会携带这些 PRAGMA，确保并发写时等待而不是立即失败
         SQLiteConfig sqliteConfig = new SQLiteConfig();
