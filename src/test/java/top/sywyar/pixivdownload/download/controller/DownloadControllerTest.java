@@ -205,6 +205,35 @@ class DownloadControllerTest {
         }
 
         @Test
+        @DisplayName("多人模式非管理员传入 collectionId 时应被清空")
+        void shouldStripCollectionIdForNonAdminInMultiMode() throws Exception {
+            when(setupService.getMode()).thenReturn("multi");
+            when(setupService.isAdminLoggedIn(any())).thenReturn(false);
+
+            DownloadRequest request = new DownloadRequest();
+            request.setArtworkId(12345L);
+            request.setTitle("测试");
+            request.setImageUrls(List.of("https://i.pximg.net/img/12345_p0.jpg"));
+            request.getOther().setCollectionId(42L);
+
+            mockMvc.perform(post("/api/download/pixiv")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(request)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.success").value(true));
+
+            verify(downloadService).downloadImages(
+                    eq(12345L),
+                    eq("测试"),
+                    eq(List.of("https://i.pximg.net/img/12345_p0.jpg")),
+                    eq("https://www.pixiv.net/"),
+                    argThat(other -> other != null && other.getCollectionId() == null),
+                    any(),
+                    isNull()
+            );
+        }
+
+        @Test
         @DisplayName("多人模式下已登录管理员应跳过配额检查")
         void shouldSkipQuotaCheckForAdminInMultiMode() throws Exception {
             when(setupService.getMode()).thenReturn("multi");
@@ -215,6 +244,7 @@ class DownloadControllerTest {
             request.setArtworkId(12345L);
             request.setTitle("测试");
             request.setImageUrls(List.of("https://i.pximg.net/img/12345_p0.jpg"));
+            request.getOther().setCollectionId(88L);
 
             mockMvc.perform(post("/api/download/pixiv")
                             .contentType(MediaType.APPLICATION_JSON)
@@ -228,7 +258,7 @@ class DownloadControllerTest {
                     eq("测试"),
                     eq(List.of("https://i.pximg.net/img/12345_p0.jpg")),
                     eq("https://www.pixiv.net/"),
-                    any(),
+                    argThat(other -> other != null && Long.valueOf(88L).equals(other.getCollectionId())),
                     any(),
                     isNull()
             );

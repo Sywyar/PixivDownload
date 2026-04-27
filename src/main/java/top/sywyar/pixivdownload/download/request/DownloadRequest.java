@@ -43,6 +43,7 @@ public class DownloadRequest {
         private int delayMs = 0;
         @JsonProperty("bookmark")
         private boolean bookmark;
+        private Long collectionId;
         private String description;
         private List<TagDto> tags;
     }

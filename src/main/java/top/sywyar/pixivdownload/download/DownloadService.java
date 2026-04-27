@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestTemplate;
 import top.sywyar.pixivdownload.author.AuthorService;
+import top.sywyar.pixivdownload.collection.CollectionService;
 import top.sywyar.pixivdownload.download.config.DownloadConfig;
 import top.sywyar.pixivdownload.download.db.ArtworkRecord;
 import top.sywyar.pixivdownload.download.db.PixivDatabase;
@@ -53,6 +54,7 @@ public class DownloadService {
     private final PixivBookmarkService pixivBookmarkService;
     private final UgoiraService ugoiraService;
     private final AuthorService authorService;
+    private final CollectionService collectionService;
     private final AppMessages messages;
 
     // 存储下载状态
@@ -67,6 +69,7 @@ public class DownloadService {
                            PixivBookmarkService pixivBookmarkService,
                            UgoiraService ugoiraService,
                            AuthorService authorService,
+                           CollectionService collectionService,
                            AppMessages messages) {
         this.downloadConfig = downloadConfig;
         this.eventPublisher = eventPublisher;
@@ -77,6 +80,7 @@ public class DownloadService {
         this.pixivBookmarkService = pixivBookmarkService;
         this.ugoiraService = ugoiraService;
         this.authorService = authorService;
+        this.collectionService = collectionService;
         this.messages = messages;
     }
 
@@ -182,6 +186,15 @@ public class DownloadService {
             // 下载后收藏（可选，best-effort）
             if (other.isBookmark()) {
                 pixivBookmarkService.bookmarkArtwork(artworkId, cookie);
+            }
+
+            // 下载后加入收藏夹（可选，best-effort）
+            if (other.getCollectionId() != null) {
+                try {
+                    collectionService.addArtwork(other.getCollectionId(), artworkId);
+                } catch (Exception e) {
+                    log.warn(logMessage("download.log.collection.add.failed", artworkId, other.getCollectionId(), e.getMessage()));
+                }
             }
 
             // 发送最终完成状态更新

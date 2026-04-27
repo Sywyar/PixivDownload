@@ -51,6 +51,7 @@ public class DownloadController {
     public ResponseEntity<?> downloadPixivImages(
             @Valid @RequestBody DownloadRequest request,
             HttpServletRequest httpRequest) {
+        String mode = setupService.getMode();
         // SSRF 防护：同步校验所有下载 URL，非法 URL 抛出 LocalizedException（由全局处理器返回 400）
         if (request.getOther().isUgoira() && request.getOther().getUgoiraZipUrl() != null) {
             DownloadService.validatePixivUrl(request.getOther().getUgoiraZipUrl());
@@ -59,7 +60,7 @@ public class DownloadController {
         }
 
         // 多人模式：never-delete/timed-delete 模式下，已下载过的作品直接返回成功，不消耗配额
-        if ("multi".equals(setupService.getMode())) {
+        if ("multi".equals(mode)) {
             String pdMode = multiModeConfig.getPostDownloadMode();
             if ("never-delete".equals(pdMode) || "timed-delete".equals(pdMode)) {
                 if (pixivDatabase.hasArtwork(request.getArtworkId())) {
@@ -71,9 +72,10 @@ public class DownloadController {
 
         String userUuid = null;
         boolean isAdmin = setupService.isAdminLoggedIn(httpRequest);
+        stripUnauthorizedCollectionSelection(request, mode, isAdmin);
 
         // 多人模式且配额启用时，检查下载配额
-        if (!isAdmin && "multi".equals(setupService.getMode()) && multiModeConfig.getQuota().isEnabled()) {
+        if (!isAdmin && "multi".equals(mode) && multiModeConfig.getQuota().isEnabled()) {
             userUuid = extractUserUuid(httpRequest);
             int imageCount = request.getOther().isUgoira() ? 1 : request.getImageUrls().size();
             UserQuotaService.QuotaCheckResult check = userQuotaService.checkAndReserve(userUuid, imageCount);
@@ -115,6 +117,16 @@ public class DownloadController {
     /** 提取用户 UUID：优先 cookie，其次 X-User-UUID 请求头，最后基于 IP+UA 生成 */
     private String extractUserUuid(HttpServletRequest req) {
         return UuidUtils.extractOrGenerateUuid(req);
+    }
+
+    private void stripUnauthorizedCollectionSelection(DownloadRequest request, String mode, boolean isAdmin) {
+        DownloadRequest.Other other = request.getOther();
+        if (other == null || other.getCollectionId() == null) {
+            return;
+        }
+        if ("multi".equals(mode) && !isAdmin) {
+            other.setCollectionId(null);
+        }
     }
 
     @GetMapping("/download/status")

@@ -15,6 +15,7 @@ import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.web.client.RestTemplate;
 import top.sywyar.pixivdownload.author.AuthorService;
+import top.sywyar.pixivdownload.collection.CollectionService;
 import top.sywyar.pixivdownload.download.config.DownloadConfig;
 import top.sywyar.pixivdownload.download.db.ArtworkRecord;
 import top.sywyar.pixivdownload.download.db.PixivDatabase;
@@ -61,6 +62,8 @@ class DownloadServiceTest {
     private UgoiraService ugoiraService;
     @Mock
     private AuthorService authorService;
+    @Mock
+    private CollectionService collectionService;
 
     private DownloadService downloadService;
 
@@ -68,7 +71,7 @@ class DownloadServiceTest {
     void setUp() {
         LocaleContextHolder.setLocale(Locale.SIMPLIFIED_CHINESE);
         downloadService = new DownloadService(downloadConfig, eventPublisher, pixivDatabase, userQuotaService,
-                downloadRestTemplate, taskScheduler, pixivBookmarkService, ugoiraService, authorService, APP_MESSAGES);
+                downloadRestTemplate, taskScheduler, pixivBookmarkService, ugoiraService, authorService, collectionService, APP_MESSAGES);
     }
 
     // ========== validatePixivUrl (SSRF 防护) ==========

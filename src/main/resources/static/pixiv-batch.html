@@ -243,6 +243,10 @@
             cursor: pointer;
         }
 
+        .setting-item select {
+            cursor: pointer;
+        }
+
         .R18-label {
             color: #d63384 !important;
         }
@@ -1195,6 +1199,12 @@
                 <input type="checkbox" id="s-bookmark">
                 <label for="s-bookmark" style="cursor:pointer;">下载后自动收藏</label>
             </div>
+            <div class="setting-item" id="s-collection-wrap" style="display:none;">
+                <label for="s-collection">收藏到:</label>
+                <select id="s-collection" style="padding:4px 6px;border:1px solid #ddd;border-radius:4px;font-size:13px;max-width:200px;">
+                    <option value="">（不加入收藏夹）</option>
+                </select>
+            </div>
         </div>
     </div>
 
@@ -1324,6 +1334,8 @@
         '实际目录检测': 'Verify Actual Folder',
         '仅下载 R18 作品': 'Only Download R18 Artworks',
         '下载后自动收藏': 'Bookmark After Download',
+        '收藏到:': 'Add to:',
+        '（不加入收藏夹）': '(No collection)',
         '开始下载': 'Start Download',
         '暂停': 'Pause',
         '重试失败': 'Retry Failed',
@@ -1727,7 +1739,8 @@
             skipHistory: false,
             verifyHistoryFiles: false,
             R18Only: false,
-            bookmark: false
+            bookmark: false,
+            collectionId: null
         }
     };
 
@@ -1987,6 +2000,7 @@
     let isAdmin = false;
     let serverState = {};    // solo 模式下的状态内存镜像
     let multiModeLimitPage = 0;  // multi 模式下补页上限（0=不限制），来自 /api/setup/status
+    let batchCollectionsRefreshPromise = null;
 
     async function detectMode() {
         try {
@@ -2274,6 +2288,7 @@
 
     async function sendDownload(artworkId, imageUrls, title, isUserDownload, username, authorId, authorName, xRestrict, isAi, ugoiraData, description, tags) {
         const delayMs = getImageDelayMs();
+        const collectionId = await resolveBatchCollectionIdForDownload();
         const other = {
             userDownload: isUserDownload,
             username: username || '',
@@ -2283,6 +2298,7 @@
             isAi: !!isAi,
             delayMs,
             bookmark: !!state.settings.bookmark,
+            collectionId,
             description: description || null,
             tags: Array.isArray(tags) && tags.length ? tags : null
         };
@@ -2435,6 +2451,8 @@
         uiAlert('后端服务不可用，请确认后端已启动');
             return;
         }
+
+        await refreshBatchCollections();
 
         const {concurrent} = state.settings;
         const intervalMs = getIntervalMs();
@@ -3153,6 +3171,10 @@
         const imgUnit = state.settings.imageDelayUnit || 'ms';
         state.settings.imageDelayUnit = imgUnit;
         document.getElementById('s-image-delay-unit').textContent = imgUnit;
+        if (state.settings.collectionId) {
+            const sel = document.getElementById('s-collection');
+            sel.value = String(state.settings.collectionId);
+        }
         toggleSkipHistoryOptions();
     }
 
@@ -3164,6 +3186,8 @@
         state.settings.verifyHistoryFiles = document.getElementById('s-verify-files').checked;
         state.settings.R18Only = document.getElementById('s-R18').checked;
         state.settings.bookmark = document.getElementById('s-bookmark').checked;
+        const sel = document.getElementById('s-collection');
+        state.settings.collectionId = sel.value ? Number(sel.value) : null;
         toggleSkipHistoryOptions();
         saveSettings();
     }
@@ -3834,6 +3858,100 @@
     }
 
     /* ============================================================
+       收藏夹选择器（solo / multi 管理员）
+    ============================================================ */
+    function normalizeBatchCollectionId(value) {
+        if (value === null || value === undefined || value === '') return null;
+        const parsed = Number.parseInt(String(value), 10);
+        return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+    }
+
+    function setBatchCollectionSetting(value) {
+        const next = normalizeBatchCollectionId(value);
+        const current = normalizeBatchCollectionId(state.settings.collectionId);
+        state.settings.collectionId = next;
+        if (current === next) return false;
+        saveSettings();
+        return true;
+    }
+
+    function resetBatchCollectionSelect() {
+        const sel = document.getElementById('s-collection');
+        sel.innerHTML = '';
+        const opt = document.createElement('option');
+        opt.value = '';
+        opt.textContent = '（不加入收藏夹）';
+        sel.appendChild(opt);
+        sel.value = '';
+        document.getElementById('s-collection-wrap').style.display = 'none';
+        schedulePageTranslation(document.getElementById('s-collection-wrap'));
+    }
+
+    function renderBatchCollections(collections, selectedId) {
+        const sel = document.getElementById('s-collection');
+        resetBatchCollectionSelect();
+        collections.forEach(c => {
+            const opt = document.createElement('option');
+            opt.value = String(c.id);
+            opt.textContent = c.name;
+            sel.appendChild(opt);
+        });
+        if (collections.length > 0) {
+            document.getElementById('s-collection-wrap').style.display = '';
+        }
+        sel.value = selectedId === null ? '' : String(selectedId);
+        schedulePageTranslation(document.getElementById('s-collection-wrap'));
+    }
+
+    async function refreshBatchCollections() {
+        if (batchCollectionsRefreshPromise) {
+            return batchCollectionsRefreshPromise;
+        }
+        batchCollectionsRefreshPromise = (async () => {
+            const canUseCollections = appMode === 'solo' || isAdmin;
+            if (!canUseCollections) {
+                setBatchCollectionSetting(null);
+                resetBatchCollectionSelect();
+                return {collectionId: null, collections: []};
+            }
+            try {
+                const res = await fetch(BASE + '/api/collections', {credentials: 'same-origin'});
+                if (!res.ok) {
+                    if (res.status === 401 || res.status === 403) {
+                        isAdmin = false;
+                        updateAuthButtons();
+                    }
+                    setBatchCollectionSetting(null);
+                    resetBatchCollectionSelect();
+                    return {collectionId: null, collections: []};
+                }
+                const data = await res.json();
+                const collections = Array.isArray(data.collections) ? data.collections : [];
+                const current = normalizeBatchCollectionId(state.settings.collectionId);
+                const validIds = new Set(collections
+                    .map(c => normalizeBatchCollectionId(c.id))
+                    .filter(id => id !== null));
+                const selectedId = current !== null && validIds.has(current) ? current : null;
+                setBatchCollectionSetting(selectedId);
+                renderBatchCollections(collections, selectedId);
+                return {collectionId: selectedId, collections};
+            } catch {
+                setBatchCollectionSetting(null);
+                resetBatchCollectionSelect();
+                return {collectionId: null, collections: []};
+            } finally {
+                batchCollectionsRefreshPromise = null;
+            }
+        })();
+        return batchCollectionsRefreshPromise;
+    }
+
+    async function resolveBatchCollectionIdForDownload() {
+        const result = await refreshBatchCollections();
+        return result.collectionId;
+    }
+
+    /* ============================================================
        初始化
     ============================================================ */
     async function init() {
@@ -3885,7 +4003,7 @@
         });
 
         // Settings change → auto-save
-        ['s-interval', 's-image-delay', 's-concurrent', 's-skip', 's-verify-files', 's-R18', 's-bookmark'].forEach(id => {
+        ['s-interval', 's-image-delay', 's-concurrent', 's-skip', 's-verify-files', 's-R18', 's-bookmark', 's-collection'].forEach(id => {
             const el = document.getElementById(id);
             el.addEventListener('change', syncSettings);
             if (el.type === 'number') el.addEventListener('input', syncSettings);
@@ -3921,6 +4039,7 @@
 
         // Settings
         loadSettings();
+        await refreshBatchCollections();
 
         // Queue
         loadQueueForMode();
