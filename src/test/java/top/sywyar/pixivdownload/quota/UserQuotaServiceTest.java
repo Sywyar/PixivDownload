@@ -11,6 +11,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import top.sywyar.pixivdownload.download.config.DownloadConfig;
 import top.sywyar.pixivdownload.download.db.ArtworkRecord;
 import top.sywyar.pixivdownload.download.db.PixivDatabase;
+import top.sywyar.pixivdownload.i18n.TestI18nBeans;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -45,7 +46,12 @@ class UserQuotaServiceTest {
         multiModeConfig.getQuota().setArchiveExpireMinutes(60);
         multiModeConfig.getQuota().setMaxProxyRequests(3);
 
-        userQuotaService = new UserQuotaService(multiModeConfig, downloadConfig, pixivDatabase);
+        userQuotaService = new UserQuotaService(
+                multiModeConfig,
+                downloadConfig,
+                pixivDatabase,
+                TestI18nBeans.appMessages()
+        );
     }
 
     // ========== checkAndReserve ==========
@@ -100,7 +106,12 @@ class UserQuotaServiceTest {
         void setLimitImage() {
             multiModeConfig.getQuota().setLimitImage(3);
             multiModeConfig.getQuota().setMaxArtworks(5);
-            userQuotaService = new UserQuotaService(multiModeConfig, downloadConfig, pixivDatabase);
+            userQuotaService = new UserQuotaService(
+                    multiModeConfig,
+                    downloadConfig,
+                    pixivDatabase,
+                    TestI18nBeans.appMessages()
+            );
         }
 
         @Test

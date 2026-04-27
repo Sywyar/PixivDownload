@@ -8,6 +8,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import top.sywyar.pixivdownload.i18n.TestI18nBeans;
 import top.sywyar.pixivdownload.quota.RateLimitService;
 
 import java.util.List;
@@ -52,7 +53,11 @@ class ScriptControllerTest {
     @BeforeEach
     void setUp() {
         when(rateLimitService.isAllowed(any())).thenReturn(true);
-        ScriptController controller = new ScriptController(scriptRegistry, rateLimitService) {
+        ScriptController controller = new ScriptController(
+                scriptRegistry,
+                rateLimitService,
+                TestI18nBeans.appMessages()
+        ) {
             @Override
             protected String loadScriptContent(String fileName) {
                 return SCRIPT_CONTENT;

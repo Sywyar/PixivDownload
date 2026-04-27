@@ -10,6 +10,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import top.sywyar.pixivdownload.download.response.PagedHistoryResponse;
+import top.sywyar.pixivdownload.i18n.TestI18nBeans;
 
 import java.util.List;
 
@@ -31,7 +32,9 @@ class GalleryControllerTest {
 
     @BeforeEach
     void setUp() {
-        mockMvc = MockMvcBuilders.standaloneSetup(new GalleryController(galleryService)).build();
+        mockMvc = MockMvcBuilders.standaloneSetup(
+                new GalleryController(galleryService, TestI18nBeans.appMessages())
+        ).build();
     }
 
     @Test

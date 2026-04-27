@@ -8,6 +8,7 @@ import org.springframework.boot.ApplicationArguments;
 import org.springframework.mock.web.MockHttpServletRequest;
 import top.sywyar.pixivdownload.config.RuntimeFiles;
 import top.sywyar.pixivdownload.download.config.DownloadConfig;
+import top.sywyar.pixivdownload.i18n.TestI18nBeans;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -49,7 +50,7 @@ class SetupServiceTest {
         config.setRootFolder(tempDir.resolve("pixiv-download").toString());
         ApplicationArguments arguments = mock(ApplicationArguments.class);
         when(arguments.getSourceArgs()).thenReturn(args);
-        return new SetupService(config, new ObjectMapper(), arguments);
+        return new SetupService(config, new ObjectMapper(), arguments, TestI18nBeans.appMessages());
     }
 
     // ========== 初始状态 ==========

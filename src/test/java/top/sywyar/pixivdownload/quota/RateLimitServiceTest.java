@@ -4,6 +4,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import top.sywyar.pixivdownload.i18n.TestI18nBeans;
 
 import static org.assertj.core.api.Assertions.*;
 
@@ -16,7 +17,7 @@ class RateLimitServiceTest {
     @BeforeEach
     void setUp() {
         multiModeConfig = new MultiModeConfig();
-        rateLimitService = new RateLimitService(multiModeConfig);
+        rateLimitService = new RateLimitService(multiModeConfig, TestI18nBeans.appMessages());
     }
 
     @Nested

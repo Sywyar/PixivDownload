@@ -21,6 +21,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
+import static org.hamcrest.Matchers.containsString;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.never;
@@ -54,7 +55,7 @@ class ArchiveControllerTest {
         multiModeConfig.getQuota().setArchiveExpireMinutes(60);
 
         ArchiveController controller = new ArchiveController(
-                userQuotaService, multiModeConfig, setupService, pixivDatabase);
+                userQuotaService, multiModeConfig, setupService, pixivDatabase, TestI18nBeans.appMessages());
         mockMvc = MockMvcBuilders.standaloneSetup(controller)
                 .setControllerAdvice(new GlobalExceptionHandler(TestI18nBeans.appMessages()))
                 .build();
@@ -88,13 +89,11 @@ class ArchiveControllerTest {
     @Test
     @DisplayName("空作品列表应返回 400")
     void shouldReturn400ForEmptyArtworkIds() throws Exception {
-        when(setupService.isAdminLoggedIn(any())).thenReturn(true);
-
                 mockMvc.perform(post("/api/archive/pack-artworks")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"artworkIds\":[]}"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.error").value("no artworks to pack"));
+                .andExpect(jsonPath("$.error").value(containsString("no artworks to pack")));
     }
 
     @Test

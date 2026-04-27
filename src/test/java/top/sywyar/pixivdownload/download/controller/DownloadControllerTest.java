@@ -209,6 +209,7 @@ class DownloadControllerTest {
         void shouldStripCollectionIdForNonAdminInMultiMode() throws Exception {
             when(setupService.getMode()).thenReturn("multi");
             when(setupService.isAdminLoggedIn(any())).thenReturn(false);
+            multiModeConfig.getQuota().setEnabled(false);
 
             DownloadRequest request = new DownloadRequest();
             request.setArtworkId(12345L);
