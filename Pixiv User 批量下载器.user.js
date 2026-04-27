@@ -99,23 +99,458 @@
         return { once };
     })();
 
+    /* ========== PixivUserscriptI18n: shared userscript i18n runtime ==========
+     * Same-origin Pixiv userscripts share localStorage + BroadcastChannel state
+     * so standalone installs, parallel installs, and bundle installs stay aligned.
+     * Within a single sandbox (e.g. the All-in-One bundle), all modules share the
+     * same instance via window.__PixivUserscriptI18n_v1__ so a single switch toggle
+     * updates every module without relying on BroadcastChannel delivery.
+     * ------------------------------------------------------------------------ */
+    const PixivUserscriptI18n = (() => {
+        const SHARED_KEY = '__PixivUserscriptI18n_v1__';
+        if (typeof window !== 'undefined' && window[SHARED_KEY]) {
+            return window[SHARED_KEY];
+        }
+        const LS_KEY = 'pixiv_userscript_lang';
+        const GM_KEY = 'pixiv_userscript_lang';
+        const BC_NAME = '__pixiv_userscript_lang_v1__';
+        const SUPPORTED = ['en-US', 'zh-CN'];
+        const DEFAULT_LANG = 'en-US';
+
+        let DICT = { 'en-US': {}, 'zh-CN': {} };
+        let currentLang = null;
+        const listeners = new Set();
+        let bc = null;
+
+        function normalize(lang) {
+            if (!lang) return null;
+            const tag = String(lang).trim().replace('_', '-');
+            if (SUPPORTED.indexOf(tag) >= 0) return tag;
+            const language = tag.split('-')[0].toLowerCase();
+            for (let i = 0; i < SUPPORTED.length; i += 1) {
+                if (SUPPORTED[i].toLowerCase().startsWith(language + '-')) return SUPPORTED[i];
+            }
+            return null;
+        }
+
+        function readInitialLang() {
+            try {
+                const stored = normalize(localStorage.getItem(LS_KEY));
+                if (stored) return stored;
+            } catch (e) {}
+            try {
+                if (typeof GM_getValue === 'function') {
+                    const stored = normalize(GM_getValue(GM_KEY, null));
+                    if (stored) return stored;
+                }
+            } catch (e) {}
+            return normalize(navigator.language) || DEFAULT_LANG;
+        }
+
+        function notify(next) {
+            listeners.forEach(fn => {
+                try {
+                    fn(next);
+                } catch (e) {
+                    console.error('[PixivUserscriptI18n]', e);
+                }
+            });
+        }
+
+        function ensureInit() {
+            if (currentLang) return;
+            currentLang = readInitialLang();
+            try {
+                if (typeof BroadcastChannel !== 'undefined') {
+                    bc = new BroadcastChannel(BC_NAME);
+                    bc.addEventListener('message', ev => {
+                        if (!ev || !ev.data || ev.data.type !== 'lang-changed') return;
+                        const next = normalize(ev.data.lang);
+                        if (next && next !== currentLang) {
+                            applyLang(next, false);
+                        }
+                    });
+                }
+            } catch (e) {}
+            try {
+                window.addEventListener('storage', ev => {
+                    if (ev.key !== LS_KEY) return;
+                    const next = normalize(ev.newValue);
+                    if (next && next !== currentLang) {
+                        applyLang(next, false);
+                    }
+                });
+            } catch (e) {}
+            // Cross-sandbox polling fallback: standalone userscripts each run
+            // in a separate Tampermonkey sandbox; BroadcastChannel delivery
+            // between sandboxes is unreliable and the storage event never
+            // fires within the same browsing context. Polling every ~1s
+            // picks up any change made by a sibling script.
+            try {
+                setInterval(() => {
+                    try {
+                        const stored = normalize(localStorage.getItem(LS_KEY));
+                        if (stored && stored !== currentLang) {
+                            applyLang(stored, false);
+                        }
+                    } catch (e) {}
+                }, 1000);
+            } catch (e) {}
+        }
+
+        function applyLang(lang, broadcast) {
+            const next = normalize(lang) || DEFAULT_LANG;
+            currentLang = next;
+            if (broadcast) {
+                try {
+                    localStorage.setItem(LS_KEY, next);
+                } catch (e) {}
+                try {
+                    if (typeof GM_setValue === 'function') GM_setValue(GM_KEY, next);
+                } catch (e) {}
+                if (bc) {
+                    try {
+                        bc.postMessage({ type: 'lang-changed', lang: next });
+                    } catch (e) {}
+                }
+            }
+            notify(next);
+        }
+
+        function interpolate(template, args) {
+            if (!args) return String(template);
+            if (Array.isArray(args)) {
+                return String(template).replace(/\{(\d+)\}/g, (match, index) => {
+                    const idx = parseInt(index, 10);
+                    return idx < args.length ? String(args[idx]) : match;
+                });
+            }
+            return String(template).replace(/\{([a-zA-Z0-9_.-]+)\}/g, (match, name) => {
+                return Object.prototype.hasOwnProperty.call(args, name) ? String(args[name]) : match;
+            });
+        }
+
+        function t(key, fallback, args) {
+            ensureInit();
+            const active = DICT[currentLang] || {};
+            let template = Object.prototype.hasOwnProperty.call(active, key) ? active[key] : null;
+            if (template == null) {
+                const defaults = DICT[DEFAULT_LANG] || {};
+                template = Object.prototype.hasOwnProperty.call(defaults, key) ? defaults[key] : null;
+            }
+            if (template == null) {
+                template = fallback != null ? fallback : key;
+            }
+            if (typeof template === 'function') {
+                return template(args || {});
+            }
+            return interpolate(template, args);
+        }
+
+        function register(dict) {
+            if (!dict || typeof dict !== 'object') return;
+            Object.keys(dict).forEach(lang => {
+                DICT[lang] = Object.assign({}, DICT[lang] || {}, dict[lang] || {});
+            });
+        }
+
+        function onChange(fn) {
+            listeners.add(fn);
+            return () => listeners.delete(fn);
+        }
+
+        function setLang(lang) {
+            ensureInit();
+            applyLang(lang, true);
+        }
+
+        function getLang() {
+            ensureInit();
+            return currentLang;
+        }
+
+        function listSupported() {
+            return SUPPORTED.slice();
+        }
+
+        function enrichFromBackend(serverBase) {
+            if (!serverBase || typeof GM_xmlhttpRequest !== 'function') return;
+            SUPPORTED.forEach(lang => {
+                try {
+                    GM_xmlhttpRequest({
+                        method: 'GET',
+                        url: serverBase.replace(/\/$/, '') + '/api/i18n/messages/userscript?lang=' + encodeURIComponent(lang),
+                        timeout: 3000,
+                        onload: res => {
+                            if (res.status !== 200) return;
+                            try {
+                                const data = JSON.parse(res.responseText);
+                                if (!data || !data.messages) return;
+                                const incoming = {};
+                                incoming[lang] = data.messages;
+                                register(incoming);
+                                if (lang === currentLang) notify(currentLang);
+                            } catch (e) {}
+                        }
+                    });
+                } catch (e) {}
+            });
+        }
+
+        const api = {
+            register,
+            t,
+            onChange,
+            setLang,
+            getLang,
+            listSupported,
+            enrichFromBackend
+        };
+        try {
+            if (typeof window !== 'undefined') window[SHARED_KEY] = api;
+        } catch (e) {}
+        return api;
+    })();
+
+    PixivUserscriptI18n.register({
+        'en-US': {
+            'switcher.label': 'Language',
+            'common.dialog.unauthorized': 'Backend requires login. Opening login page...',
+            'common.dialog.connect-notice': 'Pixiv download script first-run hint\n\nIf you use an external server instead of localhost, replace this userscript header line:\n  // @connect      YOUR_SERVER_HOST\nwith your real server IP or domain, for example:\n  // @connect      192.168.1.100\n\nPath: Tampermonkey dashboard -> target script -> Edit -> Save\n\nOr use the web UI directly:\n{serverBase}/login.html\n\n(This hint is shown only once)',
+            'common.option.verify-history-files.tooltip': 'Checks whether the recorded directory exists, whether it is empty, and whether it contains image files. Invalid records will be downloaded again.',
+            'common.status.ready': 'Ready',
+            'common.queue.empty': 'Queue is empty',
+            'common.current.none': 'None',
+            'common.current.label': 'Current download:',
+            'common.queue.label': 'Download Queue:',
+            'common.button.pause': '⏸️ Pause',
+            'common.button.resume': '▶️ Resume',
+            'common.action.collapse': 'Collapse',
+            'common.action.remove': 'Remove from queue',
+            'common.action.open-artwork': 'Open artwork page',
+            'common.stats.summary': 'Queue: {pending} | Success: {success} | Failed: {failed} | Active: {active} | Skipped: {skipped}',
+            'common.progress.downloaded': 'Downloaded: {count}/{total}',
+            'common.progress.current': 'Downloaded {count} / {total}',
+            'common.status.idle': 'Pending',
+            'common.status.pending': 'Pending',
+            'common.status.downloading': 'Downloading',
+            'common.status.completed': 'Completed',
+            'common.status.failed': 'Failed',
+            'common.status.paused': 'Paused',
+            'common.status.skipped': 'Skipped',
+            'common.quota.summary': 'Quota: {used}/{max} artworks',
+            'common.quota.reset': ' | resets in: {time}',
+            'common.archive.limit-title': 'Download limit reached',
+            'common.archive.restore-title': 'An unfinished archive is available',
+            'common.archive.preparing': 'Preparing downloaded files, please wait...',
+            'common.archive.expired': 'Download link expired',
+            'common.archive.empty': 'No files available for packaging',
+            'common.archive.ready': 'Archive is ready:',
+            'common.archive.download-link': 'Download Archive',
+            'common.archive.validity': 'Valid for: {time}',
+            'user.title': '🖼️ Pixiv User Batch Downloader',
+            'user.fab.title': 'User Batch Downloader',
+            'user.setting.interval': 'Artwork interval:',
+            'user.setting.image-delay': 'Image delay:',
+            'user.setting.concurrent': 'Max concurrency:',
+            'user.setting.skip-history': 'Skip download history',
+            'user.setting.r18-only': 'R18 only',
+            'user.setting.verify-history-files': 'Verify saved directory',
+            'user.setting.bookmark': 'Auto-bookmark after download',
+            'user.setting.server': 'Server URL:',
+            'user.button.fetch-all': '📥 Fetch all artworks by this author',
+            'user.button.fetch-new': '🆕 Fetch and download only new artworks',
+            'user.button.start': '🚀 Start Batch Download',
+            'user.button.retry': '🔁 Retry Failed Artworks',
+            'user.button.export': '📤 Export Download List',
+            'user.button.export-failed': '📋 Export Undownloaded List',
+            'user.button.clear': '🗑️ Clear Queue',
+            'user.title.user-id': '🖼️ User: {id}',
+            'user.title.user-name': '🖼️ User: {name} ({id})',
+            'user.alert.backend-unavailable': 'Backend is unavailable. If you use a non-localhost server, replace @connect YOUR_SERVER_HOST in the userscript header as described in README.',
+            'user.alert.no-user-id': 'User ID was not detected',
+            'user.alert.no-failed': 'There are no failed artworks right now.',
+            'user.alert.no-undownloaded': 'There are no undownloaded artworks.',
+            'user.alert.queue-empty-export': 'Queue is empty. Nothing to export.',
+            'user.confirm.clear': 'Force clear the queue?',
+            'user.status.started': 'Batch download started ({concurrent} concurrent, {interval}ms interval)',
+            'user.status.finished': 'Batch download finished',
+            'user.status.finished-packing': 'Batch download finished. Preparing archive...',
+            'user.status.fetching-meta': 'Fetching info: {id}',
+            'user.status.downloading': 'Downloading: {title}',
+            'user.status.skipped-existing': 'Skipped: {title} (already downloaded)',
+            'user.status.failed-missing': 'Failed: {title} (missing files)',
+            'user.status.completed': 'Completed: {title}',
+            'user.status.failed': 'Failed: {title}',
+            'user.status.need-login-stop': 'Login required. Download stopped',
+            'user.status.quota-exceeded': 'Download limit reached',
+            'user.status.error': 'Error: {title}',
+            'user.status.pause-waiting': 'Pausing... waiting for {count} active task(s)',
+            'user.status.paused': 'Paused',
+            'user.status.resumed': 'Resumed',
+            'user.status.cleared': 'Queue was force-cleared',
+            'user.status.fetching-list': 'Fetching artwork list...',
+            'user.status.no-artworks': 'This user has no artworks',
+            'user.status.fetch-success': 'Fetched {total} artworks, {added} added',
+            'user.status.fetch-failed': 'Failed to fetch artwork list: {message}',
+            'user.status.exported-undownloaded': 'Exported {count} undownloaded artworks',
+            'user.status.exported': 'Export succeeded',
+            'user.status.need-login-refresh': 'Login required. Please log in and refresh the page',
+            'user.menu.open': 'Force open the download panel'
+        },
+        'zh-CN': {
+            'switcher.label': '语言',
+            'common.dialog.unauthorized': '后端服务需要登录验证，即将为您打开登录页面...',
+            'common.dialog.connect-notice': 'Pixiv 下载脚本初始化提示\n\n如果您使用外部服务器（非 localhost），需将脚本头部的：\n  // @connect      YOUR_SERVER_HOST\n替换为实际的服务器 IP 或域名，例如：\n  // @connect      192.168.1.100\n\n修改路径：Tampermonkey 管理面板 -> 对应脚本 -> 编辑 -> 保存\n\n或者直接通过网页端下载作品（无需脚本）：\n{serverBase}/login.html\n\n（此提示只显示一次）',
+            'common.option.verify-history-files.tooltip': '通过检查记录的目录是否存在、文件夹是否为空、文件夹中的文件是否包含图片来判断是否有效，如果无效则会重新下载',
+            'common.status.ready': '准备就绪',
+            'common.queue.empty': '队列为空',
+            'common.current.none': '无',
+            'common.current.label': '当前下载:',
+            'common.queue.label': '下载队列:',
+            'common.button.pause': '⏸️ 暂停下载',
+            'common.button.resume': '▶️ 继续下载',
+            'common.action.collapse': '收起',
+            'common.action.remove': '从队列移除',
+            'common.action.open-artwork': '打开作品页面',
+            'common.stats.summary': '队列: {pending} | 成功: {success} | 失败: {failed} | 进行中: {active} | 跳过: {skipped}',
+            'common.progress.downloaded': '已下载: {count}/{total}',
+            'common.progress.current': '已下载 {count} 张 / 共 {total} 张',
+            'common.status.idle': '等待中',
+            'common.status.pending': '等待中',
+            'common.status.downloading': '下载中',
+            'common.status.completed': '已完成',
+            'common.status.failed': '失败',
+            'common.status.paused': '暂停中',
+            'common.status.skipped': '已跳过',
+            'common.quota.summary': '配额：{used}/{max} 个作品',
+            'common.quota.reset': ' | 重置剩余：{time}',
+            'common.archive.limit-title': '已达到下载限额',
+            'common.archive.restore-title': '已有未下载的压缩包',
+            'common.archive.preparing': '正在打包已下载文件，请稍候...',
+            'common.archive.expired': '下载链接已过期',
+            'common.archive.empty': '暂无可打包文件',
+            'common.archive.ready': '压缩包已就绪：',
+            'common.archive.download-link': '下载压缩包',
+            'common.archive.validity': '有效期：{time}',
+            'user.title': '🖼️ Pixiv User 批量下载器',
+            'user.fab.title': 'User批量下载器',
+            'user.setting.interval': '作品间隔:',
+            'user.setting.image-delay': '图片间隔:',
+            'user.setting.concurrent': '最大并发数:',
+            'user.setting.skip-history': '跳过历史下载',
+            'user.setting.r18-only': '仅下载R18作品',
+            'user.setting.verify-history-files': '实际目录检测',
+            'user.setting.bookmark': '下载后自动收藏',
+            'user.setting.server': '服务器地址:',
+            'user.button.fetch-all': '📥 获取该画师所有作品',
+            'user.button.fetch-new': '🆕 获取并仅下载新作品',
+            'user.button.start': '🚀 开始批量下载',
+            'user.button.retry': '🔁 重新下载失败的作品',
+            'user.button.export': '📤 导出下载列表',
+            'user.button.export-failed': '📋 导出未下载列表',
+            'user.button.clear': '🗑️ 清除队列',
+            'user.title.user-id': '🖼️ User: {id}',
+            'user.title.user-name': '🖼️ User: {name}({id})',
+            'user.alert.backend-unavailable': '后端服务不可用，如果您使用是非localhost地址，请遵循README说明替换 脚本头部 @connect YOUR_SERVER_HOST 为您的服务器地址',
+            'user.alert.no-user-id': '未检测到用户ID',
+            'user.alert.no-failed': '当前没有失败的作品！',
+            'user.alert.no-undownloaded': '没有未下载的作品',
+            'user.alert.queue-empty-export': '队列为空，无内容可导出',
+            'user.confirm.clear': '确认强制清除队列？',
+            'user.status.started': '开始下载 (并发:{concurrent}, 间隔:{interval}ms)',
+            'user.status.finished': '批量下载结束',
+            'user.status.finished-packing': '批量下载结束，正在打包文件...',
+            'user.status.fetching-meta': '获取信息：{id}',
+            'user.status.downloading': '下载中：{title}',
+            'user.status.skipped-existing': '跳过：{title}（已下载）',
+            'user.status.failed-missing': '失败：{title} (文件缺失)',
+            'user.status.completed': '完成：{title}',
+            'user.status.failed': '失败：{title}',
+            'user.status.need-login-stop': '需要登录，已停止下载',
+            'user.status.quota-exceeded': '已达到下载限额',
+            'user.status.error': '错误：{title}',
+            'user.status.pause-waiting': '正在暂停... (等待 {count} 个当前任务完成)',
+            'user.status.paused': '已暂停',
+            'user.status.resumed': '继续下载',
+            'user.status.cleared': '已强制清除队列',
+            'user.status.fetching-list': '正在获取作品列表...',
+            'user.status.no-artworks': '该用户没有作品',
+            'user.status.fetch-success': '获取成功：共 {total} 个作品，新增 {added} 个',
+            'user.status.fetch-failed': '获取列表失败: {message}',
+            'user.status.exported-undownloaded': '已导出 {count} 个未下载作品',
+            'user.status.exported': '导出成功',
+            'user.status.need-login-refresh': '需要登录，请登录后刷新页面',
+            'user.menu.open': '强制打开下载面板'
+        }
+    });
+
+    const t = (key, fallback, args) => PixivUserscriptI18n.t(key, fallback, args);
+
+    const STATUS_TRANSLATORS = [
+        [/^队列为空$/, () => t('common.queue.empty', '队列为空')],
+        [/^开始下载 \(并发:(\d+), 间隔:(\d+)ms\)$/, (_, concurrent, interval) => t('user.status.started', '开始下载 (并发:{concurrent}, 间隔:{interval}ms)', { concurrent: concurrent, interval: interval })],
+        [/^批量下载结束$/, () => t('user.status.finished', '批量下载结束')],
+        [/^批量下载结束，正在打包文件\.\.\.$/, () => t('user.status.finished-packing', '批量下载结束，正在打包文件...')],
+        [/^获取信息：(.+)$/, (_, id) => t('user.status.fetching-meta', '获取信息：{id}', { id: id })],
+        [/^下载中：(.+)$/, (_, title) => t('user.status.downloading', '下载中：{title}', { title: title })],
+        [/^跳过：(.+)（已下载）$/, (_, title) => t('user.status.skipped-existing', '跳过：{title}（已下载）', { title: title })],
+        [/^失败：(.+) \(文件缺失\)$/, (_, title) => t('user.status.failed-missing', '失败：{title} (文件缺失)', { title: title })],
+        [/^完成：(.+)$/, (_, title) => t('user.status.completed', '完成：{title}', { title: title })],
+        [/^失败：(.+)$/, (_, title) => t('user.status.failed', '失败：{title}', { title: title })],
+        [/^需要登录，已停止下载$/, () => t('user.status.need-login-stop', '需要登录，已停止下载')],
+        [/^已达到下载限额$/, () => t('user.status.quota-exceeded', '已达到下载限额')],
+        [/^错误：(.+)$/, (_, title) => t('user.status.error', '错误：{title}', { title: title })],
+        [/^正在暂停\.\.\. \(等待 (\d+) 个当前任务完成\)$/, (_, count) => t('user.status.pause-waiting', '正在暂停... (等待 {count} 个当前任务完成)', { count: count })],
+        [/^已暂停$/, () => t('user.status.paused', '已暂停')],
+        [/^继续下载$/, () => t('user.status.resumed', '继续下载')],
+        [/^已强制清除队列$/, () => t('user.status.cleared', '已强制清除队列')],
+        [/^正在获取作品列表\.\.\.$/, () => t('user.status.fetching-list', '正在获取作品列表...')],
+        [/^该用户没有作品$/, () => t('user.status.no-artworks', '该用户没有作品')],
+        [/^获取成功：共 (\d+) 个作品，新增 (\d+) 个$/, (_, total, added) => t('user.status.fetch-success', '获取成功：共 {total} 个作品，新增 {added} 个', { total: total, added: added })],
+        [/^获取列表失败: (.+)$/, (_, message) => t('user.status.fetch-failed', '获取列表失败: {message}', { message: message })],
+        [/^已导出 (\d+) 个未下载作品$/, (_, count) => t('user.status.exported-undownloaded', '已导出 {count} 个未下载作品', { count: count })],
+        [/^导出成功$/, () => t('user.status.exported', '导出成功')],
+        [/^需要登录，请登录后刷新页面$/, () => t('user.status.need-login-refresh', '需要登录，请登录后刷新页面')]
+    ];
+
+    function translateStatusText(text) {
+        const source = String(text ?? '');
+        if (!source.trim()) return source;
+        for (let i = 0; i < STATUS_TRANSLATORS.length; i += 1) {
+            const [pattern, translate] = STATUS_TRANSLATORS[i];
+            if (!pattern.test(source)) continue;
+            pattern.lastIndex = 0;
+            return source.replace(pattern, translate);
+        }
+        return source;
+    }
+
+    function buildLangSwitcher() {
+        const wrapper = document.createElement('span');
+        wrapper.style.cssText = 'display:inline-flex;align-items:center;gap:6px;flex-shrink:0;';
+        const select = document.createElement('select');
+        select.title = t('switcher.label', '语言');
+        select.style.cssText = 'padding:2px 4px;border:1px solid #ccc;border-radius:4px;background:#fff;color:#333;font-size:11px;';
+        PixivUserscriptI18n.listSupported().forEach(lang => {
+            const option = document.createElement('option');
+            option.value = lang;
+            option.textContent = lang === 'zh-CN' ? '简体中文' : 'English';
+            option.selected = lang === PixivUserscriptI18n.getLang();
+            select.appendChild(option);
+        });
+        select.addEventListener('change', () => PixivUserscriptI18n.setLang(select.value));
+        wrapper.appendChild(select);
+        return wrapper;
+    }
+
     // 首次启动提示（跨脚本只显示一次）
     function checkExternalServerNotice() {
         // 兼容旧的 GM_setValue 标记：历史用户已看过则继续跳过
         if (GM_getValue('pixiv_connect_notice_shown', false)) return;
         PromptGuard.once('connect-notice', { persist: true }, () => {
             GM_setValue('pixiv_connect_notice_shown', true);
-            alert(
-                'Pixiv 下载脚本初始化提示\n\n' +
-                '如果您使用外部服务器（非 localhost），需将三个脚本头部的：\n' +
-                '  // @connect      YOUR_SERVER_HOST\n' +
-                '替换为实际的服务器 IP 或域名，例如：\n' +
-                '  // @connect      192.168.1.100\n\n' +
-                '修改路径：Tampermonkey 管理面板 → 对应脚本 → 编辑 → 保存\n\n' +
-                '或者直接通过网页端下载作品（无需脚本）：\n' +
-                serverBase + '/login.html\n\n' +
-                '（此提示只显示一次）'
-            );
+            alert(t('common.dialog.connect-notice', null, { serverBase: serverBase }));
         });
     }
 
@@ -139,7 +574,7 @@
     // 处理 solo 模式未登录（401）：跨脚本去重交给 PromptGuard
     function handleUnauthorized() {
         PromptGuard.once('unauthorized', { ttlMs: 60000 }, () => {
-            alert('后端服务需要登录验证，即将为您打开登录页面...');
+            alert(t('common.dialog.unauthorized', '后端服务需要登录验证，即将为您打开登录页面...'));
             window.open(serverBase + '/login.html', '_blank');
         });
     }
@@ -814,7 +1249,7 @@
                 return;
             }
             if (!await Api.checkBackend()) {
-                alert('后端服务不可用，如果您使用是非localhost地址，请遵循README说明替换 脚本头部 @connect YOUR_SERVER_HOST 为您的服务器地址');
+            alert(t('user.alert.backend-unavailable', '后端服务不可用，如果您使用是非localhost地址，请遵循README说明替换 脚本头部 @connect YOUR_SERVER_HOST 为您的服务器地址'));
                 return;
             }
 
@@ -1321,17 +1756,18 @@
             });
             const collapseBtn = $el('button', {
                 innerText: '◀',
-                title: '收起',
+                title: t('common.action.collapse', '收起'),
                 style: { background: 'none', border: '1px solid #ccc', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', padding: '2px 6px', color: '#666', flexShrink: '0' }
             });
             const title = $el('div', {
                 id: 'batch-ui-title',
-                innerText: '🖼️ Pixiv User 批量下载器',
+                innerText: t('user.title', '🖼️ Pixiv User 批量下载器'),
                 style: { fontWeight: 'bold', color: '#333', textAlign: 'center', fontSize: '16px', flex: '1' }
             });
             collapseBtn.addEventListener('click', () => this.toggleCollapse());
             titleRow.appendChild(collapseBtn);
             titleRow.appendChild(title);
+            titleRow.appendChild(buildLangSwitcher());
 
             // 收起后的悬浮按钮
             const existingFab = document.getElementById('user-batch-mini-fab');
@@ -1339,18 +1775,24 @@
             const miniFab = $el('button', {
                 id: 'user-batch-mini-fab',
                 innerText: '🖼️',
-                title: 'User批量下载器',
+                title: t('user.fab.title', 'User批量下载器'),
                 style: { display: 'none', position: 'fixed', top: '110px', right: '20px', zIndex: '1000001', background: '#28a745', color: 'white', border: 'none', borderRadius: '50%', width: '40px', height: '40px', cursor: 'pointer', fontSize: '18px', boxShadow: '0 2px 8px rgba(0,0,0,0.3)', lineHeight: '40px', textAlign: 'center', padding: '0' }
             });
             miniFab.addEventListener('click', () => this.toggleCollapse());
             document.body.appendChild(miniFab);
 
             const status = $el('div', {
-                innerText: '准备就绪',
+                innerText: t('common.status.ready', '准备就绪'),
                 style: {marginBottom: '10px', color: '#666', fontSize: '12px', textAlign: 'center'}
             });
             const stats = $el('div', {
-                innerText: '队列: 0 | 成功: 0 | 失败: 0 | 进行中: 0 | 跳过: 0',
+                innerText: t('common.stats.summary', '队列: {pending} | 成功: {success} | 失败: {failed} | 进行中: {active} | 跳过: {skipped}', {
+                    pending: 0,
+                    success: 0,
+                    failed: 0,
+                    active: 0,
+                    skipped: 0
+                }),
                 style: {
                     marginBottom: '10px',
                     color: '#007bff',
@@ -1363,43 +1805,43 @@
             const settings = $el('div', {style: {marginBottom: '15px'}});
             settings.innerHTML = `
                 <div style="display: flex; align-items: center; margin-bottom: 8px;">
-                    <label style="font-size: 12px; margin-right: 10px; width: 120px;">作品间隔:</label>
+                    <label style="font-size: 12px; margin-right: 10px; width: 120px;">${t('user.setting.interval', '作品间隔:')}</label>
                     <input type="number" id="download-interval" min="0" value="${CONFIG.DEFAULT_INTERVAL}"
                            style="width: 60px; padding: 4px; border: 1px solid #ddd; border-radius: 4px 0 0 4px;">
                     <button id="interval-unit-btn" style="padding: 4px 7px; font-size: 12px; font-weight: bold; border: 1px solid #ddd; border-left: none; border-radius: 0 4px 4px 0; background: #f0f0f0; cursor: pointer;">s</button>
                 </div>
                 <div style="display: flex; align-items: center; margin-bottom: 8px;">
-                    <label style="font-size: 12px; margin-right: 10px; width: 120px;">图片间隔:</label>
+                    <label style="font-size: 12px; margin-right: 10px; width: 120px;">${t('user.setting.image-delay', '图片间隔:')}</label>
                     <input type="number" id="image-delay" min="0" value="0"
                            style="width: 60px; padding: 4px; border: 1px solid #ddd; border-radius: 4px 0 0 4px;">
                     <button id="image-delay-unit-btn" style="padding: 4px 7px; font-size: 12px; font-weight: bold; border: 1px solid #ddd; border-left: none; border-radius: 0 4px 4px 0; background: #f0f0f0; cursor: pointer;">ms</button>
                 </div>
                 <div style="display: flex; align-items: center; margin-bottom: 8px;">
-                    <label style="font-size: 12px; margin-right: 10px; width: 120px;">最大并发数:</label>
+                    <label style="font-size: 12px; margin-right: 10px; width: 120px;">${t('user.setting.concurrent', '最大并发数:')}</label>
                     <input type="number" id="max-concurrent" min="1" value="${CONFIG.DEFAULT_CONCURRENT}"
                            style="width: 60px; padding: 4px; border: 1px solid #ddd; border-radius: 4px;">
                 </div>
                 <div style="display: flex; align-items: center;">
                     <label style="font-size: 12px; margin-right: 10px; width: 120px; cursor:pointer;">
-                        <input type="checkbox" id="skip-history" style="vertical-align: middle;"> 跳过历史下载
+                        <input type="checkbox" id="skip-history" style="vertical-align: middle;"> ${t('user.setting.skip-history', '跳过历史下载')}
                     </label>
                     <label style="font-size: 12px; cursor:pointer; margin-left:15px; color:#d63384;">
-                        <input type="checkbox" id="r18-only" style="vertical-align: middle;"> 仅下载R18作品
+                        <input type="checkbox" id="r18-only" style="vertical-align: middle;"> ${t('user.setting.r18-only', '仅下载R18作品')}
                     </label>
                 </div>
                 <div id="verify-history-files-row" style="display:none; align-items:center; margin-top: 8px; margin-bottom: 8px;">
                     <label style="font-size: 12px; cursor:pointer;">
-                        <input type="checkbox" id="verify-history-files" style="vertical-align: middle;"> 实际目录检测
+                        <input type="checkbox" id="verify-history-files" style="vertical-align: middle;"> ${t('user.setting.verify-history-files', '实际目录检测')}
                     </label>
-                    ${createHelpIcon(VERIFY_HISTORY_FILES_TOOLTIP).outerHTML}
+                    ${createHelpIcon(t('common.option.verify-history-files.tooltip', VERIFY_HISTORY_FILES_TOOLTIP)).outerHTML}
                 </div>
                 <div style="display: flex; align-items: center; margin-top: 8px; margin-bottom: 8px;">
                     <label style="font-size: 12px; cursor:pointer;">
-                        <input type="checkbox" id="bookmark-after-dl" style="vertical-align: middle;"> 下载后自动收藏
+                        <input type="checkbox" id="bookmark-after-dl" style="vertical-align: middle;"> ${t('user.setting.bookmark', '下载后自动收藏')}
                     </label>
                 </div>
                 <div style="display: flex; align-items: center; margin-bottom: 10px;">
-                    <label style="font-size: 12px; margin-right: 10px; width: 120px;">服务器地址:</label>
+                    <label style="font-size: 12px; margin-right: 10px; width: 120px;">${t('user.setting.server', '服务器地址:')}</label>
                     <input type="text" id="server-base-url" value="${serverBase}" placeholder="http://localhost:6999" style="flex: 1; padding: 4px; border: 1px solid #ddd; border-radius: 4px; font-size: 12px;">
                 </div>
             `;
@@ -1415,28 +1857,28 @@
             const buttons = [
                 {
                     id: 'fetch-all-btn',
-                    text: '📥 获取该画师所有作品',
+                    text: t('user.button.fetch-all', '📥 获取该画师所有作品'),
                     bgColor: '#17a2b8',
                     onClick: () => this.handleFetch(false)
                 },
                 {
                     id: 'fetch-new-btn',
-                    text: '🆕 获取并仅下载新作品',
+                    text: t('user.button.fetch-new', '🆕 获取并仅下载新作品'),
                     bgColor: '#6610f2',
                     onClick: () => this.handleFetch(true)
                 },
-                {id: 'start-btn', text: '🚀 开始批量下载', bgColor: '#28a745', onClick: () => this.handleStart()},
-                {id: 'retry-btn', text: '🔁 重新下载失败的作品', bgColor: '#17a2b8', onClick: () => this.handleRetry()},
+                {id: 'start-btn', text: t('user.button.start', '🚀 开始批量下载'), bgColor: '#28a745', onClick: () => this.handleStart()},
+                {id: 'retry-btn', text: t('user.button.retry', '🔁 重新下载失败的作品'), bgColor: '#17a2b8', onClick: () => this.handleRetry()},
                 {
                     id: 'pause-btn',
-                    text: '⏸️ 暂停下载',
+                    text: t('common.button.pause', '⏸️ 暂停下载'),
                     bgColor: '#ffc107',
                     onClick: () => this.handlePause(),
                     disabled: true
                 },
-                {id: 'export-btn', text: '📤 导出下载列表', bgColor: '#007bff', onClick: () => this.handleExport()},
-                {id: 'export-failed-btn', text: '📋 导出未下载列表', bgColor: '#6610f2', onClick: () => this.handleExportFailed()},
-                {id: 'clear-btn', text: '🗑️ 清除队列', bgColor: '#6c757d', onClick: () => this.handleClear()}
+                {id: 'export-btn', text: t('user.button.export', '📤 导出下载列表'), bgColor: '#007bff', onClick: () => this.handleExport()},
+                {id: 'export-failed-btn', text: t('user.button.export-failed', '📋 导出未下载列表'), bgColor: '#6610f2', onClick: () => this.handleExportFailed()},
+                {id: 'clear-btn', text: t('user.button.clear', '🗑️ 清除队列'), bgColor: '#6c757d', onClick: () => this.handleClear()}
             ];
 
             buttons.forEach(btnConfig => {
@@ -1468,7 +1910,7 @@
                     fontSize: '11px'
                 }
             });
-            currentDownload.innerHTML = '<strong>当前下载:</strong> 无';
+            currentDownload.innerHTML = `<strong>${t('common.current.label', '当前下载:')}</strong> ${t('common.current.none', '无')}`;
 
             const queueContainer = $el('div', {
                 style: {
@@ -1612,10 +2054,10 @@
             const pct = Math.min(100, Math.round(info.artworksUsed / info.maxArtworks * 100));
             const color = pct >= 90 ? '#dc3545' : pct >= 70 ? '#ffc107' : '#28a745';
             const resetTxt = info.resetSeconds > 0
-                ? ` | 重置剩余：${this._fmtSeconds(info.resetSeconds)}` : '';
+                ? t('common.quota.reset', ' | 重置剩余：{time}', { time: this._fmtSeconds(info.resetSeconds) }) : '';
             bar.style.display = 'block';
             bar.innerHTML = `<div style="display:flex;align-items:center;gap:6px;">
-              <span style="white-space:nowrap;">配额：${info.artworksUsed}/${info.maxArtworks} 个作品</span>
+              <span style="white-space:nowrap;">${t('common.quota.summary', '配额：{used}/{max} 个作品', { used: info.artworksUsed, max: info.maxArtworks })}</span>
               <div style="flex:1;height:5px;background:#e0e0e0;border-radius:3px;overflow:hidden;">
                 <div style="height:100%;width:${pct}%;background:${color};border-radius:3px;"></div>
               </div>
@@ -1629,10 +2071,10 @@
             const card = document.getElementById('pixiv-archive-card');
             if (!card) return;
             card.style.display = 'block';
-            card.innerHTML = `<div style="font-weight:bold;color:#856404;margin-bottom:6px;">${title}</div>
-              <div id="pixiv-ac-status" style="font-size:11px;color:#666;">正在打包已下载文件，请稍候...</div>
+            card.innerHTML = `<div style="font-weight:bold;color:#856404;margin-bottom:6px;">${title === '已达到下载限额' ? t('common.archive.limit-title', '已达到下载限额') : title}</div>
+              <div id="pixiv-ac-status" style="font-size:11px;color:#666;">${t('common.archive.preparing', '正在打包已下载文件，请稍候...')}</div>
               <div id="pixiv-ac-dl" style="display:none;margin-top:6px;"></div>
-              <div id="pixiv-ac-expired" style="display:none;color:#dc3545;font-weight:bold;">下载链接已过期</div>`;
+              <div id="pixiv-ac-expired" style="display:none;color:#dc3545;font-weight:bold;">${t('common.archive.expired', '下载链接已过期')}</div>`;
 
             const token = data.archiveToken;
             const expireSec = data.archiveExpireSeconds || 3600;
@@ -1645,14 +2087,14 @@
             const card = document.getElementById('pixiv-archive-card');
             if (!card) return;
             card.style.display = 'block';
-            card.innerHTML = `<div style="font-weight:bold;color:#856404;margin-bottom:6px;">已有未下载的压缩包</div>
+            card.innerHTML = `<div style="font-weight:bold;color:#856404;margin-bottom:6px;">${t('common.archive.restore-title', '已有未下载的压缩包')}</div>
               <div id="pixiv-ac-status" style="font-size:11px;color:#666;"></div>
               <div id="pixiv-ac-dl" style="display:none;margin-top:6px;"></div>
-              <div id="pixiv-ac-expired" style="display:none;color:#dc3545;font-weight:bold;">下载链接已过期</div>`;
+              <div id="pixiv-ac-expired" style="display:none;color:#dc3545;font-weight:bold;">${t('common.archive.expired', '下载链接已过期')}</div>`;
             if (ready) {
                 this._activateArchiveDl(token, expireSec);
             } else {
-                document.getElementById('pixiv-ac-status').textContent = '正在打包已下载文件，请稍候...';
+                document.getElementById('pixiv-ac-status').textContent = t('common.archive.preparing', '正在打包已下载文件，请稍候...');
                 this._pollArchive(token, expireSec);
             }
         }
@@ -1673,7 +2115,7 @@
                 } else if (data.status === 'empty') {
                     clearInterval(this._archivePollTimer);
                     const status = document.getElementById('pixiv-ac-status');
-                    if (status) status.textContent = '暂无可打包文件';
+                    if (status) status.textContent = t('common.archive.empty', '暂无可打包文件');
                 }
             }, 2000);
         }
@@ -1682,19 +2124,19 @@
             clearInterval(this._archiveCountdownTimer);
             const statusEl = document.getElementById('pixiv-ac-status');
             const dlEl = document.getElementById('pixiv-ac-dl');
-            if (statusEl) statusEl.textContent = '压缩包已就绪：';
+            if (statusEl) statusEl.textContent = t('common.archive.ready', '压缩包已就绪：');
             if (dlEl) {
                 dlEl.style.display = 'block';
                 const filename = 'pixiv_download_' + token.substring(0, 8) + '.zip';
                 dlEl.innerHTML = `<a href="${CONFIG.ARCHIVE_DOWNLOAD_BASE}/${token}" download="${filename}"
                   style="display:inline-block;padding:5px 12px;background:#28a745;color:white;
                          border-radius:4px;text-decoration:none;font-size:12px;font-weight:bold;">
-                  下载压缩包
+                  ${t('common.archive.download-link', '下载压缩包')}
                 </a>
                 <span id="pixiv-ac-countdown" style="font-size:10px;color:#888;margin-left:8px;"></span>`;
                 let remaining = Math.max(0, parseInt(expireSec));
                 const el = () => document.getElementById('pixiv-ac-countdown');
-                if (el()) el().textContent = '有效期：' + this._fmtSeconds(remaining);
+                if (el()) el().textContent = t('common.archive.validity', '有效期：{time}', { time: this._fmtSeconds(remaining) });
                 this._archiveCountdownTimer = setInterval(() => {
                     remaining--;
                     if (remaining <= 0) {
@@ -1703,7 +2145,7 @@
                         if (dlEl) dlEl.style.display = 'none';
                         if (expired) expired.style.display = 'block';
                     } else {
-                        if (el()) el().textContent = '有效期：' + this._fmtSeconds(remaining);
+                        if (el()) el().textContent = t('common.archive.validity', '有效期：{time}', { time: this._fmtSeconds(remaining) });
                     }
                 }, 1000);
             }
@@ -1724,18 +2166,16 @@
             if (this.elements.title) {
                 let displayText;
                 if (userName) {
-                    // 显示格式：User: 用户名(用户ID)
-                    displayText = `User: ${userName}(${uid})`;
+                    displayText = t('user.title.user-name', '🖼️ User: {name}({id})', { name: userName, id: uid });
                 } else {
-                    // 如果还没有获取到用户名，只显示用户ID
-                    displayText = `User: ${uid}`;
+                    displayText = t('user.title.user-id', '🖼️ User: {id}', { id: uid });
                 }
-                this.elements.title.innerText = `🖼️ ${displayText}`;
+                this.elements.title.innerText = displayText;
             }
         }
 
         async handleFetch(onlyNew) {
-            if (!this.manager.userId) return alert('未检测到用户ID');
+            if (!this.manager.userId) return alert(t('user.alert.no-user-id', '未检测到用户ID'));
             this.setStatus('正在获取作品列表...', 'info');
             try {
                 const ids = await Api.getAllUserArtworkIds(this.manager.userId);
@@ -1763,7 +2203,7 @@
 
         handleRetry() {
             const failed = this.manager.queue.filter(q => q.status === 'failed');
-            if (!failed.length) return alert('当前没有失败的作品！');
+            if (!failed.length) return alert(t('user.alert.no-failed', '当前没有失败的作品！'));
             failed.forEach(q => {
                 q.status = 'pending';
                 q.lastMessage = '';
@@ -1778,7 +2218,7 @@
         handleExportFailed() {
             const items = this.manager.queue.filter(q => q.status !== 'completed');
             if (items.length === 0) {
-                alert('没有未下载的作品');
+                alert(t('user.alert.no-undownloaded', '没有未下载的作品'));
                 return;
             }
             const exportContent = items.map(item => `https://www.pixiv.net/artworks/${item.id}`).join('\n');
@@ -1795,12 +2235,12 @@
         }
 
         handleClear() {
-            if (confirm('确认强制清除队列？')) this.manager.stopAndClear(false);
+            if (confirm(t('user.confirm.clear', '确认强制清除队列？'))) this.manager.stopAndClear(false);
         }
 
         handleExport() {
             if (!this.manager.queue || this.manager.queue.length === 0) {
-                alert('队列为空，无内容可导出');
+                alert(t('user.alert.queue-empty-export', '队列为空，无内容可导出'));
                 return;
             }
             
@@ -1819,9 +2259,9 @@
 
         renderQueue(queue) {
             const node = this.elements.queueContainer;
-            node.innerHTML = '<div style="font-weight: bold; margin-bottom: 5px;">下载队列:</div>';
+            node.innerHTML = `<div style="font-weight: bold; margin-bottom: 5px;">${t('common.queue.label', '下载队列:')}</div>`;
             if (!queue || queue.length === 0) {
-                node.innerHTML += '<div style="color: #666; text-align: center;">队列为空</div>';
+                node.innerHTML += `<div style="color: #666; text-align: center;">${t('common.queue.empty', '队列为空')}</div>`;
                 return;
             }
             for (const q of queue) {
@@ -1835,12 +2275,12 @@
                     }
                 });
                 const progressHtml = this._createProgressHtml(q);
-                const desc = q.lastMessage || this._statusText(q.status);
+                const desc = translateStatusText(q.lastMessage || this._statusText(q.status));
                 const canRemove = q.status !== 'downloading';
                 const removeBtn = canRemove
-                    ? `<button data-remove-id="${q.id}" title="从队列移除" style="background:none;border:none;color:#aaa;cursor:pointer;font-size:11px;padding:1px 2px;line-height:1;">✕</button>`
+                    ? `<button data-remove-id="${q.id}" title="${t('common.action.remove', '从队列移除')}" style="background:none;border:none;color:#aaa;cursor:pointer;font-size:11px;padding:1px 2px;line-height:1;">✕</button>`
                     : '';
-                const linkBtn = `<a href="https://www.pixiv.net/artworks/${q.id}" target="_blank" title="打开作品页面" style="color:#007bff;font-size:11px;padding:1px 2px;text-decoration:none;line-height:1;">🔗</a>`;
+                const linkBtn = `<a href="https://www.pixiv.net/artworks/${q.id}" target="_blank" title="${t('common.action.open-artwork', '打开作品页面')}" style="color:#007bff;font-size:11px;padding:1px 2px;text-decoration:none;line-height:1;">🔗</a>`;
                 item.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;"><strong style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-right:4px;">${escapeHtml(q.title || 'ID: ' + q.id)}</strong><span style="display:flex;gap:1px;flex-shrink:0;">${linkBtn}${removeBtn}</span></div><div>ID: ${q.id} | <span style="color:${this._colorByStatus(q.status)};font-weight:bold;">${escapeHtml(desc)}</span></div>${progressHtml}`;
                 node.appendChild(item);
             }
@@ -1853,20 +2293,26 @@
         setCurrent(item) {
             const container = this.elements.currentDownload;
             if (!item) {
-                container.innerHTML = '<strong>当前下载:</strong> 无';
+                container.innerHTML = `<strong>${t('common.current.label', '当前下载:')}</strong> ${t('common.current.none', '无')}`;
                 return;
             }
             const progressHtml = this._createProgressHtml(item, true);
-            container.innerHTML = `<strong>当前下载:</strong> ${escapeHtml(item.title)} (ID: ${item.id})${progressHtml}`;
+            container.innerHTML = `<strong>${t('common.current.label', '当前下载:')}</strong> ${escapeHtml(item.title)} (ID: ${item.id})${progressHtml}`;
         }
 
         updateStats(stats) {
             const pendingCount = this.manager.queue.filter(q => ['pending', 'paused', 'idle'].includes(q.status)).length;
-            this.elements.stats.textContent = `队列: ${pendingCount} | 成功: ${stats.success} | 失败: ${stats.failed} | 进行中: ${stats.active} | 跳过: ${stats.skipped}`;
+            this.elements.stats.textContent = t('common.stats.summary', '队列: {pending} | 成功: {success} | 失败: {failed} | 进行中: {active} | 跳过: {skipped}', {
+                pending: pendingCount,
+                success: stats.success,
+                failed: stats.failed,
+                active: stats.active,
+                skipped: stats.skipped
+            });
         }
 
         setStatus(msg, type = 'info') {
-            this.elements.status.innerText = msg;
+            this.elements.status.innerText = translateStatusText(msg);
             const color = {
                 'info': '#007bff',
                 'success': '#28a745',
@@ -1879,7 +2325,9 @@
         updateButtonsState(isRunning, isPaused) {
             this.elements.startBtn.disabled = isRunning;
             this.elements.pauseBtn.disabled = !isRunning;
-            this.elements.pauseBtn.innerText = isPaused ? '▶️ 继续下载' : '⏸️ 暂停下载';
+            this.elements.pauseBtn.innerText = isPaused
+                ? t('common.button.resume', '▶️ 继续下载')
+                : t('common.button.pause', '⏸️ 暂停下载');
         }
 
         _colorByStatus(status) {
@@ -1894,13 +2342,13 @@
 
         _statusText(status) {
             return {
-                'idle': '等待中',
-                'pending': '等待中',
-                'downloading': '下载中',
-                'completed': '已完成',
-                'failed': '失败',
-                'paused': '暂停中',
-                'skipped': '已跳过'
+                'idle': t('common.status.idle', '等待中'),
+                'pending': t('common.status.pending', '等待中'),
+                'downloading': t('common.status.downloading', '下载中'),
+                'completed': t('common.status.completed', '已完成'),
+                'failed': t('common.status.failed', '失败'),
+                'paused': t('common.status.paused', '暂停中'),
+                'skipped': t('common.status.skipped', '已跳过')
             }[status] || status;
         }
 
@@ -1908,13 +2356,39 @@
             if (q.totalImages <= 0) return '';
             const downloadedCount = q.downloadedCount || 0;
             const progressPercent = Math.min(Math.round((downloadedCount / q.totalImages) * 100), 100);
-            return `<div style="margin-top: 3px;"><div style="display: flex; justify-content: space-between; font-size: 9px; margin-bottom: 2px;"><span>已下载: ${downloadedCount}/${q.totalImages}</span><span>${progressPercent}%</span></div><div style="width: 100%; height: ${isMain ? '6px' : '4px'}; background: #e0e0e0; border-radius: 2px; overflow: hidden;"><div style="height: 100%; background: ${isMain ? '#28a745' : '#007bff'}; width: ${progressPercent}%; transition: width 0.3s ease;"></div></div></div>`;
+            return `<div style="margin-top: 3px;"><div style="display: flex; justify-content: space-between; font-size: 9px; margin-bottom: 2px;"><span>${isMain ? t('common.progress.current', '已下载 {count} 张 / 共 {total} 张', { count: downloadedCount, total: q.totalImages }) : t('common.progress.downloaded', '已下载: {count}/{total}', { count: downloadedCount, total: q.totalImages })}</span><span>${progressPercent}%</span></div><div style="width: 100%; height: ${isMain ? '6px' : '4px'}; background: #e0e0e0; border-radius: 2px; overflow: hidden;"><div style="height: 100%; background: ${isMain ? '#28a745' : '#007bff'}; width: ${progressPercent}%; transition: width 0.3s ease;"></div></div></div>`;
         }
     }
 
     const ui = new UI();
     const manager = new DownloadManager(ui);
     ui.bindManager(manager);
+
+    PixivUserscriptI18n.onChange(() => {
+        if (ui.root) {
+            const collapsed = ui._collapsed;
+            const userId = manager.userId;
+            const userName = manager.userName || username;
+            ui.root.remove();
+            const fab = document.getElementById('user-batch-mini-fab');
+            if (fab) fab.remove();
+            ui._build();
+            ui.bindManager(manager);
+            if (userId) {
+                ui.setUserInfo(userId, userName);
+            }
+            ui.renderQueue(manager.queue);
+            ui.updateStats(manager.stats);
+            ui.updateButtonsState(manager.isRunning, manager.isPaused);
+            ui.setCurrent(manager.queue.find(item => item.status === 'downloading') || null);
+            if (quotaInfo && quotaInfo.enabled) {
+                ui.updateQuotaBar(quotaInfo);
+            }
+            ui._collapsed = !collapsed;
+            ui.toggleCollapse();
+        }
+    });
+    PixivUserscriptI18n.enrichFromBackend(serverBase);
 
     // 首次启动提示
     checkExternalServerNotice();
@@ -1989,7 +2463,7 @@
         }
     }, 1000);
 
-    GM_registerMenuCommand('强制打开下载面板', () => {
+    GM_registerMenuCommand(t('user.menu.open', '强制打开下载面板'), () => {
         ui.ensureMounted();
         if (ui.root) ui.root.style.display = 'block';
     });

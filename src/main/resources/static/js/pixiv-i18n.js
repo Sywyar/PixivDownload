@@ -4,6 +4,20 @@
     var STORAGE_KEY = 'pixiv.lang';
     var DEFAULT_NAMESPACE = 'common';
 
+    function buildFallbackMeta(preferredLang) {
+        var lang = normalizeLang(preferredLang);
+        return {
+            currentLang: lang,
+            defaultLang: 'en-US',
+            cookieName: 'pixiv_lang',
+            parameterName: 'lang',
+            supportedLocales: [
+                { tag: 'en-US', displayName: 'English' },
+                { tag: 'zh-CN', displayName: '简体中文' }
+            ]
+        };
+    }
+
     function normalizeLang(lang) {
         if (!lang) {
             return 'en-US';
@@ -42,6 +56,14 @@
         return payload || {};
     }
 
+    async function fetchJsonOrDefault(url, fallbackValue) {
+        try {
+            return await fetchJson(url);
+        } catch (e) {
+            return fallbackValue;
+        }
+    }
+
     function resolveKey(namespaces, key) {
         if (!key) {
             return { namespace: namespaces[0], key: '' };
@@ -54,6 +76,16 @@
             namespace: key.slice(0, index),
             key: key.slice(index + 1)
         };
+    }
+
+    function normalizeSupportedLocales(locales) {
+        return (locales || []).map(function (item) {
+            var tag = item && item.tag ? item.tag : '';
+            return {
+                tag: tag,
+                displayName: (item && (item.displayName || item.label || item.name)) || tag
+            };
+        });
     }
 
     function interpolate(template, vars) {
@@ -124,7 +156,7 @@
             lang: meta.currentLang,
             defaultLang: meta.defaultLang,
             namespaces: namespaces.slice(),
-            supportedLocales: (meta.supportedLocales || []).slice(),
+            supportedLocales: normalizeSupportedLocales(meta.supportedLocales),
             bundleMap: bundleMap,
             t: function (key, fallback, vars) {
                 return translate(client, key, fallback, vars);
@@ -154,12 +186,18 @@
             ? config.namespaces.slice()
             : [DEFAULT_NAMESPACE];
         var preferredLang = normalizeLang(config.lang || readStoredLang() || global.navigator.language);
-        var meta = await fetchJson('/api/i18n/meta?lang=' + encodeURIComponent(preferredLang));
+        var meta = await fetchJsonOrDefault(
+            '/api/i18n/meta?lang=' + encodeURIComponent(preferredLang),
+            buildFallbackMeta(preferredLang)
+        );
         var bundleMap = {};
 
         for (var i = 0; i < namespaces.length; i += 1) {
             var namespace = namespaces[i];
-            var bundle = await fetchJson('/api/i18n/messages/' + encodeURIComponent(namespace) + '?lang=' + encodeURIComponent(meta.currentLang));
+            var bundle = await fetchJsonOrDefault(
+                '/api/i18n/messages/' + encodeURIComponent(namespace) + '?lang=' + encodeURIComponent(meta.currentLang),
+                { messages: {} }
+            );
             bundleMap[namespace] = bundle.messages || {};
         }
 

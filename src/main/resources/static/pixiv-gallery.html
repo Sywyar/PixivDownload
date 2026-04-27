@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Pixiv Gallery</title>
+    <script src="/js/pixiv-i18n.js"></script>
+    <script src="/js/pixiv-lang-switcher.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
@@ -1947,6 +1949,7 @@
                 筛选
                 <span class="filter-badge" id="filterBadge">0</span>
             </button>
+            <div id="langSwitcherAnchor" style="margin-left:auto;"></div>
         </div>
 
         <div class="filter-panel" id="filterPanel">
@@ -2253,6 +2256,223 @@
     })();
 
     const HEART_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>';
+    let pageI18n = null;
+    let pageObserver = null;
+    let pageTranslateScheduled = false;
+
+    const PAGE_TITLE = {
+        'zh-CN': 'Pixiv 画廊',
+        'en-US': 'Pixiv Gallery'
+    };
+
+    const EN_TEXT = {
+        '视图': 'View',
+        '全部图片': 'All Artworks',
+        '按作者查看图片': 'Browse by Author',
+        '收藏夹': 'Collections',
+        '新建收藏夹': 'New Collection',
+        '导航': 'Navigation',
+        '当前页面': 'Current Page',
+        '画廊': 'Gallery',
+        '下载': 'Download',
+        '监控': 'Monitor',
+        '在线': 'Online',
+        '搜索作品标题或画师...': 'Search by artwork title or author...',
+        '筛选': 'Filter',
+        '排序': 'Sort',
+        '时间': 'Date',
+        '作品 ID': 'Artwork ID',
+        '图片数': 'Image Count',
+        '状态': 'Status',
+        '画师 ID': 'Author ID',
+        '标签数': 'Tag Count',
+        '↓ 降序': '↓ Desc',
+        '↑ 升序': '↑ Asc',
+        '全部': 'All',
+        '仅 R-18': 'R-18 Only',
+        '仅 R-18G': 'R-18G Only',
+        '排除': 'Exclude',
+        '格式': 'Format',
+        '标签': 'Tags',
+        '搜索标签...': 'Search tags...',
+        '必须有': 'Must Have',
+        '不能有': 'Must Not Have',
+        '或者有': 'Either',
+        '重置筛选': 'Reset Filters',
+        '展开全部': 'Expand All',
+        '作者': 'Authors',
+        '搜索作者...': 'Search authors...',
+        '清除筛选': 'Clear Filter',
+        '加载中...': 'Loading...',
+        '名称': 'Name',
+        '图标（可选）': 'Icon (optional)',
+        '例如：喜欢的作品': 'e.g. Favorite Works',
+        '选择图片': 'Choose Image',
+        '清除': 'Clear',
+        '支持 PNG / JPG / WEBP，最大 1MB': 'PNG / JPG / WEBP supported, max 1MB',
+        '取消': 'Cancel',
+        '保存': 'Save',
+        '添加到收藏夹': 'Add to Collection',
+        '快速新建收藏夹': 'Quick create a collection',
+        '新建': 'Create',
+        '完成': 'Done',
+        '重命名': 'Rename',
+        '更换图标': 'Change Icon',
+        '删除': 'Delete',
+        '暂无收藏夹': 'No collections',
+        '更多': 'More',
+        '没有匹配的作品': 'No matching artworks',
+        '暂无收藏夹，请先新建': 'No collections yet. Create one first.',
+        '操作失败': 'Action failed',
+        '已创建': 'Created',
+        '创建失败': 'Creation failed',
+        '已保存': 'Saved',
+        '保存失败': 'Save failed',
+        '已删除': 'Deleted',
+        '删除失败': 'Delete failed',
+        '暂无作者': 'No authors',
+        '未命名': 'Untitled',
+        '查看全部': 'View All',
+        '上一组': 'Previous',
+        '下一组': 'Next',
+        '暂无作品': 'No artworks',
+        '没有匹配的作者': 'No matching authors',
+        '收起': 'Collapse',
+        '标签筛选：': 'Tag Filter:',
+        '仅显示作者：': 'Author Filter:',
+        '加载作者列表…': 'Loading authors…'
+    };
+
+    const ZH_TEXT = {
+        'Toggle sidebar': '切换侧栏'
+    };
+
+    const EN_RULES = [
+        [/^共 ([\d,]+) 条，第 ([\d,]+)-([\d,]+) 条$/, (_, total, from, to) => `${total} total, ${from}-${to} shown`],
+        [/^加载失败：(.*)$/, (_, message) => `Load failed: ${message}`],
+        [/^♥ (.+)$/, (_, names) => `♥ ${String(names).replace(/、/g, ', ')}`],
+        [/^(\d+) 张作品 · #(\d+)$/, (_, count, authorId) => `${count} artworks · #${authorId}`],
+        [/^画师 (\d+)$/, (_, authorId) => `Author ${authorId}`]
+    ];
+
+    const ZH_RULES = [];
+
+    function targetLang() {
+        return pageI18n ? pageI18n.lang : 'zh-CN';
+    }
+
+    function translateByRules(source, exactMap, rules) {
+        if (Object.prototype.hasOwnProperty.call(exactMap, source)) {
+            return exactMap[source];
+        }
+        for (let i = 0; i < rules.length; i += 1) {
+            const [pattern, replacer] = rules[i];
+            if (!pattern.test(source)) continue;
+            pattern.lastIndex = 0;
+            return source.replace(pattern, replacer);
+        }
+        return source;
+    }
+
+    function translateSourceText(source) {
+        const text = String(source ?? '');
+        if (!text.trim()) return text;
+        if (targetLang() === 'en-US') {
+            return translateByRules(text, EN_TEXT, EN_RULES);
+        }
+        return translateByRules(text, ZH_TEXT, ZH_RULES);
+    }
+
+    function translateTextNode(root) {
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+            acceptNode(node) {
+                if (!node || !node.nodeValue || !node.nodeValue.trim()) {
+                    return NodeFilter.FILTER_REJECT;
+                }
+                const parent = node.parentElement;
+                if (!parent) {
+                    return NodeFilter.FILTER_REJECT;
+                }
+                const tag = parent.tagName;
+                if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'TEXTAREA') {
+                    return NodeFilter.FILTER_REJECT;
+                }
+                return NodeFilter.FILTER_ACCEPT;
+            }
+        });
+        let node = walker.nextNode();
+        while (node) {
+            if (typeof node.__pixivOriginalText === 'undefined') {
+                node.__pixivOriginalText = node.nodeValue;
+            }
+            node.nodeValue = translateSourceText(node.__pixivOriginalText);
+            node = walker.nextNode();
+        }
+    }
+
+    function translateAttribute(root, attrName, datasetKey) {
+        const elements = root.matches && root.matches('[' + attrName + ']')
+            ? [root].concat([...root.querySelectorAll('[' + attrName + ']')])
+            : [...root.querySelectorAll('[' + attrName + ']')];
+        elements.forEach(el => {
+            if (!el.dataset[datasetKey]) {
+                el.dataset[datasetKey] = el.getAttribute(attrName) || '';
+            }
+            el.setAttribute(attrName, translateSourceText(el.dataset[datasetKey]));
+        });
+    }
+
+    function applyPageTranslations(root) {
+        const scope = root || document.body;
+        document.title = PAGE_TITLE[targetLang()] || PAGE_TITLE['en-US'];
+        translateTextNode(scope);
+        translateAttribute(scope, 'title', 'i18nOriginalTitle');
+        translateAttribute(scope, 'placeholder', 'i18nOriginalPlaceholder');
+        translateAttribute(scope, 'aria-label', 'i18nOriginalAriaLabel');
+    }
+
+    function schedulePageTranslation(root) {
+        if (pageTranslateScheduled) return;
+        pageTranslateScheduled = true;
+        requestAnimationFrame(() => {
+            pageTranslateScheduled = false;
+            applyPageTranslations(root);
+        });
+    }
+
+    async function initPageI18n() {
+        pageI18n = await PixivI18n.create({namespaces: ['common', 'gallery']});
+        await PixivLangSwitcher.mount({
+            mountPoint: document.getElementById('langSwitcherAnchor'),
+            i18n: pageI18n,
+            onChange: function (nextClient) {
+                pageI18n = nextClient;
+                schedulePageTranslation(document.body);
+            }
+        });
+        applyPageTranslations(document.body);
+        pageObserver = new MutationObserver(mutations => {
+            let node = null;
+            for (let i = 0; i < mutations.length; i += 1) {
+                const added = mutations[i].addedNodes;
+                for (let j = 0; j < added.length; j += 1) {
+                    if (added[j] && added[j].nodeType === Node.ELEMENT_NODE) {
+                        node = added[j];
+                        break;
+                    }
+                }
+                if (node) break;
+            }
+            schedulePageTranslation(node || document.body);
+        });
+        pageObserver.observe(document.body, {
+            childList: true,
+            subtree: true,
+            characterData: true,
+            attributes: true,
+            attributeFilter: ['title', 'placeholder', 'aria-label']
+        });
+    }
 
     // ---------- API helpers ----------
     async function api(url, options = {}) {
@@ -3739,6 +3959,7 @@
 
     // ---------- Boot ----------
     (async function init() {
+        await initPageI18n();
         renderFilterModeButtons('tag');
         renderFilterModeButtons('author');
         await loadCollections();

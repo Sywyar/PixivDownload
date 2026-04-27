@@ -67,11 +67,8 @@ public final class AppLocale {
     }
 
     public static String displayName(Locale targetLocale, Locale currentLocale) {
-        Locale normalizedCurrentLocale = normalize(currentLocale);
-        boolean englishUi = Locale.ENGLISH.getLanguage().equals(normalizedCurrentLocale.getLanguage());
-
         return switch (targetLocale.toLanguageTag()) {
-            case "zh-CN" -> englishUi ? "Simplified Chinese" : "简体中文";
+            case "zh-CN" -> "简体中文";
             case "en-US" -> "English";
             default -> targetLocale.toLanguageTag();
         };

@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Pixiv 批量下载器</title>
+    <script src="/js/pixiv-i18n.js"></script>
+    <script src="/js/pixiv-lang-switcher.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
@@ -602,6 +604,63 @@
             color: #28a745;
         }
 
+        /* ── Language Switcher (green nav variant) ── */
+        .pixiv-lang-switcher--green {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            margin-right: 12px;
+            padding: 4px 10px 4px 12px;
+            border: 1px solid rgba(255, 255, 255, 0.5);
+            border-radius: 4px;
+            background: transparent;
+            color: white;
+            font-size: 12px;
+            font-weight: 500;
+            transition: background 0.2s, color 0.2s;
+        }
+
+        .pixiv-lang-switcher--green:hover {
+            background: rgba(255, 255, 255, 0.15);
+        }
+
+        .pixiv-lang-switcher--green::before {
+            content: '\f0ac'; /* fa-globe */
+            font-family: "Font Awesome 6 Free", "Font Awesome 5 Free", sans-serif;
+            font-weight: 900;
+            font-size: 12px;
+            opacity: 0.85;
+        }
+
+        .pixiv-lang-switcher--green .pixiv-lang-switcher__select {
+            appearance: none;
+            -webkit-appearance: none;
+            background: transparent;
+            border: none;
+            outline: none;
+            padding: 0 16px 0 0;
+            color: white;
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            font-family: inherit;
+            background-image: linear-gradient(45deg, transparent 50%, white 50%),
+                              linear-gradient(135deg, white 50%, transparent 50%);
+            background-position: calc(100% - 8px) 50%, calc(100% - 4px) 50%;
+            background-size: 4px 4px, 4px 4px;
+            background-repeat: no-repeat;
+        }
+
+        .pixiv-lang-switcher--green .pixiv-lang-switcher__select option {
+            background: white;
+            color: #333;
+        }
+
+        .pixiv-lang-switcher--green .pixiv-lang-switcher__select option:checked {
+            background: #007bff;
+            color: white;
+        }
+
         /* ---- Search Mode ---- */
         .search-controls {
             display: flex;
@@ -930,6 +989,7 @@
     <a href="/pixiv-gallery.html" class="app-nav-link" target="_blank" rel="noopener">
         <i class="fas fa-images"></i> GALLERY
     </a>
+    <div id="langSwitcherAnchor" style="margin-right:12px;"></div>
     <div class="app-nav-spacer"></div>
     <button id="login-btn" style="display:none;" class="app-nav-login"
             onclick="location.href='/login.html?redirect=/pixiv-batch.html'">Login</button>
@@ -951,11 +1011,7 @@
             <button class="btn-sm" id="cookie-toggle">显示</button>
             <button class="btn-sm" id="cookie-save" style="background:#e8f5e9;border-color:#28a745;">保存</button>
         </div>
-        <div class="cookie-hint" id="cookie-hint">支持三种格式：Header
-            String（直接复制浏览器请求头）、JSON（对象格式）、Netscape（EditThisCookie 等工具导出）。推荐使用 <a
-                    href="https://chromewebstore.google.com/detail/cookie-editor/hlkenndednhfkekhgcdicdfddnkalmdm"
-                    target="_blank" rel="noopener">Cookie-Editor</a> 插件导出 Cookie。
-        </div>
+        <div class="cookie-hint" id="cookie-hint"><span>支持三种格式：Header String（直接复制浏览器请求头）、JSON（对象格式）、Netscape（EditThisCookie 等工具导出）。推荐使用</span> <a href="https://chromewebstore.google.com/detail/cookie-editor/hlkenndednhfkekhgcdicdfddnkalmdm" target="_blank" rel="noopener">Cookie-Editor</a> <span>插件导出 Cookie。</span></div>
     </div>
 
     <!-- Userscripts install card -->
@@ -965,9 +1021,7 @@
             <button class="btn btn-green" style="padding:2px 10px;font-size:12px;" onclick="toggleUserscripts()">展开 / 折叠</button>
         </div>
         <div id="userscripts-panel" hidden>
-            <div id="userscripts-hint" style="font-size:12px;color:#666;margin-bottom:10px;">
-                需要先安装 <a href="https://www.tampermonkey.net/" target="_blank" rel="noopener">Tampermonkey</a> 扩展。点击「安装」后 Tampermonkey 将弹出确认页面。
-            </div>
+            <div id="userscripts-hint" style="font-size:12px;color:#666;margin-bottom:10px;"><span>需要先安装</span> <a href="https://www.tampermonkey.net/" target="_blank" rel="noopener">Tampermonkey</a> <span>扩展。点击「安装」后 Tampermonkey 将弹出确认页面。</span></div>
             <div id="userscripts-host-hint" style="font-size:12px;color:#17a2b8;margin-bottom:10px;display:none;"></div>
             <div id="userscripts-list" style="display:flex;flex-direction:column;gap:10px;"></div>
         </div>
@@ -1003,8 +1057,7 @@
         <div class="user-row">
             <input type="text" id="user-id-input" placeholder="用户 ID（数字）">
             <button class="btn btn-cyan" onclick="handleFetchAll()">📥 获取全部作品</button>
-            <button class="btn" style="background:#e67e22;" onclick="handleFetchAllFresh()">🗑 清除队列并重新获取
-            </button>
+            <button class="btn" style="background:#e67e22;" onclick="handleFetchAllFresh()">🗑 清除队列并重新获取</button>
             <button class="btn btn-purple" onclick="handleFetchNew()">🆕 仅获取新作品并下载</button>
         </div>
         <div id="user-info-display" style="margin-top:8px;">-</div>
@@ -1017,9 +1070,7 @@
             <input type="text" id="search-word" placeholder="输入关键词..."
                    onkeydown="if(event.key==='Enter')performSearch(1)">
             <button class="btn btn-blue" onclick="performSearch(1)">🔍 搜索</button>
-            <button class="btn btn-green" id="btn-add-all" onclick="addAllSearchResultsToQueue()" disabled>➕
-                全部加入队列
-            </button>
+            <button class="btn btn-green" id="btn-add-all" onclick="addAllSearchResultsToQueue()" disabled>➕ 全部加入队列</button>
         </div>
         <div class="search-filter-row">
             <span>内容:</span>
@@ -1037,9 +1088,7 @@
             <label title="未购买 Pixiv Premium 时将自动按最新排序"><input type="radio" name="search-order"
                                                                           value="popular_d"> 热门 ⚠</label>
         </div>
-        <div id="search-premium-tip" style="display:none;font-size:11px;color:#e6a700;margin-bottom:8px;">⚠ 热门排序需要
-            Pixiv Premium 会员，未购买时 Pixiv 将自动按最新排序返回结果
-        </div>
+        <div id="search-premium-tip" style="display:none;font-size:11px;color:#e6a700;margin-bottom:8px;">⚠ 热门排序需要 Pixiv Premium 会员，未购买时 Pixiv 将自动按最新排序返回结果</div>
         <div class="search-extra-filters">
             <div class="search-extra-head">
                 <div class="search-extra-title">附加筛选</div>
@@ -1106,9 +1155,7 @@
             <span class="search-fill-note" id="search-fill-note">solo 模式：不限制</span>
         </div>
         <div id="search-results-area">
-            <div style="text-align:center;color:#aaa;padding:24px 0;font-size:13px;">输入关键词后点击搜索；未保存 Cookie
-                时搜索结果可能减少
-            </div>
+            <div style="text-align:center;color:#aaa;padding:24px 0;font-size:13px;">输入关键词后点击搜索；未保存 Cookie 时搜索结果可能减少</div>
         </div>
         <div class="search-pagination" id="search-pagination" style="display:none;"></div>
     </div>
@@ -1212,6 +1259,444 @@
 
 <script>
     'use strict';
+
+    let pageI18n = null;
+    let pageObserver = null;
+    let pageTranslateScheduled = false;
+    const PAGE_TITLE = {
+        'zh-CN': 'Pixiv 批量下载',
+        'en-US': 'Pixiv Batch Download'
+    };
+
+    const EN_TEXT = {
+        'Pixiv 下载助手': 'Pixiv Download Helper',
+        '显示': 'Show',
+        '保存': 'Save',
+        '油猴脚本': 'Userscripts',
+        '展开 / 折叠': 'Expand / Collapse',
+        '批量导入作品': 'Bulk Import',
+        'User 模式': 'User Mode',
+        'Search 模式': 'Search Mode',
+        '画师批量下载': 'User Batch Download',
+        '作品搜索': 'Artwork Search',
+        '导入并加入队列': 'Import and Queue',
+        '清空队列后重新导入': 'Clear Queue and Reimport',
+        '获取全部作品': 'Fetch All Artworks',
+        '仅获取新作品并下载': 'Fetch Only New Artworks and Download',
+        '输入关键词...': 'Enter keywords...',
+        '搜索': 'Search',
+        '全部加入队列': 'Queue All',
+        '内容:': 'Content:',
+        '全部': 'All',
+        '全年龄': 'All Ages',
+        '搜索方式:': 'Search Mode:',
+        '标签': 'Tag',
+        '标题/描述': 'Title / Description',
+        '排序:': 'Order:',
+        '最新': 'Latest',
+        '最旧': 'Oldest',
+        '热门 ⚠': 'Popular ⚠',
+        '附加筛选': 'Extra Filters',
+        '客户端过滤，仅作用当前页；收藏数会按需读取当前页作品元数据': 'Client-side filtering on the current page only; bookmark counts are fetched from current-page metadata as needed.',
+        'AI 作品': 'AI Artwork',
+        '排除 AI': 'Exclude AI',
+        '仅 AI': 'AI Only',
+        '作品类型': 'Artwork Type',
+        '插画': 'Illustration',
+        '漫画': 'Manga',
+        '动图': 'Ugoira',
+        '最少页数': 'Min Pages',
+        '最多页数': 'Max Pages',
+        '最少收藏': 'Min Bookmarks',
+        '最多收藏': 'Max Bookmarks',
+        '不限': 'Unlimited',
+        '重置附加筛选': 'Reset Extra Filters',
+        '模糊 R18 缩略图（悬停查看）': 'Blur R18 thumbnails (hover to preview)',
+        '向后补充': 'Load More',
+        '页': 'pages',
+        '补充': 'Load',
+        'solo 模式：不限制': 'solo mode: unlimited',
+        '下载设置': 'Download Settings',
+        '作品间隔:': 'Artwork Interval:',
+        '图片间隔:': 'Image Interval:',
+        '最大并发数:': 'Max Concurrent:',
+        '跳过已下载作品': 'Skip Downloaded Artworks',
+        '实际目录检测': 'Verify Actual Folder',
+        '仅下载 R18 作品': 'Only Download R18 Artworks',
+        '下载后自动收藏': 'Bookmark After Download',
+        '开始下载': 'Start Download',
+        '暂停': 'Pause',
+        '重试失败': 'Retry Failed',
+        '导出全部': 'Export All',
+        '导出未下载': 'Export Undownloaded',
+        '清除队列': 'Clear Queue',
+        '下载配额：': 'Download quota:',
+        '已达到下载限额': 'Download limit reached',
+        '正在打包已下载文件，请稍候...': 'Packing downloaded files, please wait...',
+        '下载压缩包': 'Download Archive',
+        '下载链接已过期': 'Download link expired',
+        '准备就绪': 'Ready',
+        '当前下载:': 'Current:',
+        '无': 'None',
+        '下载队列': 'Download Queue',
+        '打包队列中已完成作品': 'Pack Completed Artworks',
+        '队列为空': 'Queue is empty',
+        '导入': 'Import',
+        '未知': 'Unknown',
+        '移除': 'Remove',
+        '打开作品页面': 'Open Artwork Page',
+        '读取当前页收藏数中...': 'Reading bookmark counts...',
+        '搜索中...': 'Searching...',
+        '无搜索结果': 'No search results',
+        '附加筛选后无结果': 'No results after extra filters',
+        '未保存 Cookie，搜索结果可能减少': 'Cookie not saved; search results may be reduced',
+        '请输入搜索关键词': 'Please enter search keywords',
+        '正在获取作品列表...': 'Fetching artwork list...',
+        '该用户暂无作品': 'This user has no artworks',
+        '已暂停': 'Paused',
+        '继续下载': 'Resume Download',
+        '队列已清除': 'Queue cleared',
+        '未解析到任何作品链接': 'No artwork URLs were parsed',
+        '当前没有失败的作品': 'There are no failed artworks',
+        '没有未下载的作品': 'There are no undownloaded artworks',
+        '请输入有效的用户 ID（纯数字）': 'Please enter a valid numeric user ID',
+        '后端服务不可用，请确认后端已启动': 'Backend is unavailable. Please make sure it is running.',
+        '确认清除队列？': 'Clear the queue?',
+        '确认清除当前队列并重新解析？': 'Clear the current queue and parse again?',
+        'Login': 'Login',
+        'Logout': 'Logout',
+        'MONITOR': 'Monitor',
+        'BATCH': 'Batch',
+        'GALLERY': 'Gallery',
+        '粘贴 Cookie...': 'Paste Cookie...',
+        '粘贴作品链接列表，兼容 One-Tab，N-Tab 等标签页管理插件导出格式...': 'Paste artwork URLs, compatible with exports from One-Tab, N-Tab, and similar tab managers...',
+        '导入格式：': 'Import format:',
+        '每行一条，例如：': 'One per line, for example:',
+        '标题可留空；下载前会自动获取真实标题。兼容 One-Tab，N-Tab 等标签页管理插件导出格式。': 'The title can be empty; the real title will be fetched before download. Compatible with exports from One-Tab, N-Tab, and similar tab managers.',
+        '也兼容下方“导出全部”“导出未下载”按钮生成的作品列表，可直接重新导入。': 'The lists generated by “Export All” and “Export Undownloaded” below can also be imported directly.',
+        '用户 ID（数字）': 'User ID (numeric)',
+        '当前页收藏数': 'Bookmark count on current page',
+        '搜索结果': 'Search results',
+        '仅筛选后结果': 'Filtered results only',
+        '结果较多': 'Many results',
+        '🎨 批量导入作品': '🎨 Bulk Import',
+        '👤 User 模式': '👤 User Mode',
+        '🔍 Search 模式': '🔍 Search Mode',
+        '📋 导入并加入队列': '📋 Import and Queue',
+        '🗑 清空队列后重新导入': '🗑 Clear Queue and Reimport',
+        '📥 获取全部作品': '📥 Fetch All Artworks',
+        '🗑 清除队列并重新获取': '🗑 Clear Queue and Refetch',
+        '🆕 仅获取新作品并下载': '🆕 Fetch Only New Artworks and Download',
+        '🔍 搜索': '🔍 Search',
+        '➕ 全部加入队列': '➕ Queue All',
+        '🚀 开始下载': '🚀 Start Download',
+        '⏸ 暂停': '⏸ Pause',
+        '▶ 继续': '▶ Resume',
+        '🔁 重试失败': '🔁 Retry Failed',
+        '📤 导出全部': '📤 Export All',
+        '📋 导出未下载': '📋 Export Undownloaded',
+        '🗑 清除队列': '🗑 Clear Queue',
+        '🧩 油猴脚本': '🧩 Userscripts',
+        '个作品': 'artworks',
+        'Pixiv 原生的 R-18 搜索结果（包含 R-18G）': 'Pixiv native R-18 search results (includes R-18G)',
+        'R-18+ 结果中剔除 R-18G 后的纯 R-18（客户端过滤）': 'Pure R-18 from R-18+ results with R-18G removed (client-side filter)',
+        'R-18+ 结果中仅保留 R-18G（客户端过滤）': 'Only R-18G kept from R-18+ results (client-side filter)',
+        '未购买 Pixiv Premium 时将自动按最新排序': 'Falls back to latest sorting if Pixiv Premium is not purchased',
+        '⚠ 热门排序需要 Pixiv Premium 会员，未购买时 Pixiv 将自动按最新排序返回结果': '⚠ Popular sorting requires Pixiv Premium. Pixiv will fall back to latest sorting if you are not subscribed.',
+        '每次点击补充，会在上次已加载的页面之后继续向后获取 N 页并追加到当前结果中，可多次点击叠加。过大的 N 会导致请求量暴增；solo 模式下 N 不受限制；multi 模式下每次最多 multi-mode.limit-page 页（管理员不受限）。': 'Each click loads N more pages after the last fetched page and appends them to current results. Large values may cause heavy requests. In solo mode N is unlimited; in multi mode each request is capped by multi-mode.limit-page unless you are an admin.',
+        '通过检查记录的目录是否存在、文件夹是否为空、文件夹中的文件是否包含图片来判断是否有效，如果无效则会重新下载': 'Checks whether the recorded folder exists, whether it is empty, and whether it contains image files. If invalid, the artwork will be downloaded again.',
+        '输入关键词后点击搜索；未保存 Cookie 时搜索结果可能减少': 'Enter keywords and click search; results may be reduced if no Cookie is saved',
+        '支持三种格式：Header String（直接复制浏览器请求头）、JSON（对象格式）、Netscape（EditThisCookie 等工具导出）。推荐使用': 'Three formats supported: Header String (copy from browser request headers), JSON (object format), Netscape (exported by tools like EditThisCookie). We recommend',
+        '插件导出 Cookie。': 'extension to export cookies.',
+        '需要先安装': 'You need to install',
+        '扩展。点击「安装」后 Tampermonkey 将弹出确认页面。': 'extension first. After clicking "Install", Tampermonkey will show a confirmation page.',
+        'Cookie 保存在服务器，所有设备共享同一配置。支持三种格式：Header String（直接复制浏览器请求头）、JSON（对象格式）、Netscape（EditThisCookie 等工具导出）。': 'Cookies are stored on the server and shared across all devices. Three formats supported: Header String (copy from browser request headers), JSON (object format), Netscape (exported by tools like EditThisCookie).',
+        '隐藏': 'Hide',
+        '失败 - 达到限额': 'Failed - quota reached',
+        '暂无可打包文件（当前下载仍在进行中，完成后自动包含）': 'Nothing to pack yet (active downloads will be included once finished)',
+        '压缩包已就绪，请在有效期内下载：': 'Archive is ready. Please download it before it expires:',
+        '批量下载结束，正在打包文件...': 'Batch download finished. Packing files...',
+        '下载完成，正在打包': 'Download complete, packing',
+        '队列中暂无已完成的作品可供打包': 'No completed artworks in the queue to pack',
+        '登录状态已失效，请重新登录': 'Login session expired. Please sign in again.',
+        '数据库中未找到对应文件夹，可能已被移动或删除': 'No matching folder in the database. It may have been moved or deleted.',
+        'Cookie 不能为空': 'Cookie cannot be empty',
+        '需要 JSON 对象格式 {"key":"value",...}': 'Expected JSON object format {"key":"value",...}',
+        '未解析到有效的 Cookie 行（需要 7 列 tab 分隔格式）': 'No valid cookie line parsed (expect 7 tab-separated columns)',
+        '未检测到 PHPSESSID，可能无法访问需要登录的内容': 'PHPSESSID not detected; login-required content may be inaccessible',
+        '后端返回失败': 'Backend reported failure',
+        '批量下载结束': 'Batch download finished',
+        '正在检查历史记录...': 'Checking history...',
+        '跳过 — 历史记录中已存在': 'Skipped — already in history',
+        '正在获取作品信息...': 'Fetching artwork info...',
+        '跳过 — 非 R18 内容': 'Skipped — not R18',
+        '正在获取图片地址...': 'Fetching image URLs...',
+        '未获取到图片 URL': 'No image URLs received',
+        '跳过 — 已下载（服务器确认）': 'Skipped — already downloaded (server confirmed)',
+        '下载中，等待完成...': 'Downloading, waiting for completion...',
+        '失败 — 超时未收到完成状态': 'Failed — timeout waiting for completion status',
+        '失败 — 状态查询异常': 'Failed — status query error',
+        '失败 — 页面刷新导致中断': 'Failed — interrupted by page reload',
+        '正在获取用户信息...': 'Fetching user info...',
+        '已应用筛选：': 'Filters applied: ',
+        '未启用附加筛选': 'no extra filters',
+        '加载中…': 'Loading…',
+        '暂无可安装的脚本。': 'No installable scripts.',
+        '⬇ 安装': '⬇ Install',
+        '📄 查看源码': '📄 View Source',
+        'multi 模式：不限制': 'multi mode: unlimited',
+        '⚠ 未保存 Cookie，搜索结果可能减少': '⚠ Cookie not saved; search results may be reduced',
+        ' · 点击移除': ' · click to remove',
+        ' · 点击加入队列': ' · click to add to queue',
+        '点击移除': 'click to remove',
+        '点击加入队列': 'click to add to queue',
+        '等待中': 'Waiting',
+        '下载中': 'Downloading',
+        '已完成': 'Completed',
+        '失败': 'Failed',
+        '已跳过': 'Skipped',
+        '未知错误': 'unknown error'
+    };
+
+    const ZH_TEXT = {
+        'Login': '登录',
+        'Logout': '退出',
+        'MONITOR': '监控',
+        'BATCH': '批量',
+        'GALLERY': '画廊'
+    };
+
+    const EN_RULES = [
+        [/^队列: (\d+) \| 成功: (\d+) \| 失败: (\d+) \| 进行中: (\d+) \| 跳过: (\d+)$/, (_, queue, success, failed, active, skipped) => `Queue: ${queue} | Success: ${success} | Failed: ${failed} | Active: ${active} | Skipped: ${skipped}`],
+        [/^(\d+) \/ (\d+) 张$/, (_, downloaded, total) => `${downloaded} / ${total} images`],
+        [/^配额重置剩余：(.+)$/, (_, time) => `Quota resets in: ${time}`],
+        [/^打包失败：HTTP (.+)$/, (_, code) => `Pack failed: HTTP ${code}`],
+        [/^打包请求失败：(.+)$/, (_, message) => `Pack request failed: ${message}`],
+        [/^已提交打包请求（(\d+) 个作品），正在生成压缩包\.\.\.$/, (_, count) => `Pack request submitted (${count} artworks). Building archive...`],
+        [/^开始下载 \(并发:(\d+), 间隔:(\d+)ms\)$/, (_, concurrent, interval) => `Starting download (concurrency:${concurrent}, interval:${interval}ms)`],
+        [/^获取信息：(.+)$/, (_, id) => `Fetching metadata: ${id}`],
+        [/^下载中：(.+)$/, (_, title) => `Downloading: ${title}`],
+        [/^跳过：(.+)（已下载）$/, (_, title) => `Skipped: ${title} (already downloaded)`],
+        [/^失败：(.+) \(文件缺失\)$/, (_, title) => `Failed: ${title} (files missing)`],
+        [/^完成：(.+)$/, (_, title) => `Completed: ${title}`],
+        [/^失败：(.+)$/, (_, title) => `Failed: ${title}`],
+        [/^错误：(.+) — (.+)$/, (_, id, message) => `Error: ${id} — ${message}`],
+        [/^正在暂停\.\.\. \(等待 (\d+) 个任务完成\)$/, (_, count) => `Pausing... (waiting for ${count} tasks to finish)`],
+        [/^解析完成：共 (\d+) 个，新增 (\d+) 个$/, (_, total, added) => `Parsed: ${total} total, ${added} added`],
+        [/^已导出 (\d+) 个作品$/, (_, count) => `Exported ${count} artworks`],
+        [/^已导出 (\d+) 个未下载作品$/, (_, count) => `Exported ${count} undownloaded artworks`],
+        [/^获取成功：共 (\d+) 个作品，新增 (\d+) 个$/, (_, total, added) => `Fetched ${total} artworks, ${added} added`],
+        [/^获取作品列表失败：(.+)$/, (_, message) => `Failed to fetch artwork list: ${message}`],
+        [/^已从队列移除：(.+)$/, (_, title) => `Removed from queue: ${title}`],
+        [/^无法移除（正在下载中）：(.+)$/, (_, title) => `Cannot remove while downloading: ${title}`],
+        [/^已加入队列：(.+)$/, (_, title) => `Queued: ${title}`],
+        [/^已在队列中：(.+)$/, (_, title) => `Already queued: ${title}`],
+        [/^已将 (\d+) 个作品加入队列（共 (\d+) 个，(\d+) 个已在队列中）$/, (_, added, total, existing) => `Queued ${added} artworks (${total} total, ${existing} already queued)`],
+        [/^正在补充第 (\d+) 页起的内容\.\.\.$/, (_, page) => `Loading more from page ${page}...`],
+        [/^补充请求失败：(.+)$/, (_, message) => `Load more request failed: ${message}`],
+        [/^Cookie 保存失败：(.+)$/, (_, message) => `Cookie save failed: ${message}`],
+        [/^Cookie 已保存（(\d+) 个字段）⚠ (.+)$/, (_, count, warnings) => `Cookie saved (${count} fields) ⚠ ${warnings}`],
+        [/^Cookie 已保存，共 (\d+) 个字段$/, (_, count) => `Cookie saved with ${count} fields`],
+        [/^搜索失败：(.+)$/, (_, message) => `Search failed: ${translateByRules(message, EN_TEXT, EN_RULES)}`],
+        [/^请求失败：(.+)$/, (_, message) => `Request failed: ${message}`],
+        [/^搜索完成：(.+)$/, (_, summary) => `Search complete: ${summary.split('，').map(s => translateByRules(s, EN_TEXT, EN_RULES)).join(', ')}`],
+        [/^补充完成：(.+)$/, (_, summary) => `Load more complete: ${summary.split('，').map(s => translateByRules(s, EN_TEXT, EN_RULES)).join(', ')}`],
+        [/^已应用筛选：(.+)$/, (_, summary) => `Filters applied: ${summary.split('，').map(s => translateByRules(s, EN_TEXT, EN_RULES)).join(', ')}`],
+        [/^补充失败：(.+)$/, (_, message) => `Load more failed: ${translateByRules(message, EN_TEXT, EN_RULES)}`],
+        [/^第 (\d+) \/ (\d+) 页 · 共 ([\d,]+) 个$/, (_, current, total, count) => `Page ${current} / ${total} · ${count} total`],
+        [/^下载链接有效期：(.+)$/, (_, time) => `Download link valid for: ${time}`],
+        [/^管理员打包中（(\d+) 个作品）$/, (_, count) => `Admin packing (${count} artworks)`],
+        [/^格式解析失败：(.+)$/, (_, message) => `Failed to parse format: ${message}`],
+        [/^包含无效键值对：(.+)$/, (_, pairs) => `Contains invalid key-value pairs: ${pairs}`],
+        [/^作品 (\d+)$/, (_, id) => `Artwork ${id}`],
+        [/^失败 — 仅 (\d+)\/(\d+) 张已下载$/, (_, downloaded, total) => `Failed — only ${downloaded}/${total} images downloaded`],
+        [/^已完成，共 (\d+) 张$/, (_, count) => `Completed with ${count} images`],
+        [/^已完成（确认），共 (\d+) 张$/, (_, count) => `Completed (confirmed) with ${count} images`],
+        [/^失败 — 文件缺失 \((\d+)\/(\d+)\)$/, (_, downloaded, total) => `Failed — files missing (${downloaded}/${total})`],
+        [/^失败 — (.+)$/, (_, reason) => `Failed — ${EN_TEXT[reason] || reason}`],
+        [/^用户：(.+)（ID: (\d+)）$/, (_, name, id) => `User: ${name} (ID: ${id})`],
+        [/^ID: (\d+)（获取用户名失败）$/, (_, id) => `ID: ${id} (failed to fetch username)`],
+        [/^当前页 (\d+) 个$/, (_, count) => `Current page ${count}`],
+        [/^筛选后 (\d+) 个$/, (_, count) => `${count} after filtering`],
+        [/^(\d+) 个收藏数不可用已排除$/, (_, count) => `${count} excluded due to missing bookmark count`],
+        [/^Pixiv 总数 (.+)$/, (_, count) => `Pixiv total ${count}`],
+        [/^R-18\+ 当前页原始 (\d+) 个$/, (_, count) => `R-18+ raw current page: ${count}`],
+        [/^(.+) 筛后 (\d+) 个$/, (_, label, count) => `${label} filtered: ${count}`],
+        [/^附加筛选后 (\d+) 个$/, (_, count) => `${count} after extra filters`],
+        [/^Pixiv 当前页 (\d+) 个结果$/, (_, count) => `Pixiv current page: ${count} results`],
+        [/^共 (.+) 个结果$/, (_, count) => `${count} results in total`],
+        [/^当前第 (\d+) 页$/, (_, page) => `Current page ${page}`],
+        [/^Pixiv 返回 (\d+) 个$/, (_, count) => `Pixiv returned ${count}`],
+        [/^已加载至第 (\d+) 页 · solo 模式：不限制$/, (_, page) => `Loaded up to page ${page} · solo mode: unlimited`],
+        [/^已加载至第 (\d+) 页 · multi 模式：不限制$/, (_, page) => `Loaded up to page ${page} · multi mode: unlimited`],
+        [/^已加载至第 (\d+) 页 · multi 模式：上限 (\d+) 页\/次$/, (_, page, limit) => `Loaded up to page ${page} · multi mode: max ${limit} pages per request`],
+        [/^multi 模式：上限 (\d+) 页\/次$/, (_, limit) => `multi mode: max ${limit} pages per request`],
+        [/^新增 (\d+) 个作品$/, (_, count) => `${count} new artworks added`],
+        [/^获取第 (\d+)–(\d+) 页$/, (_, start, end) => `Fetched pages ${start}–${end}`],
+        [/^multi 模式上限 (\d+) 页，请求 (\d+) 页已限制$/, (_, limit, requested) => `multi mode caps at ${limit} pages; requested ${requested} pages were limited`],
+        [/^此安装链接将自动把脚本 @connect 指向：(.+)$/, (_, host) => `This install link will set the script's @connect to: ${host}`],
+        [/^加载失败：(.+)$/, (_, message) => `Load failed: ${message}`],
+        [/^ · 收藏 (.+)$/, (_, count) => ` · Bookmarks: ${count}`],
+        [/^([\s\S]+) · 收藏 ([\d,]+) · 点击移除$/, (_, head, count) => `${head} · Bookmarks: ${count} · click to remove`],
+        [/^([\s\S]+) · 收藏 ([\d,]+) · 点击加入队列$/, (_, head, count) => `${head} · Bookmarks: ${count} · click to add to queue`],
+        [/^([\s\S]+) · 点击移除$/, (_, head) => `${head} · click to remove`],
+        [/^([\s\S]+) · 点击加入队列$/, (_, head) => `${head} · click to add to queue`]
+    ];
+
+    function targetLang() {
+        return pageI18n ? pageI18n.lang : 'zh-CN';
+    }
+
+    function translateByRules(source, exactMap, rules) {
+        if (Object.prototype.hasOwnProperty.call(exactMap, source)) {
+            return exactMap[source];
+        }
+        for (let i = 0; i < rules.length; i += 1) {
+            const [pattern, replacer] = rules[i];
+            if (!pattern.test(source)) continue;
+            pattern.lastIndex = 0;
+            return source.replace(pattern, replacer);
+        }
+        return source;
+    }
+
+    function translateSourceText(source) {
+        const text = String(source ?? '');
+        if (!text.trim()) return text;
+        const exactMap = targetLang() === 'en-US' ? EN_TEXT : ZH_TEXT;
+        const rules = targetLang() === 'en-US' ? EN_RULES : [];
+        if (Object.prototype.hasOwnProperty.call(exactMap, text)) {
+            return exactMap[text];
+        }
+        const wsMatch = text.match(/^(\s*)([\s\S]*?)(\s*)$/);
+        const leading = wsMatch ? wsMatch[1] : '';
+        const body = wsMatch ? wsMatch[2] : text;
+        const trailing = wsMatch ? wsMatch[3] : '';
+        if (body && body !== text && Object.prototype.hasOwnProperty.call(exactMap, body)) {
+            return leading + exactMap[body] + trailing;
+        }
+        for (let i = 0; i < rules.length; i += 1) {
+            const [pattern, replacer] = rules[i];
+            if (pattern.test(text)) {
+                pattern.lastIndex = 0;
+                return text.replace(pattern, replacer);
+            }
+        }
+        if (body && body !== text) {
+            for (let i = 0; i < rules.length; i += 1) {
+                const [pattern, replacer] = rules[i];
+                if (pattern.test(body)) {
+                    pattern.lastIndex = 0;
+                    return leading + body.replace(pattern, replacer) + trailing;
+                }
+            }
+        }
+        return text;
+    }
+
+    function translateTextNodes(root) {
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+            acceptNode(node) {
+                if (!node || !node.nodeValue || !node.nodeValue.trim()) {
+                    return NodeFilter.FILTER_REJECT;
+                }
+                const parent = node.parentElement;
+                if (!parent) {
+                    return NodeFilter.FILTER_REJECT;
+                }
+                const tag = parent.tagName;
+                if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'TEXTAREA') {
+                    return NodeFilter.FILTER_REJECT;
+                }
+                return NodeFilter.FILTER_ACCEPT;
+            }
+        });
+        let node = walker.nextNode();
+        while (node) {
+            if (typeof node.__pixivOriginalText === 'undefined') {
+                node.__pixivOriginalText = node.nodeValue;
+            }
+            node.nodeValue = translateSourceText(node.__pixivOriginalText);
+            node = walker.nextNode();
+        }
+    }
+
+    function translateAttribute(root, attrName, datasetKey) {
+        const elements = root.matches && root.matches('[' + attrName + ']')
+            ? [root].concat([...root.querySelectorAll('[' + attrName + ']')])
+            : [...root.querySelectorAll('[' + attrName + ']')];
+        elements.forEach(el => {
+            if (!el.dataset[datasetKey]) {
+                el.dataset[datasetKey] = el.getAttribute(attrName) || '';
+            }
+            el.setAttribute(attrName, translateSourceText(el.dataset[datasetKey]));
+        });
+    }
+
+    function applyPageTranslations(root) {
+        const scope = root || document.body;
+        document.title = PAGE_TITLE[targetLang()] || PAGE_TITLE['en-US'];
+        translateTextNodes(scope);
+        translateAttribute(scope, 'title', 'i18nOriginalTitle');
+        translateAttribute(scope, 'placeholder', 'i18nOriginalPlaceholder');
+        translateAttribute(scope, 'aria-label', 'i18nOriginalAriaLabel');
+    }
+
+    function schedulePageTranslation(root) {
+        if (pageTranslateScheduled) return;
+        pageTranslateScheduled = true;
+        requestAnimationFrame(() => {
+            pageTranslateScheduled = false;
+            applyPageTranslations(root);
+        });
+    }
+
+    async function initPageI18n() {
+        pageI18n = await PixivI18n.create({namespaces: ['common', 'batch']});
+        await PixivLangSwitcher.mount({
+            mountPoint: document.getElementById('langSwitcherAnchor'),
+            i18n: pageI18n,
+            variant: 'green',
+            showLabel: false,
+            onChange: function (nextClient) {
+                pageI18n = nextClient;
+                schedulePageTranslation(document.body);
+                if (_userscriptsLoaded) {
+                    loadUserscripts();
+                }
+            }
+        });
+        applyPageTranslations(document.body);
+        pageObserver = new MutationObserver(mutations => {
+            let node = null;
+            for (let i = 0; i < mutations.length; i += 1) {
+                const added = mutations[i].addedNodes;
+                for (let j = 0; j < added.length; j += 1) {
+                    if (added[j] && added[j].nodeType === Node.ELEMENT_NODE) {
+                        node = added[j];
+                        break;
+                    }
+                }
+                if (node) break;
+            }
+            schedulePageTranslation(node || document.body);
+        });
+        pageObserver.observe(document.body, {
+            childList: true,
+            subtree: true,
+            characterData: true,
+            attributes: true,
+            attributeFilter: ['title', 'placeholder', 'aria-label']
+        });
+    }
+
+    function uiAlert(message) {
+        alert(translateSourceText(message));
+    }
+
+    function uiConfirm(message) {
+        return confirm(translateSourceText(message));
+    }
 
     /* ============================================================
        状态
@@ -1943,7 +2428,7 @@
             return;
         }
         if (!await checkBackend()) {
-            alert('后端服务不可用，请确认后端已启动');
+        uiAlert('后端服务不可用，请确认后端已启动');
             return;
         }
 
@@ -2328,7 +2813,7 @@
     function handleRetry() {
         const failed = state.queue.filter(q => q.status === 'failed');
         if (!failed.length) {
-            alert('当前没有失败的作品');
+        uiAlert('当前没有失败的作品');
             return;
         }
         failed.forEach(q => {
@@ -2345,7 +2830,7 @@
 
     function handleExport() {
         if (!state.queue.length) {
-            alert('队列为空');
+        uiAlert('队列为空');
             return;
         }
         const lines = state.queue.map(q =>
@@ -2357,7 +2842,7 @@
     function handleExportFailed() {
         const items = state.queue.filter(q => q.status !== 'completed');
         if (!items.length) {
-            alert('没有未下载的作品');
+        uiAlert('没有未下载的作品');
             return;
         }
         const lines = items.map(q =>
@@ -2367,12 +2852,12 @@
     }
 
     function handleClear() {
-        if (!confirm('确认清除队列？')) return;
+        if (!uiConfirm('确认清除队列？')) return;
         stopAndClear();
     }
 
     function parseNTabFresh() {
-        if (!confirm('确认清除当前队列并重新解析？')) return;
+        if (!uiConfirm('确认清除当前队列并重新解析？')) return;
         stopAndClear();
         parseNTab();
     }
@@ -2393,7 +2878,7 @@
     async function fetchUserArtworks(onlyNew) {
         const userId = document.getElementById('user-id-input').value.trim();
         if (!userId || !/^\d+$/.test(userId)) {
-            alert('请输入有效的用户 ID（纯数字）');
+        uiAlert('请输入有效的用户 ID（纯数字）');
             return;
         }
         state.userId = userId;
@@ -3068,7 +3553,7 @@
             if (searchState.filterSummary.bookmarkFilterActive && searchState.filterSummary.bookmarkMetaMissing > 0) {
                 tips.push(`${searchState.filterSummary.bookmarkMetaMissing} 个收藏数不可用已排除`);
             }
-            area.innerHTML = `<div style="color:#aaa;text-align:center;padding:24px 0;">附加筛选后无结果<br><span style="font-size:12px;">${tips.join('，')}</span></div>`;
+            area.innerHTML = `<div style="color:#aaa;text-align:center;padding:24px 0;">附加筛选后无结果<br><span style="font-size:12px;">${tips.map(t => `<span>${esc(t)}</span>`).join('，')}</span></div>`;
             return;
         }
         const inQueue = new Set(state.queue.map(q => q.id));
@@ -3090,7 +3575,7 @@
         area.innerHTML = `
     ${searchState.noCookie ? '<div style="font-size:12px;color:#e6a700;margin-bottom:8px;">⚠ 未保存 Cookie，搜索结果可能减少</div>' : ''}
     <div style="font-size:12px;color:#888;margin-bottom:10px;">
-      ${summary.join('，')}
+      ${summary.map(s => `<span>${esc(s)}</span>`).join('，')}
     </div>
     <div class="search-grid">
       ${searchState.results.map((item, idx) => {
@@ -3439,7 +3924,10 @@
         updateStats();
     }
 
-    document.addEventListener('DOMContentLoaded', init);
+    document.addEventListener('DOMContentLoaded', async () => {
+        await initPageI18n();
+        init();
+    });
 
     /* ============================================================
        油猴脚本安装面板

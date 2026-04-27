@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>作品详情 - Pixiv Gallery</title>
+    <script src="/js/pixiv-i18n.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
@@ -858,9 +859,9 @@
             <line x1="19" y1="12" x2="5" y2="12"/>
             <polyline points="12 19 5 12 12 5"/>
         </svg>
-        返回
+        <span id="backBtnLabel">返回</span>
     </button>
-    <a class="back-btn" href="/pixiv-gallery.html">画廊</a>
+    <a class="back-btn" href="/pixiv-gallery.html"><span id="galleryBtnLabel">画廊</span></a>
     <span class="topbar-title" id="topbarTitle"></span>
 </div>
 
@@ -883,7 +884,7 @@
                         <span id="heartLabel">收藏</span>
                     </button>
                     <a class="expand-btn external-link-btn" id="pixivArtworkLink" href="#" target="_blank" rel="noopener noreferrer" style="display:none">
-                        Pixiv 原作品链接
+                        <span id="pixivArtworkLinkLabel">Pixiv 原作品链接</span>
                     </a>
                     <span class="meta-info" id="metaInfo"></span>
                 </div>
@@ -894,19 +895,19 @@
             <h1 class="artwork-title" id="artworkTitle"></h1>
             <div class="artwork-stats" id="artworkStats"></div>
             <div class="artwork-desc" id="artworkDesc"></div>
-            <div class="panel-title">标签</div>
+            <div class="panel-title" id="detailTagsTitle">标签</div>
             <div class="tags" id="tagList"></div>
         </div>
 
         <div class="panel" id="relatedPanel" style="display:none">
-            <div class="panel-title">相关作品</div>
+            <div class="panel-title" id="relatedPanelTitle">相关作品</div>
             <div class="related-grid" id="relatedGrid"></div>
         </div>
     </div>
 
     <div class="side-col">
         <div class="panel" id="authorPanel" style="display:none">
-            <div class="panel-title">画师</div>
+            <div class="panel-title" id="authorPanelTitle">画师</div>
             <div class="author-card">
                 <a class="author-card-link" id="authorCard" href="/pixiv-gallery.html">
                     <div class="author-avatar" id="authorAvatar">?</div>
@@ -917,11 +918,11 @@
                 <div class="author-meta">
                     <div class="author-id" id="authorId"></div>
                     <a class="author-external-link" id="pixivAuthorLink" href="#" target="_blank" rel="noopener noreferrer" style="display:none">
-                        Pixiv 主页 ↗
+                        <span id="pixivAuthorLinkLabel">Pixiv 主页 ↗</span>
                     </a>
                 </div>
             </div>
-            <div class="panel-title by-author-title">该画师的其他作品</div>
+            <div class="panel-title by-author-title" id="byAuthorTitle">该画师的其他作品</div>
             <div class="by-author-wrap" id="byAuthorWrap">
                 <button class="thumb-strip-arrow left" id="byAuthorPrev" type="button" title="上一组">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
@@ -952,7 +953,7 @@
 <div class="modal-backdrop" id="modalAddToCollection">
     <div class="modal">
         <div class="modal-head">
-            <span class="modal-title">添加到收藏夹</span>
+            <span class="modal-title" id="addToCollectionTitle">添加到收藏夹</span>
             <button class="modal-close" onclick="closeAddToCollectionModal()">×</button>
         </div>
         <div class="modal-body">
@@ -964,7 +965,7 @@
             <div class="collection-list" id="addToCollectionList"></div>
         </div>
         <div class="modal-foot">
-            <button class="btn" onclick="closeAddToCollectionModal()">完成</button>
+            <button class="btn" id="addToCollectionDoneBtn" onclick="closeAddToCollectionModal()">完成</button>
         </div>
     </div>
 </div>
@@ -973,6 +974,164 @@
 
 <script>
     const HEART_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>';
+    let pageI18n = null;
+
+    const PAGE_MESSAGES = {
+        'zh-CN': {
+            'page.title': '作品详情 - Pixiv Gallery',
+            'button.back': '返回',
+            'button.gallery': '画廊',
+            'button.expand': '展开全部 ({count})',
+            'button.expand-loading': '正在加载...',
+            'button.collapse': '收起',
+            'button.prev-group': '上一组',
+            'button.next-group': '下一组',
+            'button.favorite': '收藏',
+            'button.favorite-active': '已收藏 ({count})',
+            'button.pixiv-artwork': 'Pixiv 原作品链接',
+            'panel.tags': '标签',
+            'panel.related': '相关作品',
+            'panel.author': '画师',
+            'panel.by-author': '该画师的其他作品',
+            'panel.add-to-collection': '添加到收藏夹',
+            'button.create': '新建',
+            'button.done': '完成',
+            'placeholder.quick-create': '快速新建收藏夹',
+            'status.loading': '加载中...',
+            'status.image-unavailable': '图片不可用',
+            'status.load-failed': '加载失败',
+            'status.missing-id': '缺少 id 参数',
+            'status.artwork-load-failed': '加载失败：{message}',
+            'status.no-description': '暂无简介',
+            'status.no-tags': '暂无标签',
+            'status.no-other': '暂无其他作品',
+            'status.no-collections': '暂无收藏夹，请先新建',
+            'status.image-not-ready': '图片还未加载，请稍候',
+            'status.unknown-author': '未知',
+            'status.unknown-artwork': '作品 {id}',
+            'toast.action-failed': '操作失败',
+            'toast.created': '已创建',
+            'toast.create-failed': '创建失败',
+            'meta.pages': '{count} 张 · {ext}',
+            'stats.id': 'ID: {id}',
+            'stats.download-time': '下载于 {time}',
+            'stats.moved': '已分类 {folder}',
+            'author.default': '画师 {id}',
+            'author.filter': '按作者 {name} 筛选',
+            'author.pixiv': '在 Pixiv 打开 {name}',
+            'author.link': 'Pixiv 主页 ↗'
+        },
+        'en-US': {
+            'page.title': 'Artwork Detail - Pixiv Gallery',
+            'button.back': 'Back',
+            'button.gallery': 'Gallery',
+            'button.expand': 'Expand All ({count})',
+            'button.expand-loading': 'Loading...',
+            'button.collapse': 'Collapse',
+            'button.prev-group': 'Previous',
+            'button.next-group': 'Next',
+            'button.favorite': 'Favorite',
+            'button.favorite-active': 'Favorited ({count})',
+            'button.pixiv-artwork': 'Open Original on Pixiv',
+            'panel.tags': 'Tags',
+            'panel.related': 'Related Artworks',
+            'panel.author': 'Author',
+            'panel.by-author': 'More from This Author',
+            'panel.add-to-collection': 'Add to Collection',
+            'button.create': 'Create',
+            'button.done': 'Done',
+            'placeholder.quick-create': 'Quick create a collection',
+            'status.loading': 'Loading...',
+            'status.image-unavailable': 'Image unavailable',
+            'status.load-failed': 'Load failed',
+            'status.missing-id': 'Missing id parameter',
+            'status.artwork-load-failed': 'Load failed: {message}',
+            'status.no-description': 'No description',
+            'status.no-tags': 'No tags',
+            'status.no-other': 'No other artworks',
+            'status.no-collections': 'No collections yet. Create one first.',
+            'status.image-not-ready': 'Image is still loading. Please wait.',
+            'status.unknown-author': 'Unknown',
+            'status.unknown-artwork': 'Artwork {id}',
+            'toast.action-failed': 'Action failed',
+            'toast.created': 'Created',
+            'toast.create-failed': 'Creation failed',
+            'meta.pages': '{count} pages · {ext}',
+            'stats.id': 'ID: {id}',
+            'stats.download-time': 'Downloaded at {time}',
+            'stats.moved': 'Moved to {folder}',
+            'author.default': 'Author {id}',
+            'author.filter': 'Filter by author {name}',
+            'author.pixiv': 'Open {name} on Pixiv',
+            'author.link': 'Pixiv Profile ↗'
+        }
+    };
+
+    function pageLang() {
+        return pageI18n ? pageI18n.lang : 'zh-CN';
+    }
+
+    function pageTemplate(key, fallback) {
+        const lang = pageLang();
+        const active = PAGE_MESSAGES[lang] || PAGE_MESSAGES['en-US'];
+        if (Object.prototype.hasOwnProperty.call(active, key)) {
+            return active[key];
+        }
+        const defaults = PAGE_MESSAGES['en-US'] || {};
+        if (Object.prototype.hasOwnProperty.call(defaults, key)) {
+            return defaults[key];
+        }
+        return fallback != null ? fallback : key;
+    }
+
+    function interpolate(template, vars) {
+        if (!vars) {
+            return String(template);
+        }
+        return String(template).replace(/\{([a-zA-Z0-9_.-]+)\}/g, (match, name) => {
+            return Object.prototype.hasOwnProperty.call(vars, name) ? String(vars[name]) : match;
+        });
+    }
+
+    function wt(key, fallback, vars) {
+        return interpolate(pageTemplate(key, fallback), vars);
+    }
+
+    function syncExpandButtonText() {
+        if (!state.artwork) return;
+        const count = state.artwork.count || 1;
+        const expandBtn = document.getElementById('expandBtn');
+        const collapseBtn = document.getElementById('collapseBtn');
+        expandBtn.innerHTML = wt('button.expand', 'Expand All ({count})', {count: '<span id="totalPageCount">' + count + '</span>'});
+        collapseBtn.textContent = wt('button.collapse', 'Collapse');
+    }
+
+    function applyStaticPageTranslations() {
+        document.title = state.artwork
+            ? `${state.artwork.title || wt('status.unknown-artwork', 'Artwork {id}', {id: state.artwork.artworkId})} - Pixiv Gallery`
+            : wt('page.title', 'Artwork Detail - Pixiv Gallery');
+        document.getElementById('backBtnLabel').textContent = wt('button.back', 'Back');
+        document.getElementById('galleryBtnLabel').textContent = wt('button.gallery', 'Gallery');
+        document.getElementById('viewerLoading').textContent = wt('status.loading', 'Loading...');
+        document.getElementById('pixivArtworkLinkLabel').textContent = wt('button.pixiv-artwork', 'Open Original on Pixiv');
+        document.getElementById('detailTagsTitle').textContent = wt('panel.tags', 'Tags');
+        document.getElementById('relatedPanelTitle').textContent = wt('panel.related', 'Related Artworks');
+        document.getElementById('authorPanelTitle').textContent = wt('panel.author', 'Author');
+        document.getElementById('byAuthorTitle').textContent = wt('panel.by-author', 'More from This Author');
+        document.getElementById('addToCollectionTitle').textContent = wt('panel.add-to-collection', 'Add to Collection');
+        document.getElementById('quickCreateName').placeholder = wt('placeholder.quick-create', 'Quick create a collection');
+        document.getElementById('quickCreateBtn').textContent = wt('button.create', 'Create');
+        document.getElementById('addToCollectionDoneBtn').textContent = wt('button.done', 'Done');
+        document.getElementById('byAuthorPrev').title = wt('button.prev-group', 'Previous');
+        document.getElementById('byAuthorNext').title = wt('button.next-group', 'Next');
+        document.getElementById('pixivAuthorLinkLabel').textContent = wt('author.link', 'Pixiv Profile ↗');
+        syncExpandButtonText();
+    }
+
+    async function initPageI18n() {
+        pageI18n = await PixivI18n.create({namespaces: ['common', 'artwork']});
+        applyStaticPageTranslations();
+    }
 
     // ---------- Image cache (in-memory + sessionStorage for thumbs) ----------
     const ImageCache = (() => {
@@ -1136,9 +1295,9 @@
                 target.appendChild(img);
                 return src;
             }
-            target.innerHTML = '<span style="color:var(--muted); padding:40px">' + escapeHtml(resp && resp.message ? resp.message : '图片不可用') + '</span>';
+            target.innerHTML = '<span style="color:var(--muted); padding:40px">' + escapeHtml(resp && resp.message ? resp.message : wt('status.image-unavailable', 'Image unavailable')) + '</span>';
         } catch (e) {
-            target.innerHTML = '<span style="color:var(--muted); padding:40px">加载失败</span>';
+            target.innerHTML = '<span style="color:var(--muted); padding:40px">' + escapeHtml(wt('status.load-failed', 'Load failed')) + '</span>';
         }
         return null;
     }
@@ -1146,18 +1305,18 @@
     async function loadArtwork() {
         const id = getQueryParam('id');
         if (!id) {
-            document.getElementById('viewerLoading').textContent = '缺少 id 参数';
+            document.getElementById('viewerLoading').textContent = wt('status.missing-id', 'Missing id parameter');
             return;
         }
         state.artworkId = Number(id);
         try {
             state.artwork = await api(`/api/gallery/artwork/${id}`);
         } catch (e) {
-            document.getElementById('viewerLoading').textContent = '加载失败：' + e.message;
+            document.getElementById('viewerLoading').textContent = wt('status.artwork-load-failed', 'Load failed: {message}', {message: e.message});
             return;
         }
         document.getElementById('topbarTitle').textContent = `#${id}`;
-        document.title = `${state.artwork.title || id} - Pixiv Gallery`;
+        document.title = `${state.artwork.title || wt('status.unknown-artwork', 'Artwork {id}', {id})} - Pixiv Gallery`;
         renderViewer();
         renderDetail();
         renderAuthor();
@@ -1173,25 +1332,29 @@
         document.getElementById('viewer').style.display = '';
 
         document.getElementById('totalPageCount').textContent = count;
-        document.getElementById('metaInfo').textContent = `${count} 张 · ${(artwork.extensions || '').toUpperCase()}`;
+        document.getElementById('metaInfo').textContent = wt('meta.pages', '{count} pages · {ext}', {
+            count,
+            ext: (artwork.extensions || '').toUpperCase()
+        });
 
         state.lightboxImages = new Array(count).fill(null);
 
         const mainImage = document.getElementById('mainImage');
         mainImage.classList.add('loading');
-        mainImage.addEventListener('click', () => openLightbox(0));
+        mainImage.onclick = () => openLightbox(0);
         loadImageToElement(`/api/downloaded/image/${artwork.artworkId}/0`, mainImage).then(src => {
             if (src) state.lightboxImages[0] = src;
         });
 
         const more = document.getElementById('morePages');
         more.innerHTML = '';
-        if (count > 1) {
-            const expandBtn = document.getElementById('expandBtn');
-            expandBtn.style.display = '';
-            expandBtn.addEventListener('click', () => expandAll(count));
-            document.getElementById('collapseBtn').addEventListener('click', collapseAll);
-        }
+        const expandBtn = document.getElementById('expandBtn');
+        const collapseBtn = document.getElementById('collapseBtn');
+        expandBtn.style.display = count > 1 && !expanded ? '' : 'none';
+        collapseBtn.style.display = expanded ? '' : 'none';
+        expandBtn.onclick = () => expandAll(count);
+        collapseBtn.onclick = collapseAll;
+        syncExpandButtonText();
     }
 
     let expanded = false;
@@ -1200,7 +1363,7 @@
         const btn = document.getElementById('expandBtn');
         const collapseBtn = document.getElementById('collapseBtn');
         btn.disabled = true;
-        btn.textContent = '正在加载...';
+        btn.textContent = wt('button.expand-loading', 'Loading...');
         const more = document.getElementById('morePages');
         more.classList.add('open');
         
@@ -1235,7 +1398,7 @@
         const count = state.artwork.count || 1;
         btn.style.display = '';
         btn.disabled = false;
-        btn.innerHTML = `展开全部 (<span id="totalPageCount">${count}</span>)`;
+        syncExpandButtonText();
         collapseBtn.style.display = 'none';
         for (let i = 1; i < state.lightboxImages.length; i++) {
             state.lightboxImages[i] = null;
@@ -1246,18 +1409,18 @@
     function renderDetail() {
         const artwork = state.artwork;
         document.getElementById('detailPanel').style.display = '';
-        document.getElementById('artworkTitle').textContent = artwork.title || `作品 ${artwork.artworkId}`;
+        document.getElementById('artworkTitle').textContent = artwork.title || wt('status.unknown-artwork', 'Artwork {id}', {id: artwork.artworkId});
         const pixivArtworkLink = document.getElementById('pixivArtworkLink');
         pixivArtworkLink.href = buildPixivArtworkHref(artwork.artworkId);
         pixivArtworkLink.style.display = 'inline-flex';
 
         const stats = [];
-        stats.push(`<span class="artwork-stat">ID: ${artwork.artworkId}</span>`);
-        if (artwork.time) stats.push(`<span class="artwork-stat">下载于 ${formatTime(artwork.time * 1000)}</span>`);
+        stats.push(`<span class="artwork-stat">${escapeHtml(wt('stats.id', 'ID: {id}', {id: artwork.artworkId}))}</span>`);
+        if (artwork.time) stats.push(`<span class="artwork-stat">${escapeHtml(wt('stats.download-time', 'Downloaded at {time}', {time: formatTime(artwork.time * 1000)}))}</span>`);
         if (artwork.xRestrict === 2) stats.push('<span class="artwork-stat" style="color:#b91c1c">R-18G</span>');
         else if (artwork.xRestrict === 1) stats.push('<span class="artwork-stat" style="color:var(--danger)">R-18</span>');
         if (artwork.isAi) stats.push('<span class="artwork-stat" style="color:#8b5cf6">AI</span>');
-        if (artwork.moved) stats.push(`<span class="artwork-stat" style="color:#10b981">已分类 ${escapeHtml(artwork.moveFolder || '')}</span>`);
+        if (artwork.moved) stats.push(`<span class="artwork-stat" style="color:#10b981">${escapeHtml(wt('stats.moved', 'Moved to {folder}', {folder: artwork.moveFolder || ''}))}</span>`);
         document.getElementById('artworkStats').innerHTML = stats.join('');
 
         const desc = document.getElementById('artworkDesc');
@@ -1268,7 +1431,7 @@
                 a.rel = 'noopener';
             });
         } else {
-            desc.innerHTML = '<span style="color:var(--muted)">暂无简介</span>';
+            desc.innerHTML = '<span style="color:var(--muted)">' + escapeHtml(wt('status.no-description', 'No description')) + '</span>';
         }
 
         const tagList = document.getElementById('tagList');
@@ -1285,7 +1448,7 @@
                 </a>
             `).join('');
         } else {
-            tagList.innerHTML = '<span style="color:var(--muted); font-size:12px">暂无标签</span>';
+            tagList.innerHTML = '<span style="color:var(--muted); font-size:12px">' + escapeHtml(wt('status.no-tags', 'No tags')) + '</span>';
         }
     }
 
@@ -1293,18 +1456,18 @@
         const artwork = state.artwork;
         if (!artwork.authorId) return;
         document.getElementById('authorPanel').style.display = '';
-        const name = artwork.authorName || `画师 ${artwork.authorId}`;
+        const name = artwork.authorName || wt('author.default', 'Author {id}', {id: artwork.authorId});
         document.getElementById('authorAvatar').textContent = (name[0] || '?').toUpperCase();
         document.getElementById('authorName').textContent = name;
         document.getElementById('authorId').textContent = `ID: ${artwork.authorId}`;
         const authorCard = document.getElementById('authorCard');
         authorCard.href = buildGalleryFilterHref({authorId: artwork.authorId, authorName: name});
-        authorCard.title = `按作者 ${name} 筛选`;
-        authorCard.setAttribute('aria-label', `按作者 ${name} 筛选`);
+        authorCard.title = wt('author.filter', 'Filter by author {name}', {name});
+        authorCard.setAttribute('aria-label', wt('author.filter', 'Filter by author {name}', {name}));
         const pixivAuthorLink = document.getElementById('pixivAuthorLink');
         pixivAuthorLink.href = buildPixivAuthorHref(artwork.authorId);
-        pixivAuthorLink.title = `在 Pixiv 打开 ${name}`;
-        pixivAuthorLink.setAttribute('aria-label', `在 Pixiv 打开 ${name}`);
+        pixivAuthorLink.title = wt('author.pixiv', 'Open {name} on Pixiv', {name});
+        pixivAuthorLink.setAttribute('aria-label', wt('author.pixiv', 'Open {name} on Pixiv', {name}));
         pixivAuthorLink.style.display = 'inline';
 
         loadByAuthor();
@@ -1317,7 +1480,7 @@
         try {
             const items = await api(`/api/gallery/artwork/${state.artworkId}/by-author?limit=30`);
             if (!items.length) {
-                list.innerHTML = '<span style="color:var(--muted); font-size:12px; padding:0 28px">暂无其他作品</span>';
+                list.innerHTML = '<span style="color:var(--muted); font-size:12px; padding:0 28px">' + escapeHtml(wt('status.no-other', 'No other artworks')) + '</span>';
                 prevBtn.style.display = 'none';
                 nextBtn.style.display = 'none';
                 return;
@@ -1424,7 +1587,7 @@
                 expandAll(count).then(() => openLightbox(next));
                 return;
             }
-            toast('图片还未加载，请稍候');
+            toast(wt('status.image-not-ready', 'Image is still loading. Please wait.'));
             return;
         }
         openLightbox(next);
@@ -1461,7 +1624,9 @@
         const btn = document.getElementById('heartBtn');
         const liked = state.collectionMembership.size > 0;
         btn.classList.toggle('liked', liked);
-        document.getElementById('heartLabel').textContent = liked ? `已收藏 (${state.collectionMembership.size})` : '收藏';
+        document.getElementById('heartLabel').textContent = liked
+            ? wt('button.favorite-active', 'Favorited ({count})', {count: state.collectionMembership.size})
+            : wt('button.favorite', 'Favorite');
     }
 
     document.getElementById('heartBtn').addEventListener('click', openAddToCollectionModal);
@@ -1488,7 +1653,7 @@
     function renderAddToCollectionList() {
         const list = document.getElementById('addToCollectionList');
         if (!state.collections.length) {
-            list.innerHTML = '<div style="padding:24px; text-align:center; color:var(--muted); font-size:13px">暂无收藏夹，请先新建</div>';
+            list.innerHTML = '<div style="padding:24px; text-align:center; color:var(--muted); font-size:13px">' + escapeHtml(wt('status.no-collections', 'No collections yet. Create one first.')) + '</div>';
             return;
         }
         list.innerHTML = state.collections.map(c => `
@@ -1513,7 +1678,7 @@
                     }
                     updateHeart();
                 } catch (e) {
-                    toast(e.message || '操作失败', 'error');
+                    toast(e.message || wt('toast.action-failed', 'Action failed'), 'error');
                     cb.checked = !cb.checked;
                 }
             });
@@ -1538,9 +1703,9 @@
             await api(`/api/collections/${c.id}/artworks/${state.artworkId}`, {method: 'POST'});
             state.collectionMembership.add(c.id);
             renderAddToCollectionList();
-            toast('已创建', 'success');
+            toast(wt('toast.created', 'Created'), 'success');
         } catch (e) {
-            toast(e.message || '创建失败', 'error');
+            toast(e.message || wt('toast.create-failed', 'Creation failed'), 'error');
         } finally {
             btn.disabled = false;
         }
@@ -1551,7 +1716,10 @@
         if (backdrop) e.target.classList.remove('open');
     });
 
-    loadArtwork();
+    (async function initArtworkPage() {
+        await initPageI18n();
+        loadArtwork();
+    })();
 </script>
 </body>
 </html>

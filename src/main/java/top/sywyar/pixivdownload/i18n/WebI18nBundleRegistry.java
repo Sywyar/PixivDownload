@@ -13,7 +13,11 @@ public class WebI18nBundleRegistry {
 
     public WebI18nBundleRegistry() {
         namespaces.put("common", "i18n.web.common");
+        namespaces.put("batch", "i18n.web.batch");
         namespaces.put("gallery", "i18n.web.gallery");
+        namespaces.put("artwork", "i18n.web.artwork");
+        namespaces.put("monitor", "i18n.web.monitor");
+        namespaces.put("userscript", "i18n.web.userscript");
     }
 
     public String resolveBaseName(String namespace) {

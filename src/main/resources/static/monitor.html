@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PIXIV // DOWNLOAD MONITOR</title>
+    <script src="/js/pixiv-i18n.js"></script>
+    <script src="/js/pixiv-lang-switcher.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&display=swap" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -1153,6 +1155,58 @@
             border-color: var(--border-bright);
         }
         .app-nav-spacer { flex: 1; }
+
+        /* ── Language Switcher (cyberpunk variant) ─────────────── */
+        .pixiv-lang-switcher--cyberpunk {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-left: 0.5rem;
+            padding: 0.18rem 0.55rem 0.18rem 0.7rem;
+            border: 1px solid var(--border);
+            background: rgba(0, 229, 255, 0.04);
+            font-family: var(--font);
+            font-size: 0.62rem;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: var(--cyan);
+            transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
+        }
+        .pixiv-lang-switcher--cyberpunk::before {
+            content: 'LANG';
+            color: var(--text-dim);
+            letter-spacing: 0.2em;
+        }
+        .pixiv-lang-switcher--cyberpunk:hover {
+            border-color: var(--border-bright);
+            background: var(--cyan-dim);
+            box-shadow: var(--cyan-glow);
+        }
+        .pixiv-lang-switcher--cyberpunk .pixiv-lang-switcher__select {
+            appearance: none;
+            -webkit-appearance: none;
+            background: transparent;
+            border: none;
+            outline: none;
+            padding: 0 1.1rem 0 0;
+            color: var(--cyan);
+            font-family: var(--font);
+            font-size: 0.65rem;
+            font-weight: 500;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            cursor: pointer;
+            text-shadow: 0 0 6px rgba(0, 229, 255, 0.4);
+            background-image: linear-gradient(45deg, transparent 50%, var(--cyan) 50%),
+                              linear-gradient(135deg, var(--cyan) 50%, transparent 50%);
+            background-position: calc(100% - 8px) 50%, calc(100% - 4px) 50%;
+            background-size: 4px 4px, 4px 4px;
+            background-repeat: no-repeat;
+        }
+        .pixiv-lang-switcher--cyberpunk .pixiv-lang-switcher__select option {
+            background: var(--surface);
+            color: var(--cyan);
+        }
     </style>
 </head>
 <body>
@@ -1184,6 +1238,7 @@
             <a href="/pixiv-gallery.html" class="app-nav-link" target="_blank" rel="noopener">
                 <i class="fas fa-images" style="font-size:.6rem;"></i>GALLERY
             </a>
+            <div id="langSwitcherAnchor" style="margin-left:12px;"></div>
             <!-- future nav items -->
             <div class="app-nav-spacer"></div>
         </nav>
@@ -1353,6 +1408,194 @@
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
+    let pageI18n = null;
+    let pageObserver = null;
+    let pageTranslateScheduled = false;
+    const PAGE_TITLE = {
+        'zh-CN': 'Pixiv 下载监控',
+        'en-US': 'PIXIV // DOWNLOAD MONITOR'
+    };
+
+    const EN_TEXT = {
+        '未知': 'Unknown',
+        '人工': 'Human',
+        '详情': 'Details',
+        '图片': 'Images',
+        '每月下载图片数': 'Monthly Images',
+        '加载作品详情失败': 'Failed to load artwork details',
+        '加载缩略图失败': 'Failed to load thumbnails',
+        '加载图片失败': 'Failed to load image',
+        '搜索作者名 / ID': 'Search author name / ID',
+        '全部': 'All',
+        '按作者筛选': 'Filter by author'
+    };
+
+    const ZH_TEXT = {
+        '>> REALTIME MONITORING / STATUS & HISTORY': '>> 实时监控 / 状态与历史',
+        'LIVE': '实时',
+        'UPDATED': '更新',
+        'MONITOR': '监控',
+        'BATCH': '批量',
+        'GALLERY': '画廊',
+        '// Total Artworks': '// 作品总数',
+        '// Total Images': '// 图片总数',
+        '// Moved': '// 已归档',
+        '// Active Downloads': '// 活跃下载',
+        'DOWNLOAD HISTORY': '下载历史',
+        'search id / title / author / tag...': '搜索 id / 标题 / 作者 / 标签...',
+        'Refresh': '刷新',
+        'ARTWORK ID': '作品 ID',
+        'TITLE': '标题',
+        'IMGS': '图片数',
+        'FORMAT': '格式',
+        'AUTHOR': '作者',
+        'DATE': '时间',
+        'STATUS': '状态',
+        'OPS': '操作',
+        'No Download History': '暂无下载历史',
+        'No artworks downloaded yet.': '当前还没有已下载作品。',
+        'Jump to page': '跳转页码',
+        'ACTIVE DOWNLOADS': '活跃下载',
+        'Queue Empty': '队列为空',
+        'No active download tasks.': '当前没有活跃下载任务。',
+        'MONTHLY IMAGES': '每月图片数',
+        'ARTWORK DETAIL': '作品详情',
+        'Close': '关闭',
+        'loading': '加载中',
+        'FORMAT FILTER': '格式筛选',
+        'No data': '暂无数据',
+        'CLEAR ALL': '全部清除',
+        'AUTHOR FILTER': '作者筛选',
+        'No author match': '没有匹配作者',
+        'R18 FILTER': 'R18 筛选',
+        'AI FILTER': 'AI 筛选',
+        'PAGE SELECT': '页码选择',
+        'DONE': '完成',
+        'MOVED': '已移动'
+    };
+
+    const EN_RULES = [];
+    const ZH_RULES = [];
+
+    function targetLang() {
+        return pageI18n ? pageI18n.lang : 'zh-CN';
+    }
+
+    function translateByRules(source, exactMap, rules) {
+        if (Object.prototype.hasOwnProperty.call(exactMap, source)) {
+            return exactMap[source];
+        }
+        for (let i = 0; i < rules.length; i += 1) {
+            const [pattern, replacer] = rules[i];
+            if (!pattern.test(source)) continue;
+            pattern.lastIndex = 0;
+            return source.replace(pattern, replacer);
+        }
+        return source;
+    }
+
+    function translateSourceText(source) {
+        const text = String(source ?? '');
+        if (!text.trim()) return text;
+        if (targetLang() === 'en-US') {
+            return translateByRules(text, EN_TEXT, EN_RULES);
+        }
+        return translateByRules(text, ZH_TEXT, ZH_RULES);
+    }
+
+    function translateTextNodes(root) {
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+            acceptNode(node) {
+                if (!node || !node.nodeValue || !node.nodeValue.trim()) {
+                    return NodeFilter.FILTER_REJECT;
+                }
+                const parent = node.parentElement;
+                if (!parent) {
+                    return NodeFilter.FILTER_REJECT;
+                }
+                const tag = parent.tagName;
+                if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'TEXTAREA') {
+                    return NodeFilter.FILTER_REJECT;
+                }
+                return NodeFilter.FILTER_ACCEPT;
+            }
+        });
+        let node = walker.nextNode();
+        while (node) {
+            if (typeof node.__pixivOriginalText === 'undefined') {
+                node.__pixivOriginalText = node.nodeValue;
+            }
+            node.nodeValue = translateSourceText(node.__pixivOriginalText);
+            node = walker.nextNode();
+        }
+    }
+
+    function translateAttribute(root, attrName, datasetKey) {
+        const elements = root.matches && root.matches('[' + attrName + ']')
+            ? [root].concat([...root.querySelectorAll('[' + attrName + ']')])
+            : [...root.querySelectorAll('[' + attrName + ']')];
+        elements.forEach(el => {
+            if (!el.dataset[datasetKey]) {
+                el.dataset[datasetKey] = el.getAttribute(attrName) || '';
+            }
+            el.setAttribute(attrName, translateSourceText(el.dataset[datasetKey]));
+        });
+    }
+
+    function applyPageTranslations(root) {
+        const scope = root || document.body;
+        document.title = PAGE_TITLE[targetLang()] || PAGE_TITLE['en-US'];
+        translateTextNodes(scope);
+        translateAttribute(scope, 'title', 'i18nOriginalTitle');
+        translateAttribute(scope, 'placeholder', 'i18nOriginalPlaceholder');
+        translateAttribute(scope, 'aria-label', 'i18nOriginalAriaLabel');
+    }
+
+    function schedulePageTranslation(root) {
+        if (pageTranslateScheduled) return;
+        pageTranslateScheduled = true;
+        requestAnimationFrame(() => {
+            pageTranslateScheduled = false;
+            applyPageTranslations(root);
+        });
+    }
+
+    async function initPageI18n() {
+        pageI18n = await PixivI18n.create({namespaces: ['common', 'monitor']});
+        await PixivLangSwitcher.mount({
+            mountPoint: document.getElementById('langSwitcherAnchor'),
+            i18n: pageI18n,
+            variant: 'cyberpunk',
+            showLabel: false,
+            onChange: function (nextClient) {
+                pageI18n = nextClient;
+                schedulePageTranslation(document.body);
+            }
+        });
+        applyPageTranslations(document.body);
+        pageObserver = new MutationObserver(mutations => {
+            let node = null;
+            for (let i = 0; i < mutations.length; i += 1) {
+                const added = mutations[i].addedNodes;
+                for (let j = 0; j < added.length; j += 1) {
+                    if (added[j] && added[j].nodeType === Node.ELEMENT_NODE) {
+                        node = added[j];
+                        break;
+                    }
+                }
+                if (node) break;
+            }
+            schedulePageTranslation(node || document.body);
+        });
+        pageObserver.observe(document.body, {
+            childList: true,
+            subtree: true,
+            characterData: true,
+            attributes: true,
+            attributeFilter: ['title', 'placeholder', 'aria-label']
+        });
+    }
+
     // ===================== 状态 =====================
     let currentPage = 1;
     let totalPages = 1;
@@ -1405,10 +1648,11 @@
 
     function formatDateTime(unixSeconds) {
         const d = new Date(unixSeconds * 1000);
+        const locale = targetLang() === 'en-US' ? 'en-US' : 'zh-CN';
         return {
-            date: d.toLocaleDateString('zh-CN'),
-            time: d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }),
-            full: d.toLocaleString('zh-CN')
+            date: d.toLocaleDateString(locale),
+            time: d.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' }),
+            full: d.toLocaleString(locale)
         };
     }
 
@@ -1497,7 +1741,8 @@
     }
 
     // ===================== 初始化 =====================
-    document.addEventListener('DOMContentLoaded', () => {
+    document.addEventListener('DOMContentLoaded', async () => {
+        await initPageI18n();
         artworkModal = new bootstrap.Modal(document.getElementById('artworkModal'));
         imageModal   = new bootstrap.Modal(document.getElementById('imageModal'));
 
@@ -1584,7 +1829,7 @@
 
     function updateLastUpdatedTime() {
         document.getElementById('lastUpdatedTime').textContent =
-            new Date().toLocaleTimeString('zh-CN');
+            new Date().toLocaleTimeString(targetLang() === 'en-US' ? 'en-US' : 'zh-CN');
     }
 
     // ===================== 统计 =====================
@@ -1880,7 +2125,7 @@
             data: {
                 labels,
                 datasets: [{
-                    label: '每月下载图片数',
+                    label: translateSourceText('每月下载图片数'),
                     data,
                     backgroundColor: 'rgba(0, 229, 255, 0.15)',
                     borderColor:     'rgba(0, 229, 255, 0.8)',
@@ -2144,7 +2389,7 @@
             artworkModal.show();
         } catch (e) {
             console.error('加载作品详情失败', e);
-            alert('加载作品详情失败');
+            alert(translateSourceText('加载作品详情失败'));
         }
     }
 
@@ -2177,7 +2422,7 @@
             renderThumbnailPage();
         } catch (e) {
             console.error('加载缩略图失败', e);
-            alert('加载缩略图失败');
+            alert(translateSourceText('加载缩略图失败'));
         }
     }
 
@@ -2285,7 +2530,7 @@
                 spinner.classList.remove('active');
                 img.style.opacity = '1';
                 console.error('加载完整图片失败');
-                alert('加载图片失败');
+                alert(translateSourceText('加载图片失败'));
                 fullImgLoading = false;
                 resolve(false);
             };
