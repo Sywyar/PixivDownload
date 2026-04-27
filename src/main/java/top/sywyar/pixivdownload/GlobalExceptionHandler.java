@@ -60,6 +60,12 @@ public class GlobalExceptionHandler {
         return ResponseEntity.badRequest().body(new ErrorResponse(message));
     }
 
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<ErrorResponse> handleIllegalArgument(IllegalArgumentException e) {
+        log.warn(logMessage("error.log.request.failed", fallbackLogDetail(e.getMessage(), e.getClass().getSimpleName())));
+        return ResponseEntity.badRequest().body(new ErrorResponse(e.getMessage()));
+    }
+
     @ExceptionHandler(IOException.class)
     public ResponseEntity<ErrorResponse> handleIOException(IOException e, Locale locale) {
         String message = messages.getOrDefault(locale, "error.io", "服务器 IO 错误: {0}", e.getMessage());

@@ -1574,23 +1574,27 @@
         });
         applyPageTranslations(document.body);
         pageObserver = new MutationObserver(mutations => {
-            let node = null;
+            let pendingRoot = null;
             for (let i = 0; i < mutations.length; i += 1) {
-                const added = mutations[i].addedNodes;
-                for (let j = 0; j < added.length; j += 1) {
-                    if (added[j] && added[j].nodeType === Node.ELEMENT_NODE) {
-                        node = added[j];
-                        break;
+                const m = mutations[i];
+                if (m.type === 'childList') {
+                    for (let j = 0; j < m.addedNodes.length; j += 1) {
+                        const n = m.addedNodes[j];
+                        if (n.nodeType === Node.ELEMENT_NODE) {
+                            pendingRoot = n;
+                            break;
+                        }
                     }
+                } else if (m.type === 'attributes' && m.target.nodeType === Node.ELEMENT_NODE) {
+                    pendingRoot = m.target;
                 }
-                if (node) break;
+                if (pendingRoot) break;
             }
-            schedulePageTranslation(node || document.body);
+            if (pendingRoot) schedulePageTranslation(pendingRoot);
         });
         pageObserver.observe(document.body, {
             childList: true,
             subtree: true,
-            characterData: true,
             attributes: true,
             attributeFilter: ['title', 'placeholder', 'aria-label']
         });
