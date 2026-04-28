@@ -127,6 +127,15 @@
         }
     }
 
+    function applyAttributeBinding(root, client, selector, attrName, keyAttrName) {
+        findElements(root, selector).forEach(function (element) {
+            element.setAttribute(
+                attrName,
+                translate(client, element.getAttribute(keyAttrName), element.getAttribute(attrName), parseArgsAttribute(element))
+            );
+        });
+    }
+
     function applyBindings(root, client) {
         findElements(root, '[data-i18n]').forEach(function (element) {
             element.textContent = translate(client, element.getAttribute('data-i18n'), element.textContent, parseArgsAttribute(element));
@@ -136,19 +145,9 @@
             element.innerHTML = translate(client, element.getAttribute('data-i18n-html'), element.innerHTML, parseArgsAttribute(element));
         });
 
-        findElements(root, '[data-i18n-placeholder]').forEach(function (element) {
-            element.setAttribute(
-                'placeholder',
-                translate(client, element.getAttribute('data-i18n-placeholder'), element.getAttribute('placeholder'), parseArgsAttribute(element))
-            );
-        });
-
-        findElements(root, '[data-i18n-title]').forEach(function (element) {
-            element.setAttribute(
-                'title',
-                translate(client, element.getAttribute('data-i18n-title'), element.getAttribute('title'), parseArgsAttribute(element))
-            );
-        });
+        applyAttributeBinding(root, client, '[data-i18n-placeholder]', 'placeholder', 'data-i18n-placeholder');
+        applyAttributeBinding(root, client, '[data-i18n-title]', 'title', 'data-i18n-title');
+        applyAttributeBinding(root, client, '[data-i18n-aria-label]', 'aria-label', 'data-i18n-aria-label');
     }
 
     function buildClient(meta, namespaces, bundleMap) {

@@ -160,7 +160,7 @@
         }
 
         .viewer-image.loading::after {
-            content: '加载中...';
+            content: attr(data-loading-text);
             color: var(--muted);
             font-size: 13px;
         }
@@ -976,114 +976,6 @@
     const HEART_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>';
     let pageI18n = null;
 
-    const PAGE_MESSAGES = {
-        'zh-CN': {
-            'page.title': '作品详情 - Pixiv Gallery',
-            'button.back': '返回',
-            'button.gallery': '画廊',
-            'button.expand': '展开全部 ({count})',
-            'button.expand-loading': '正在加载...',
-            'button.collapse': '收起',
-            'button.prev-group': '上一组',
-            'button.next-group': '下一组',
-            'button.favorite': '收藏',
-            'button.favorite-active': '已收藏 ({count})',
-            'button.pixiv-artwork': 'Pixiv 原作品链接',
-            'panel.tags': '标签',
-            'panel.related': '相关作品',
-            'panel.author': '画师',
-            'panel.by-author': '该画师的其他作品',
-            'panel.add-to-collection': '添加到收藏夹',
-            'button.create': '新建',
-            'button.done': '完成',
-            'placeholder.quick-create': '快速新建收藏夹',
-            'status.loading': '加载中...',
-            'status.image-unavailable': '图片不可用',
-            'status.load-failed': '加载失败',
-            'status.missing-id': '缺少 id 参数',
-            'status.artwork-load-failed': '加载失败：{message}',
-            'status.no-description': '暂无简介',
-            'status.no-tags': '暂无标签',
-            'status.no-other': '暂无其他作品',
-            'status.no-collections': '暂无收藏夹，请先新建',
-            'status.image-not-ready': '图片还未加载，请稍候',
-            'status.unknown-author': '未知',
-            'status.unknown-artwork': '作品 {id}',
-            'toast.action-failed': '操作失败',
-            'toast.created': '已创建',
-            'toast.create-failed': '创建失败',
-            'meta.pages': '{count} 张 · {ext}',
-            'stats.id': 'ID: {id}',
-            'stats.download-time': '下载于 {time}',
-            'stats.moved': '已分类 {folder}',
-            'author.default': '画师 {id}',
-            'author.filter': '按作者 {name} 筛选',
-            'author.pixiv': '在 Pixiv 打开 {name}',
-            'author.link': 'Pixiv 主页 ↗'
-        },
-        'en-US': {
-            'page.title': 'Artwork Detail - Pixiv Gallery',
-            'button.back': 'Back',
-            'button.gallery': 'Gallery',
-            'button.expand': 'Expand All ({count})',
-            'button.expand-loading': 'Loading...',
-            'button.collapse': 'Collapse',
-            'button.prev-group': 'Previous',
-            'button.next-group': 'Next',
-            'button.favorite': 'Favorite',
-            'button.favorite-active': 'Favorited ({count})',
-            'button.pixiv-artwork': 'Open Original on Pixiv',
-            'panel.tags': 'Tags',
-            'panel.related': 'Related Artworks',
-            'panel.author': 'Author',
-            'panel.by-author': 'More from This Author',
-            'panel.add-to-collection': 'Add to Collection',
-            'button.create': 'Create',
-            'button.done': 'Done',
-            'placeholder.quick-create': 'Quick create a collection',
-            'status.loading': 'Loading...',
-            'status.image-unavailable': 'Image unavailable',
-            'status.load-failed': 'Load failed',
-            'status.missing-id': 'Missing id parameter',
-            'status.artwork-load-failed': 'Load failed: {message}',
-            'status.no-description': 'No description',
-            'status.no-tags': 'No tags',
-            'status.no-other': 'No other artworks',
-            'status.no-collections': 'No collections yet. Create one first.',
-            'status.image-not-ready': 'Image is still loading. Please wait.',
-            'status.unknown-author': 'Unknown',
-            'status.unknown-artwork': 'Artwork {id}',
-            'toast.action-failed': 'Action failed',
-            'toast.created': 'Created',
-            'toast.create-failed': 'Creation failed',
-            'meta.pages': '{count} pages · {ext}',
-            'stats.id': 'ID: {id}',
-            'stats.download-time': 'Downloaded at {time}',
-            'stats.moved': 'Moved to {folder}',
-            'author.default': 'Author {id}',
-            'author.filter': 'Filter by author {name}',
-            'author.pixiv': 'Open {name} on Pixiv',
-            'author.link': 'Pixiv Profile ↗'
-        }
-    };
-
-    function pageLang() {
-        return pageI18n ? pageI18n.lang : 'zh-CN';
-    }
-
-    function pageTemplate(key, fallback) {
-        const lang = pageLang();
-        const active = PAGE_MESSAGES[lang] || PAGE_MESSAGES['en-US'];
-        if (Object.prototype.hasOwnProperty.call(active, key)) {
-            return active[key];
-        }
-        const defaults = PAGE_MESSAGES['en-US'] || {};
-        if (Object.prototype.hasOwnProperty.call(defaults, key)) {
-            return defaults[key];
-        }
-        return fallback != null ? fallback : key;
-    }
-
     function interpolate(template, vars) {
         if (!vars) {
             return String(template);
@@ -1094,7 +986,10 @@
     }
 
     function wt(key, fallback, vars) {
-        return interpolate(pageTemplate(key, fallback), vars);
+        if (pageI18n) {
+            return pageI18n.t('artwork:' + key, fallback, vars);
+        }
+        return interpolate(fallback != null ? fallback : key, vars);
     }
 
     function syncExpandButtonText() {
@@ -1113,6 +1008,7 @@
         document.getElementById('backBtnLabel').textContent = wt('button.back', 'Back');
         document.getElementById('galleryBtnLabel').textContent = wt('button.gallery', 'Gallery');
         document.getElementById('viewerLoading').textContent = wt('status.loading', 'Loading...');
+        document.getElementById('mainImage').setAttribute('data-loading-text', wt('status.loading', 'Loading...'));
         document.getElementById('pixivArtworkLinkLabel').textContent = wt('button.pixiv-artwork', 'Open Original on Pixiv');
         document.getElementById('detailTagsTitle').textContent = wt('panel.tags', 'Tags');
         document.getElementById('relatedPanelTitle').textContent = wt('panel.related', 'Related Artworks');
@@ -1129,7 +1025,7 @@
     }
 
     async function initPageI18n() {
-        pageI18n = await PixivI18n.create({namespaces: ['common', 'artwork']});
+        pageI18n = await PixivI18n.create({namespaces: ['artwork', 'common']});
         applyStaticPageTranslations();
     }
 
