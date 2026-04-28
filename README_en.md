@@ -108,9 +108,9 @@ On `pixiv-batch.html`, expand the userscript card at the top of the page and cli
 > [!WARNING]
 > Due to Tampermonkey restrictions, scripts installed this way will stop working when the backend URL changes.
 
-**Method 2: Download manually from Releases**
+**Method 2: Download manually from Releases or the GitHub code view**
 
-Download the scripts from [Releases](../../releases), then drag them into the Tampermonkey dashboard to install:
+Download the scripts from [Releases](../../releases), then drag them into the Tampermonkey dashboard to install. Release assets only keep `Pixiv All-in-One.user.js` and `Pixiv 单作品图片下载器(Local download).user.js`; standalone scripts covered by All-in-One are no longer attached to Releases. If you need one of those standalone scripts, install it from the userscript card on `pixiv-batch.html`, or download the matching `.user.js` source file from the GitHub code view.
 
 <details>
 <summary><strong>This extra step is required when installing userscripts from downloaded release files (expand)</strong></summary>
@@ -123,16 +123,24 @@ Download the scripts from [Releases](../../releases), then drag them into the Ta
 
 </details>
 
+Scripts attached to Releases:
+
 | Script File                              | Recommended Use                                                                                                                  |
 |------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------|
 | `Pixiv All-in-One.user.js`               | Recommended. Combines page batch download, user batch download, URL bulk import, and single-artwork download (Java backend mode) |
-| `Pixiv 单作品图片下载器(Java后端版).user.js`        | Single artwork page download                                                                                                     |
 | `Pixiv 单作品图片下载器(Local download).user.js` | Single artwork page download (browser local download, no Java backend required)                                                  |
-| `Pixiv User 批量下载器.user.js`               | Batch download from a user homepage                                                                                              |
-| `Pixiv URL 批量导入作品下载器.user.js`            | Bulk artwork import, compatible with export formats from OneTab, N-Tab, and similar tab manager extensions                       |
-| `Pixiv 页面批量下载器.user.js`                  | Page DOM scraping across Pixiv                                                                                                   |
 
-> **If the all-in-one script has issues, try the matching standalone script first, then include reproduction steps and environment details when opening an issue.**
+> **When you need a standalone script covered by All-in-One**: start the app and install it from `pixiv-batch.html`, or download the matching `.user.js` source file from the GitHub code view.
+
+Standalone script reference:
+
+| Script File                              | What It Does                                                                              | Where to Get It                            |
+|------------------------------------------|-------------------------------------------------------------------------------------------|--------------------------------------------|
+| `Pixiv 单作品图片下载器(Java后端版).user.js`        | Downloads from a single artwork page through the Java backend                             | `pixiv-batch.html` / GitHub code view      |
+| `Pixiv 单作品图片下载器(Local download).user.js` | Downloads from a single artwork page in the browser, without the Java backend             | Releases / `pixiv-batch.html` / GitHub code view |
+| `Pixiv User 批量下载器.user.js`               | Batch downloads artworks from a user homepage                                             | `pixiv-batch.html` / GitHub code view      |
+| `Pixiv URL 批量导入作品下载器.user.js`            | Imports artwork URLs in bulk, compatible with exports from OneTab, N-Tab, and similar tools | `pixiv-batch.html` / GitHub code view      |
+| `Pixiv 页面批量下载器.user.js`                  | Scrapes Pixiv pages from the DOM and supports broad Pixiv page capture                    | `pixiv-batch.html` / GitHub code view      |
 
 > **The web interface is recommended first**: `pixiv-batch.html` supports Bulk Artwork Import, User mode, and Search mode without requiring any userscript for batch downloading.
 
@@ -309,7 +317,7 @@ If the change touches `*.user.js`, static resource assembly, or the script insta
 
 ### 4. Build Windows portable packages / EXE / installer
 
-Use [`scripts/package-local.ps1`](./scripts/package-local.ps1) for local packaging. The script first generates `Pixiv All-in-One.user.js`, then runs Maven `package`, builds a trimmed runtime with `jlink`, creates an app-image with `jpackage` (including `PixivDownload.exe`), and then produces the online portable package and Inno Setup installer based on the flags you pass.
+Use [`scripts/package-local.ps1`](./scripts/package-local.ps1) for local packaging. The script first generates `Pixiv All-in-One.user.js`, then runs Maven `package`, builds a trimmed runtime with `jlink`, creates an app-image with `jpackage` (including `PixivDownload.exe`), and then produces the online portable package, the FFmpeg-bundled offline portable package, and the Inno Setup installer based on the flags you pass.
 
 ```powershell
 $env:JAVA_TOOL_OPTIONS='-Dfile.encoding=UTF-8'
@@ -327,10 +335,12 @@ powershell -ExecutionPolicy Bypass -File .\scripts\package-local.ps1 -Version 0.
 Useful options:
 
 - `-SkipPortable`: skip the online portable package
+- `-SkipOfflinePortable`: skip the FFmpeg-bundled offline portable package
 - `-SkipInstaller`: skip Inno Setup installer generation and keep only portable outputs (`-SkipMsi` remains available as a compatibility alias)
-- `-SkipOfflinePortable`, `-MsiCultures`, `-MsiVariants`, and `-RedownloadFfmpeg`: retained for compatibility; the current packaging flow ignores these options
+- `-RedownloadFfmpeg`: download a fresh FFmpeg payload for the offline portable package
+- `-MsiCultures` and `-MsiVariants`: retained for compatibility; the current Inno Setup packaging flow ignores these options
 
-Artifacts are written to `build/out/` by default. Installer generation requires a working Inno Setup 6 installation (`ISCC.exe`).
+Artifacts are written to `build/out/` by default. Offline portable generation downloads or reuses the FFmpeg payload under `build/ffmpeg`; installer generation requires a working Inno Setup 6 installation (`ISCC.exe`).
 
 ### 5. Commit and open a PR
 
