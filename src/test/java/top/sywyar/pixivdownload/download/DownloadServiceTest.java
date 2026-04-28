@@ -392,6 +392,47 @@ class DownloadServiceTest {
         }
     }
 
+    @Nested
+    @DisplayName("collection download root")
+    class CollectionDownloadRootTests {
+
+        @BeforeEach
+        void setupDownloadPath() {
+            lenient().when(downloadConfig.getRootFolder()).thenReturn(tempDir.toString());
+            lenient().when(downloadConfig.isUserFlatFolder()).thenReturn(true);
+            lenient().when(ugoiraService.processUgoira(anyLong(), any(), any(), anyString(), any()))
+                    .thenReturn(1);
+            lenient().when(pixivDatabase.getUniqueTime()).thenReturn(1700000100L);
+        }
+
+        @Test
+        @DisplayName("批量下载指定收藏夹时应使用收藏夹下载根目录")
+        void shouldUseCollectionDownloadRootWhenCollectionIdIsProvided() {
+            DownloadRequest.Other other = new DownloadRequest.Other();
+            other.setUgoira(true);
+            other.setUgoiraZipUrl("https://public-img-zip.pximg.net/test.zip");
+            other.setUgoiraDelays(List.of(100));
+            other.setCollectionId(7L);
+            Path collectionRoot = tempDir.resolve("收藏😀");
+            when(collectionService.resolveDownloadRoot(7L, tempDir)).thenReturn(collectionRoot);
+
+            downloadService.downloadImages(12345L, "test", List.of("https://public-img-zip.pximg.net/test.zip"),
+                    "https://www.pixiv.net/", other, null, null);
+
+            Path expectedPath = collectionRoot.resolve("12345");
+            verify(ugoiraService).processUgoira(
+                    eq(12345L),
+                    same(other),
+                    eq(expectedPath),
+                    eq("https://www.pixiv.net/"),
+                    isNull()
+            );
+            verify(pixivDatabase).insertArtwork(12345L, "test", expectedPath.toAbsolutePath().toString(),
+                    1, "webp", 1700000100L, 0, false, null, null);
+            verify(collectionService).addArtwork(7L, 12345L);
+        }
+    }
+
     // ========== getSortTimeArtworkPaged ==========
 
     @Nested

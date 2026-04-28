@@ -3855,6 +3855,9 @@
             el.addEventListener('change', syncSettings);
             if (el.type === 'number') el.addEventListener('input', syncSettings);
         });
+        document.getElementById('s-collection').addEventListener('click', () => {
+            refreshBatchCollections();
+        });
 
         // Mode
         const savedMode = storeGet('pixiv_mode') || 'ntab';

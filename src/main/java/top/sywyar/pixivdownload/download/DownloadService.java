@@ -88,6 +88,9 @@ public class DownloadService {
     public void downloadImages(Long artworkId, String title, List<String> imageUrls,
                                String referer, DownloadRequest.Other other, String cookie,
                                String userUuid) {
+        if (other == null) {
+            other = new DownloadRequest.Other();
+        }
         // 初始化下载状态
         DownloadStatus status = new DownloadStatus(artworkId, title, imageUrls.size());
         downloadStatusMap.put(artworkId, status);
@@ -99,18 +102,19 @@ public class DownloadService {
             String folderName = String.valueOf(artworkId);
 
             // 创建文件夹结构
-            Path downloadPath = Paths.get(downloadConfig.getRootFolder());
+            Path downloadRoot = resolveEffectiveDownloadRoot(other);
+            Path downloadPath = downloadRoot;
             if (other.isUserDownload() && !downloadConfig.isUserFlatFolder()) {
-                downloadPath = Paths.get(downloadPath.toString(), other.getUsername());
+                downloadPath = downloadPath.resolve(other.getUsername());
 
                 if (other.getXRestrict() == 2) {
-                    downloadPath = Paths.get(downloadPath.toString(), "R18G");
+                    downloadPath = downloadPath.resolve("R18G");
                 } else if (other.getXRestrict() == 1) {
-                    downloadPath = Paths.get(downloadPath.toString(), "R18");
+                    downloadPath = downloadPath.resolve("R18");
                 }
             }
-            downloadPath = Paths.get(downloadPath.toString(), folderName);
-            status.setFolderName(Paths.get(downloadConfig.getRootFolder()).relativize(downloadPath).toString());
+            downloadPath = downloadPath.resolve(folderName);
+            status.setFolderName(displayFolderName(downloadRoot, downloadPath));
             Files.createDirectories(downloadPath);
             status.setDownloadPath(downloadPath.toString());
 
@@ -211,6 +215,24 @@ public class DownloadService {
                     () -> downloadStatusMap.remove(artworkId),
                     Instant.now().plusSeconds(300)
             );
+        }
+    }
+
+    private Path resolveEffectiveDownloadRoot(DownloadRequest.Other other) {
+        Path defaultRoot = Paths.get(downloadConfig.getRootFolder());
+        if (other != null && other.getCollectionId() != null) {
+            return collectionService.resolveDownloadRoot(other.getCollectionId(), defaultRoot);
+        }
+        return defaultRoot;
+    }
+
+    private String displayFolderName(Path root, Path downloadPath) {
+        try {
+            return root.toAbsolutePath().normalize()
+                    .relativize(downloadPath.toAbsolutePath().normalize())
+                    .toString();
+        } catch (IllegalArgumentException e) {
+            return downloadPath.toString();
         }
     }
 

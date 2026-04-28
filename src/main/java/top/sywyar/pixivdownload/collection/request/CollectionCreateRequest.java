@@ -7,4 +7,5 @@ import lombok.Data;
 public class CollectionCreateRequest {
     @NotBlank(message = "{validation.collection.name.required}")
     private String name;
+    private String downloadRoot;
 }

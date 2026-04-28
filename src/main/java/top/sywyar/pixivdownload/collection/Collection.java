@@ -8,6 +8,7 @@ public record Collection(
         long id,
         String name,
         String iconExt,
+        String downloadRoot,
         int sortOrder,
         long createdTime,
         int artworkCount

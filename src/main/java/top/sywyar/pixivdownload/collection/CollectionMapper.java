@@ -12,9 +12,13 @@ public interface CollectionMapper {
             + "id INTEGER PRIMARY KEY AUTOINCREMENT,"
             + "name TEXT NOT NULL,"
             + "icon_ext TEXT,"
+            + "download_root TEXT,"
             + "sort_order INTEGER DEFAULT 0,"
             + "created_time INTEGER NOT NULL)")
     void createCollectionsTable();
+
+    @Update("ALTER TABLE collections ADD COLUMN download_root TEXT")
+    void addDownloadRootColumn();
 
     @Update("CREATE TABLE IF NOT EXISTS artwork_collections ("
             + "collection_id INTEGER NOT NULL,"
@@ -27,20 +31,20 @@ public interface CollectionMapper {
             + " ON artwork_collections(artwork_id)")
     void createArtworkCollectionsArtworkIndex();
 
-    @Select("SELECT c.id, c.name, c.icon_ext AS iconExt,"
+    @Select("SELECT c.id, c.name, c.icon_ext AS iconExt, c.download_root AS downloadRoot,"
             + " c.sort_order AS sortOrder, c.created_time AS createdTime,"
             + " COALESCE((SELECT COUNT(*) FROM artwork_collections ac WHERE ac.collection_id = c.id), 0) AS artworkCount"
             + " FROM collections c ORDER BY c.sort_order, c.id")
     List<top.sywyar.pixivdownload.collection.Collection> findAll();
 
-    @Select("SELECT c.id, c.name, c.icon_ext AS iconExt,"
+    @Select("SELECT c.id, c.name, c.icon_ext AS iconExt, c.download_root AS downloadRoot,"
             + " c.sort_order AS sortOrder, c.created_time AS createdTime,"
             + " COALESCE((SELECT COUNT(*) FROM artwork_collections ac WHERE ac.collection_id = c.id), 0) AS artworkCount"
             + " FROM collections c WHERE c.id = #{id}")
     top.sywyar.pixivdownload.collection.Collection findById(@Param("id") long id);
 
-    @Insert("INSERT INTO collections(name, icon_ext, sort_order, created_time)"
-            + " VALUES(#{name}, #{iconExt}, #{sortOrder}, #{createdTime})")
+    @Insert("INSERT INTO collections(name, icon_ext, download_root, sort_order, created_time)"
+            + " VALUES(#{name}, #{iconExt}, #{downloadRoot}, #{sortOrder}, #{createdTime})")
     @Options(useGeneratedKeys = true, keyProperty = "id", keyColumn = "id")
     void insert(CollectionInsert insert);
 
@@ -49,6 +53,9 @@ public interface CollectionMapper {
 
     @Update("UPDATE collections SET icon_ext = #{iconExt} WHERE id = #{id}")
     int updateIconExt(@Param("id") long id, @Param("iconExt") String iconExt);
+
+    @Update("UPDATE collections SET download_root = #{downloadRoot} WHERE id = #{id}")
+    int updateDownloadRoot(@Param("id") long id, @Param("downloadRoot") String downloadRoot);
 
     @Update("UPDATE collections SET sort_order = #{sortOrder} WHERE id = #{id}")
     int updateSortOrder(@Param("id") long id, @Param("sortOrder") int sortOrder);

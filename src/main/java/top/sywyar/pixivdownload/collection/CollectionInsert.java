@@ -11,6 +11,7 @@ public class CollectionInsert {
     private Long id;
     private String name;
     private String iconExt;
+    private String downloadRoot;
     private int sortOrder;
     private long createdTime;
 }

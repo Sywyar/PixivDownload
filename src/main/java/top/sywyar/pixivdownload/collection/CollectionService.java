@@ -6,15 +6,19 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
+import top.sywyar.pixivdownload.download.config.DownloadConfig;
 import top.sywyar.pixivdownload.i18n.AppMessages;
 import top.sywyar.pixivdownload.i18n.LocalizedException;
 
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 @Slf4j
 @Service
@@ -22,14 +26,20 @@ import java.util.Set;
 public class CollectionService {
 
     public static final int MAX_NAME_LENGTH = 40;
+    public static final int MAX_DOWNLOAD_ROOT_LENGTH = 500;
+    private static final Pattern WINDOWS_DRIVE_RELATIVE = Pattern.compile("^[A-Za-z]:(?![/\\\\]).*");
+    private static final Pattern WINDOWS_RESERVED_NAME = Pattern.compile(
+            "(?i)^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(\\..*)?$");
 
     private final CollectionMapper collectionMapper;
     private final CollectionIconService iconService;
     private final AppMessages messages;
+    private final DownloadConfig downloadConfig;
 
     @PostConstruct
     public void init() {
         collectionMapper.createCollectionsTable();
+        try { collectionMapper.addDownloadRootColumn(); } catch (Exception ignored) {}
         collectionMapper.createArtworkCollectionsTable();
         collectionMapper.createArtworkCollectionsArtworkIndex();
     }
@@ -47,13 +57,19 @@ public class CollectionService {
     }
 
     public Collection create(String name) {
+        return create(name, null);
+    }
+
+    public Collection create(String name, String downloadRoot) {
         String clean = validateName(name);
         if (collectionMapper.countByName(clean) > 0) {
             throw LocalizedException.badRequest("collection.name.duplicate", "同名收藏夹已存在");
         }
+        String cleanDownloadRoot = validateDownloadRoot(downloadRoot, clean, 0L);
         CollectionInsert insert = new CollectionInsert();
         insert.setName(clean);
         insert.setIconExt(null);
+        insert.setDownloadRoot(cleanDownloadRoot);
         insert.setSortOrder(0);
         insert.setCreatedTime(Instant.now().getEpochSecond());
         collectionMapper.insert(insert);
@@ -76,6 +92,13 @@ public class CollectionService {
             throw LocalizedException.badRequest("collection.name.duplicate", "同名收藏夹已存在");
         }
         collectionMapper.updateName(id, clean);
+        return collectionMapper.findById(id);
+    }
+
+    public Collection updateDownloadRoot(long id, String downloadRoot) {
+        Collection collection = requireCollection(id);
+        String cleanDownloadRoot = validateDownloadRoot(downloadRoot, collection.name(), collection.id());
+        collectionMapper.updateDownloadRoot(id, cleanDownloadRoot);
         return collectionMapper.findById(id);
     }
 
@@ -153,10 +176,31 @@ public class CollectionService {
         return collectionMapper.findArtworkIdsInCollections(collectionIds);
     }
 
+    public Path resolveDownloadRoot(long collectionId, Path defaultRoot) {
+        Collection collection = collectionMapper.findById(collectionId);
+        if (collection == null || !StringUtils.hasText(collection.downloadRoot())) {
+            return defaultRoot;
+        }
+        return resolveConfiguredDownloadRoot(
+                collection.downloadRoot(),
+                collection.name(),
+                collection.id(),
+                defaultRoot
+        );
+    }
+
     private void requireExists(long id) {
         if (!exists(id)) {
             throw LocalizedException.badRequest("collection.not-found", "收藏夹不存在: {0}", id);
         }
+    }
+
+    private Collection requireCollection(long id) {
+        Collection collection = get(id);
+        if (collection != null) {
+            return collection;
+        }
+        throw LocalizedException.badRequest("collection.not-found", "收藏夹不存在: {0}", id);
     }
 
     private String validateName(String name) {
@@ -175,6 +219,136 @@ public class CollectionService {
             );
         }
         return clean;
+    }
+
+    private String validateDownloadRoot(String downloadRoot, String collectionName, long collectionId) {
+        if (!StringUtils.hasText(downloadRoot)) {
+            return null;
+        }
+        String clean = downloadRoot.trim();
+        if (clean.length() > MAX_DOWNLOAD_ROOT_LENGTH) {
+            throw LocalizedException.badRequest(
+                    "collection.download-root.too-long",
+                    "收藏夹下载目录过长（最多 {0} 字符）",
+                    MAX_DOWNLOAD_ROOT_LENGTH
+            );
+        }
+        if (hasControlCharacter(clean)) {
+            throw LocalizedException.badRequest(
+                    "collection.download-root.control-char",
+                    "收藏夹下载目录不能包含控制字符"
+            );
+        }
+        try {
+            resolveConfiguredDownloadRoot(clean, collectionName, collectionId, Paths.get(downloadConfig.getRootFolder()));
+        } catch (LocalizedException e) {
+            throw e;
+        } catch (IllegalArgumentException e) {
+            throw LocalizedException.badRequest(
+                    "collection.download-root.invalid",
+                    "无效的收藏夹下载目录: {0}",
+                    clean
+            );
+        }
+        return clean;
+    }
+
+    private Path resolveConfiguredDownloadRoot(String downloadRoot,
+                                               String collectionName,
+                                               long collectionId,
+                                               Path defaultRoot) {
+        String expanded = expandDownloadRootTemplate(downloadRoot, collectionName, collectionId);
+        if (hasSingleLeadingSeparator(expanded)) {
+            expanded = stripLeadingSeparators(expanded);
+        }
+        if (WINDOWS_DRIVE_RELATIVE.matcher(expanded).matches()) {
+            throw LocalizedException.badRequest(
+                    "collection.download-root.invalid",
+                    "无效的收藏夹下载目录: {0}",
+                    downloadRoot
+            );
+        }
+        Path configured = Paths.get(expanded);
+        if (configured.isAbsolute()) {
+            return configured.normalize();
+        }
+
+        Path root = defaultRoot.toAbsolutePath().normalize();
+        Path resolved = root.resolve(stripLeadingSeparators(expanded)).normalize();
+        if (!resolved.startsWith(root)) {
+            throw LocalizedException.badRequest(
+                    "collection.download-root.relative-escape",
+                    "相对收藏夹下载目录不能离开 download.root-folder: {0}",
+                    downloadRoot
+            );
+        }
+        return resolved;
+    }
+
+    private String expandDownloadRootTemplate(String downloadRoot, String collectionName, long collectionId) {
+        return downloadRoot.replace(
+                "{collection_name}",
+                safePathSegment(collectionName, collectionId)
+        );
+    }
+
+    private boolean hasSingleLeadingSeparator(String value) {
+        return value.length() > 0
+                && isPathSeparator(value.charAt(0))
+                && !(value.length() > 1 && isPathSeparator(value.charAt(1)));
+    }
+
+    private boolean isPathSeparator(char value) {
+        return value == '/' || value == '\\';
+    }
+
+    private String stripLeadingSeparators(String value) {
+        int index = 0;
+        while (index < value.length()) {
+            char ch = value.charAt(index);
+            if (ch != '/' && ch != '\\') {
+                break;
+            }
+            index++;
+        }
+        return value.substring(index);
+    }
+
+    private String safePathSegment(String value, long collectionId) {
+        String source = StringUtils.hasText(value) ? value.trim() : "collection-" + collectionId;
+        StringBuilder builder = new StringBuilder(source.length());
+        source.codePoints().forEach(codePoint -> {
+            if (isUnsafePathSegmentCodePoint(codePoint)) {
+                builder.append('_');
+            } else {
+                builder.appendCodePoint(codePoint);
+            }
+        });
+        String clean = builder.toString().trim();
+        if (!StringUtils.hasText(clean) || ".".equals(clean) || "..".equals(clean)) {
+            return "collection-" + collectionId;
+        }
+        if (WINDOWS_RESERVED_NAME.matcher(clean).matches()) {
+            return clean + "_";
+        }
+        return clean;
+    }
+
+    private boolean isUnsafePathSegmentCodePoint(int codePoint) {
+        return codePoint == '/'
+                || codePoint == '\\'
+                || codePoint == ':'
+                || codePoint == '*'
+                || codePoint == '?'
+                || codePoint == '"'
+                || codePoint == '<'
+                || codePoint == '>'
+                || codePoint == '|'
+                || Character.isISOControl(codePoint);
+    }
+
+    private boolean hasControlCharacter(String value) {
+        return value.codePoints().anyMatch(Character::isISOControl);
     }
 
     private String message(String code, Object... args) {

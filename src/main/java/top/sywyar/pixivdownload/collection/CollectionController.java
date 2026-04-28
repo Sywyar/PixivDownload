@@ -8,6 +8,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import top.sywyar.pixivdownload.collection.request.CollectionCreateRequest;
+import top.sywyar.pixivdownload.collection.request.CollectionDownloadRootRequest;
 import top.sywyar.pixivdownload.collection.request.CollectionRenameRequest;
 import top.sywyar.pixivdownload.collection.response.CollectionListResponse;
 import top.sywyar.pixivdownload.i18n.LocalizedException;
@@ -33,7 +34,7 @@ public class CollectionController {
 
     @PostMapping
     public ResponseEntity<Collection> create(@Valid @RequestBody CollectionCreateRequest request) {
-        Collection created = collectionService.create(request.getName());
+        Collection created = collectionService.create(request.getName(), request.getDownloadRoot());
         return ResponseEntity.ok(created);
     }
 
@@ -41,6 +42,13 @@ public class CollectionController {
     public ResponseEntity<Collection> rename(@PathVariable long id,
                                              @Valid @RequestBody CollectionRenameRequest request) {
         return ResponseEntity.ok(collectionService.rename(id, request.getName()));
+    }
+
+    @PutMapping("/{id}/download-root")
+    public ResponseEntity<Collection> updateDownloadRoot(@PathVariable long id,
+                                                         @RequestBody CollectionDownloadRootRequest request) {
+        String downloadRoot = request == null ? null : request.getDownloadRoot();
+        return ResponseEntity.ok(collectionService.updateDownloadRoot(id, downloadRoot));
     }
 
     @PutMapping("/{id}/sort-order")

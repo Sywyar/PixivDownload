@@ -90,6 +90,7 @@ public final class ManagedDatabaseSchema {
                         column("id", "INTEGER", false, null, 1),
                         column("name", "TEXT", true, null, 0),
                         column("icon_ext", "TEXT", false, null, 0),
+                        column("download_root", "TEXT", false, null, 0),
                         column("sort_order", "INTEGER", false, "0", 0),
                         column("created_time", "INTEGER", true, null, 0)
                 ),
