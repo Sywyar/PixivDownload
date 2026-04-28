@@ -22,6 +22,8 @@ import java.sql.SQLException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 
 /**
  * 综合回填工具：一次 Pixiv AJAX 请求同时补全 artworks 表的 {@code author_id}、{@code "R18"}、
@@ -50,6 +52,13 @@ public class ArtworksBackFill {
 
     private static final String PIXIV_AJAX = "https://www.pixiv.net/ajax/illust/";
 
+    public static final Set<DatabaseColumn> SUPPORTED_DATABASE_COLUMNS = Set.of(
+            new DatabaseColumn("artworks", "author_id"),
+            new DatabaseColumn("artworks", "R18"),
+            new DatabaseColumn("artworks", "is_ai"),
+            new DatabaseColumn("artworks", "description")
+    );
+
     private static final String[] R18_KEYWORDS = {
             "R-18", "R18", "年齢制限", "年龄限制", "閲覧制限", "18歳未満",
             "成人向け", "成人向", "restricted", "age"
@@ -68,6 +77,10 @@ public class ArtworksBackFill {
             return;
         }
         run(options);
+    }
+
+    public static boolean supportsDatabaseColumn(String tableName, String columnName) {
+        return SUPPORTED_DATABASE_COLUMNS.contains(new DatabaseColumn(tableName, columnName));
     }
 
     public static int countCandidates(Options options) throws Exception {
@@ -686,5 +699,16 @@ public class ArtworksBackFill {
 
     private static String message(String code, Object... args) {
         return MessageBundles.get(code, args);
+    }
+
+    public record DatabaseColumn(String tableName, String columnName) {
+        public DatabaseColumn {
+            tableName = normalizeIdentifier(tableName);
+            columnName = normalizeIdentifier(columnName);
+        }
+    }
+
+    private static String normalizeIdentifier(String value) {
+        return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
     }
 }

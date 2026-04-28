@@ -285,6 +285,17 @@ public class GuiLauncher {
         }
 
         log.info(logMessage("gui.launcher.log.startup.schema-check.mismatch", comparison.summary(8)));
+        if (!supportsStartupAutoBackfill(comparison)) {
+            log.info(logMessage("gui.launcher.log.startup.schema-check.auto-backfill.unsupported", comparison.summary(8)));
+            SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(
+                    frame,
+                    message("gui.launcher.dialog.schema-mismatch.no-auto-backfill.message", comparison.summary(6)),
+                    message("gui.launcher.dialog.schema-mismatch.title"),
+                    JOptionPane.INFORMATION_MESSAGE));
+            BackendLifecycleManager.startAsync();
+            return;
+        }
+
         SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(
                 frame,
                 message("gui.launcher.dialog.schema-mismatch.message", comparison.summary(6)),
@@ -348,6 +359,17 @@ public class GuiLauncher {
         ArtworksBackFill.Summary finalSummary = summary;
         Throwable finalFailure = failure;
         BackendLifecycleManager.startAsync(() -> showStartupBackfillResult(frame, finalSummary, finalFailure, confirmedPending));
+    }
+
+    private static boolean supportsStartupAutoBackfill(DatabaseSchemaInspector.SchemaComparison comparison) {
+        return !comparison.details().isEmpty()
+                && comparison.details().stream().allMatch(GuiLauncher::isSupportedStartupAutoBackfillDifference);
+    }
+
+    private static boolean isSupportedStartupAutoBackfillDifference(
+            DatabaseSchemaInspector.SchemaDifference difference) {
+        return difference.hasColumn()
+                && ArtworksBackFill.supportsDatabaseColumn(difference.tableName(), difference.columnName());
     }
 
     private static void showStartupBackfillResult(Component owner,

@@ -43,13 +43,14 @@ public final class DatabaseSchemaInspector {
     public static SchemaComparison compare(Connection connection,
                                            ManagedDatabaseSchema.DatabaseSchema expectedSchema) throws SQLException {
         Map<String, ManagedDatabaseSchema.TableSpec> actualTables = readActualTables(connection);
-        List<String> differences = new ArrayList<>();
+        List<SchemaDifference> differences = new ArrayList<>();
 
         for (Map.Entry<String, ManagedDatabaseSchema.TableSpec> expectedEntry : expectedSchema.tables().entrySet()) {
             String tableName = expectedEntry.getKey();
             ManagedDatabaseSchema.TableSpec actualTable = actualTables.get(tableName);
             if (actualTable == null) {
-                differences.add(MessageBundles.get("download.db.schema.missing-table", tableName));
+                addDifference(differences, SchemaDifferenceKind.MISSING_TABLE, tableName, null,
+                        MessageBundles.get("download.db.schema.missing-table", tableName));
                 continue;
             }
             compareTable(expectedEntry.getValue(), actualTable, differences);
@@ -57,11 +58,12 @@ public final class DatabaseSchemaInspector {
 
         for (String actualTable : actualTables.keySet()) {
             if (!expectedSchema.tables().containsKey(actualTable)) {
-                differences.add(MessageBundles.get("download.db.schema.unmanaged-table", actualTable));
+                addDifference(differences, SchemaDifferenceKind.UNMANAGED_TABLE, actualTable, null,
+                        MessageBundles.get("download.db.schema.unmanaged-table", actualTable));
             }
         }
 
-        return new SchemaComparison(differences.isEmpty(), List.copyOf(differences));
+        return new SchemaComparison(differences.isEmpty(), differences);
     }
 
     private static Map<String, ManagedDatabaseSchema.TableSpec> readActualTables(Connection connection) throws SQLException {
@@ -142,7 +144,7 @@ public final class DatabaseSchemaInspector {
 
     private static void compareTable(ManagedDatabaseSchema.TableSpec expected,
                                      ManagedDatabaseSchema.TableSpec actual,
-                                     List<String> differences) {
+                                     List<SchemaDifference> differences) {
         Map<String, ManagedDatabaseSchema.ColumnSpec> expectedColumns = expected.columns().stream()
                 .collect(Collectors.toMap(ManagedDatabaseSchema.ColumnSpec::name, column -> column, (left, right) -> left, LinkedHashMap::new));
         Map<String, ManagedDatabaseSchema.ColumnSpec> actualColumns = actual.columns().stream()
@@ -152,7 +154,8 @@ public final class DatabaseSchemaInspector {
             String columnName = expectedEntry.getKey();
             ManagedDatabaseSchema.ColumnSpec actualColumn = actualColumns.get(columnName);
             if (actualColumn == null) {
-                differences.add(MessageBundles.get("download.db.schema.missing-column", expected.name(), columnName));
+                addDifference(differences, SchemaDifferenceKind.MISSING_COLUMN, expected.name(), columnName,
+                        MessageBundles.get("download.db.schema.missing-column", expected.name(), columnName));
                 continue;
             }
             compareColumn(expected.name(), expectedEntry.getValue(), actualColumn, differences);
@@ -160,7 +163,8 @@ public final class DatabaseSchemaInspector {
 
         for (String actualColumn : actualColumns.keySet()) {
             if (!expectedColumns.containsKey(actualColumn)) {
-                differences.add(MessageBundles.get("download.db.schema.unmanaged-column", expected.name(), actualColumn));
+                addDifference(differences, SchemaDifferenceKind.UNMANAGED_COLUMN, expected.name(), actualColumn,
+                        MessageBundles.get("download.db.schema.unmanaged-column", expected.name(), actualColumn));
             }
         }
 
@@ -173,12 +177,14 @@ public final class DatabaseSchemaInspector {
 
         for (String expectedIndex : expectedIndexes) {
             if (!actualIndexes.contains(expectedIndex)) {
-                differences.add(MessageBundles.get("download.db.schema.missing-index", expected.name(), expectedIndex));
+                addDifference(differences, SchemaDifferenceKind.MISSING_INDEX, expected.name(), null,
+                        MessageBundles.get("download.db.schema.missing-index", expected.name(), expectedIndex));
             }
         }
         for (String actualIndex : actualIndexes) {
             if (!expectedIndexes.contains(actualIndex)) {
-                differences.add(MessageBundles.get("download.db.schema.unmanaged-index", expected.name(), actualIndex));
+                addDifference(differences, SchemaDifferenceKind.UNMANAGED_INDEX, expected.name(), null,
+                        MessageBundles.get("download.db.schema.unmanaged-index", expected.name(), actualIndex));
             }
         }
     }
@@ -186,40 +192,79 @@ public final class DatabaseSchemaInspector {
     private static void compareColumn(String tableName,
                                       ManagedDatabaseSchema.ColumnSpec expected,
                                       ManagedDatabaseSchema.ColumnSpec actual,
-                                      List<String> differences) {
+                                      List<SchemaDifference> differences) {
         if (!expected.type().equals(actual.type())) {
-            differences.add(MessageBundles.get("download.db.schema.column-type-mismatch",
-                    tableName, expected.name(), expected.type(), actual.type()));
+            addDifference(differences, SchemaDifferenceKind.COLUMN_TYPE_MISMATCH, tableName, expected.name(),
+                    MessageBundles.get("download.db.schema.column-type-mismatch",
+                            tableName, expected.name(), expected.type(), actual.type()));
         }
         if (expected.notNull() != actual.notNull()) {
-            differences.add(MessageBundles.get("download.db.schema.column-not-null-mismatch",
-                    tableName, expected.name(), expected.notNull(), actual.notNull()));
+            addDifference(differences, SchemaDifferenceKind.COLUMN_NOT_NULL_MISMATCH, tableName, expected.name(),
+                    MessageBundles.get("download.db.schema.column-not-null-mismatch",
+                            tableName, expected.name(), expected.notNull(), actual.notNull()));
         }
         if (!java.util.Objects.equals(expected.defaultValue(), actual.defaultValue())) {
-            differences.add(MessageBundles.get("download.db.schema.column-default-mismatch",
-                    tableName, expected.name(), expected.defaultValue(), actual.defaultValue()));
+            addDifference(differences, SchemaDifferenceKind.COLUMN_DEFAULT_MISMATCH, tableName, expected.name(),
+                    MessageBundles.get("download.db.schema.column-default-mismatch",
+                            tableName, expected.name(), expected.defaultValue(), actual.defaultValue()));
         }
         if (expected.primaryKeyPosition() != actual.primaryKeyPosition()) {
-            differences.add(MessageBundles.get("download.db.schema.column-primary-key-mismatch",
-                    tableName, expected.name(), expected.primaryKeyPosition(), actual.primaryKeyPosition()));
+            addDifference(differences, SchemaDifferenceKind.COLUMN_PRIMARY_KEY_MISMATCH, tableName, expected.name(),
+                    MessageBundles.get("download.db.schema.column-primary-key-mismatch",
+                            tableName, expected.name(), expected.primaryKeyPosition(), actual.primaryKeyPosition()));
         }
     }
 
-    public record SchemaComparison(boolean matches, List<String> differences) {
+    private static void addDifference(List<SchemaDifference> differences,
+                                      SchemaDifferenceKind kind,
+                                      String tableName,
+                                      String columnName,
+                                      String message) {
+        differences.add(new SchemaDifference(kind, tableName, columnName, message));
+    }
+
+    public enum SchemaDifferenceKind {
+        MISSING_TABLE,
+        UNMANAGED_TABLE,
+        MISSING_COLUMN,
+        UNMANAGED_COLUMN,
+        MISSING_INDEX,
+        UNMANAGED_INDEX,
+        COLUMN_TYPE_MISMATCH,
+        COLUMN_NOT_NULL_MISMATCH,
+        COLUMN_DEFAULT_MISMATCH,
+        COLUMN_PRIMARY_KEY_MISMATCH
+    }
+
+    public record SchemaDifference(SchemaDifferenceKind kind,
+                                   String tableName,
+                                   String columnName,
+                                   String message) {
+        public boolean hasColumn() {
+            return columnName != null && !columnName.isBlank();
+        }
+    }
+
+    public record SchemaComparison(boolean matches, List<SchemaDifference> details) {
         public SchemaComparison {
-            differences = List.copyOf(differences);
+            details = List.copyOf(details);
+        }
+
+        public List<String> differences() {
+            return details.stream().map(SchemaDifference::message).toList();
         }
 
         public String summary(int limit) {
-            if (differences.isEmpty()) {
+            List<String> messages = differences();
+            if (messages.isEmpty()) {
                 return MessageBundles.get("download.db.schema.no-difference");
             }
             int max = Math.max(limit, 1);
-            List<String> visible = differences.stream().limit(max).toList();
+            List<String> visible = messages.stream().limit(max).toList();
             String summary = String.join("\n", visible);
-            if (differences.size() > visible.size()) {
+            if (messages.size() > visible.size()) {
                 summary += "\n" + MessageBundles.get("download.db.schema.more-differences",
-                        differences.size() - visible.size());
+                        messages.size() - visible.size());
             }
             return summary;
         }
