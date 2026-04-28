@@ -49,6 +49,7 @@ public class UgoiraService {
                              Path downloadPath, String referer, String cookie,
                              Consumer<UgoiraProgress> progressListener) {
         DownloadService.validatePixivUrl(other.getUgoiraZipUrl());
+        String outputBaseName = resolveOutputBaseName(artworkId, other);
 
         Path zipPath = downloadPath.resolve("_ugoira_frames.zip");
         Path tempDir = downloadPath.resolve("_frames_tmp");
@@ -93,11 +94,11 @@ public class UgoiraService {
 
                 // 保存第一帧作为缩略图（供后端 thumbnail 接口使用）
                 Files.copy(orderedFrames.get(0).getValue(),
-                        downloadPath.resolve(artworkId + "_p0_thumb.jpg"),
+                        downloadPath.resolve(outputBaseName + "_thumb.jpg"),
                         StandardCopyOption.REPLACE_EXISTING);
 
                 if (runFfmpeg(artworkId, orderedFrames, delays, tempDir, downloadPath,
-                        attempt, maxAttempts, progressListener)) {
+                        outputBaseName, attempt, maxAttempts, progressListener)) {
                     return 1;
                 }
 
@@ -189,6 +190,14 @@ public class UgoiraService {
         return delays;
     }
 
+    private String resolveOutputBaseName(Long artworkId, DownloadRequest.Other other) {
+        String fallback = artworkId + "_p0";
+        if (other != null && other.getFileNames() != null && !other.getFileNames().isEmpty()) {
+            return ArtworkFileNameFormatter.normalizeBaseName(other.getFileNames().get(0), fallback);
+        }
+        return fallback;
+    }
+
     /**
      * 自动检测 ffmpeg 路径：优先 PATH，其次应用根目录（jpackage 打包场景）。
      */
@@ -207,7 +216,7 @@ public class UgoiraService {
 
     private boolean runFfmpeg(Long artworkId, List<Map.Entry<String, Path>> orderedFrames,
                               List<Integer> delays, Path tempDir, Path downloadPath,
-                              int attempt, int maxAttempts,
+                              String outputBaseName, int attempt, int maxAttempts,
                               Consumer<UgoiraProgress> progressListener) throws Exception {
         Path listFile = tempDir.resolve("frames.txt");
         StringBuilder sb = new StringBuilder();
@@ -224,7 +233,7 @@ public class UgoiraService {
                 .append("'\n");
         Files.writeString(listFile, sb.toString(), StandardCharsets.UTF_8);
 
-        Path webpPath = downloadPath.resolve(artworkId + "_p0.webp");
+        Path webpPath = downloadPath.resolve(outputBaseName + ".webp");
         String ffmpegCommand = detectFfmpegCommand();
         long durationMs = Math.max(1L, delays.stream().mapToLong(Integer::longValue).sum());
         publishProgress(progressListener, UgoiraProgress.builder()

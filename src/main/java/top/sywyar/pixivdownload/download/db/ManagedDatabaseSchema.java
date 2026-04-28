@@ -31,12 +31,24 @@ public final class ManagedDatabaseSchema {
                         column("is_ai", "INTEGER", false, null, 0),
                         column("author_id", "INTEGER", false, null, 0),
                         column("description", "TEXT", false, null, 0),
+                        column("file_name", "INTEGER", true, "1", 0),
                         column("moved", "INTEGER", false, "0", 0),
                         column("move_folder", "TEXT", false, null, 0),
                         column("move_time", "INTEGER", false, null, 0)
                 ),
                 List.of(
                         uniqueConstraint("time")
+                )
+        ));
+
+        tables.put("file_name_templates", new TableSpec(
+                "file_name_templates",
+                List.of(
+                        column("id", "INTEGER", false, null, 1),
+                        column("template", "TEXT", true, null, 0)
+                ),
+                List.of(
+                        uniqueConstraint("template")
                 )
         ));
 

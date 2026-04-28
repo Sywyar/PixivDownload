@@ -94,6 +94,23 @@ class PixivDatabaseTest {
             assertThat(record.isAi()).isTrue();
             assertThat(record.authorId()).isEqualTo(888L);
             assertThat(record.description()).isEqualTo("desc");
+            assertThat(record.fileName()).isEqualTo(1L);
+        }
+
+        @Test
+        @DisplayName("插入作品时应写入文件名模板 id")
+        void shouldInsertArtworkWithFileNameTemplateId() {
+            long templateId = pixivDatabase.getOrCreateFileNameTemplateId("{artwork_title}_p{page}");
+
+            pixivDatabase.insertArtwork(12348L, "file name test", "/path/to/12348",
+                    1, "png", 1700000012L, 0, false, 888L, "desc", templateId);
+
+            ArtworkRecord record = pixivDatabase.getArtwork(12348L);
+
+            assertThat(record).isNotNull();
+            assertThat(record.fileName()).isEqualTo(templateId);
+            assertThat(pixivDatabase.getFileNameTemplate(templateId)).isEqualTo("{artwork_title}_p{page}");
+            assertThat(pixivDatabase.getOrCreateFileNameTemplateId("{artwork_title}_p{page}")).isEqualTo(templateId);
         }
 
         @Test

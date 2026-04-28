@@ -4,6 +4,7 @@ import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Repository;
+import top.sywyar.pixivdownload.download.ArtworkFileNameFormatter;
 import top.sywyar.pixivdownload.i18n.AppMessages;
 
 import java.util.List;
@@ -18,6 +19,8 @@ public class PixivDatabase {
 
     @PostConstruct
     public void init() {
+        pixivMapper.createFileNameTemplatesTable();
+        pixivMapper.ensureDefaultFileNameTemplate(ArtworkFileNameFormatter.DEFAULT_TEMPLATE);
         pixivMapper.createArtworksTable();
         pixivMapper.createStatisticsTable();
         pixivMapper.initStatistics();
@@ -29,6 +32,7 @@ public class PixivDatabase {
         try { pixivMapper.addIsAiColumn(); } catch (Exception ignored) {}
         try { pixivMapper.addAuthorIdColumn(); } catch (Exception ignored) {}
         try { pixivMapper.addDescriptionColumn(); } catch (Exception ignored) {}
+        try { pixivMapper.addFileNameColumn(); } catch (Exception ignored) {}
         log.info(messages.getForLog("download.db.log.initialized"));
     }
 
@@ -36,7 +40,14 @@ public class PixivDatabase {
      * 获取一个不与现有记录冲突的唯一时间戳（秒级）
      */
     public synchronized long getUniqueTime() {
+        return getUniqueTime(System.currentTimeMillis() / 1000);
+    }
+
+    public synchronized long getUniqueTime(long preferredTime) {
         long time = System.currentTimeMillis() / 1000;
+        if (preferredTime > 0) {
+            time = preferredTime;
+        }
         int count;
         do {
             count = pixivMapper.countByTime(time);
@@ -47,9 +58,16 @@ public class PixivDatabase {
 
     public void insertArtwork(long artworkId, String title, String folder, int count,
                               String extensions, long time, Integer xRestrict, Boolean isAi, Long authorId,
-                              String description) {
+                              String description, long fileName) {
         pixivMapper.insertOrIgnore(artworkId, title, stripTrailingSlash(folder),
-                count, extensions, time, xRestrict, isAi, authorId, description);
+                count, extensions, time, xRestrict, isAi, authorId, description, fileName);
+    }
+
+    public void insertArtwork(long artworkId, String title, String folder, int count,
+                              String extensions, long time, Integer xRestrict, Boolean isAi, Long authorId,
+                              String description) {
+        insertArtwork(artworkId, title, folder, count, extensions, time, xRestrict, isAi,
+                authorId, description, ArtworkFileNameFormatter.DEFAULT_TEMPLATE_ID);
     }
 
     public void insertArtwork(long artworkId, String title, String folder, int count,
@@ -66,6 +84,18 @@ public class PixivDatabase {
     public void insertArtwork(long artworkId, String title, String folder, int count,
                               String extensions, long time, Integer xRestrict) {
         insertArtwork(artworkId, title, folder, count, extensions, time, xRestrict, null, null);
+    }
+
+    public long getOrCreateFileNameTemplateId(String template) {
+        String normalized = ArtworkFileNameFormatter.normalizeTemplate(template);
+        pixivMapper.insertFileNameTemplateIfAbsent(normalized);
+        Long id = pixivMapper.findFileNameTemplateId(normalized);
+        return id == null ? ArtworkFileNameFormatter.DEFAULT_TEMPLATE_ID : id;
+    }
+
+    public String getFileNameTemplate(long id) {
+        String template = pixivMapper.findFileNameTemplateById(id);
+        return ArtworkFileNameFormatter.normalizeTemplate(template);
     }
 
     private static String stripTrailingSlash(String path) {

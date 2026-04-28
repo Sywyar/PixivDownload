@@ -28,5 +28,7 @@ public class DownloadedResponse {
     private final Long authorId;
     private final String authorName;
     private final String description;
+    private final Long fileName;
+    private final String fileNameTemplate;
     private final List<TagDto> tags;
 }

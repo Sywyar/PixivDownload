@@ -9,6 +9,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import org.sqlite.SQLiteConfig;
 import top.sywyar.pixivdownload.config.RuntimeFiles;
+import top.sywyar.pixivdownload.download.ArtworkFileNameFormatter;
 import top.sywyar.pixivdownload.download.config.DownloadConfig;
 import top.sywyar.pixivdownload.i18n.MessageBundles;
 
@@ -276,10 +277,22 @@ public class JsonToSqliteMigration {
                         + "count INTEGER,"
                         + "extensions TEXT,"
                         + "time INTEGER UNIQUE,"
+                        + "file_name INTEGER NOT NULL DEFAULT 1,"
                         + "moved INTEGER DEFAULT 0,"
                         + "move_folder TEXT,"
                         + "move_time INTEGER)")) {
             createArtworks.executeUpdate();
+        }
+        try (PreparedStatement createFileNameTemplates = conn.prepareStatement(
+                "CREATE TABLE IF NOT EXISTS file_name_templates ("
+                        + "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                        + "template TEXT NOT NULL UNIQUE)")) {
+            createFileNameTemplates.executeUpdate();
+        }
+        try (PreparedStatement defaultFileNameTemplate = conn.prepareStatement(
+                "INSERT OR IGNORE INTO file_name_templates(id, template) VALUES(1, ?)")) {
+            defaultFileNameTemplate.setString(1, ArtworkFileNameFormatter.DEFAULT_TEMPLATE);
+            defaultFileNameTemplate.executeUpdate();
         }
         try (PreparedStatement createStatistics = conn.prepareStatement(
                 "CREATE TABLE IF NOT EXISTS statistics ("

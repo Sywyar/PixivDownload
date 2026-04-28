@@ -107,6 +107,8 @@ public class GalleryService {
                 .authorId(artwork.authorId())
                 .authorName(artwork.authorId() == null ? null : authorNames.get(artwork.authorId()))
                 .description(artwork.description())
+                .fileName(artwork.fileName())
+                .fileNameTemplate(pixivDatabase.getFileNameTemplate(artwork.fileName() == null ? 1L : artwork.fileName()))
                 .tags(tags)
                 .build();
     }

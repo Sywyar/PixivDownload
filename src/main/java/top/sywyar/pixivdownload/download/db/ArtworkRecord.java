@@ -13,5 +13,23 @@ public record ArtworkRecord(
         Integer xRestrict,
         Boolean isAi,
         Long authorId,
-        String description
-) {}
+        String description,
+        Long fileName
+) {
+    public ArtworkRecord(long artworkId,
+                         String title,
+                         String folder,
+                         int count,
+                         String extensions,
+                         long time,
+                         boolean moved,
+                         String moveFolder,
+                         Long moveTime,
+                         Integer xRestrict,
+                         Boolean isAi,
+                         Long authorId,
+                         String description) {
+        this(artworkId, title, folder, count, extensions, time, moved, moveFolder, moveTime,
+                xRestrict, isAi, authorId, description, null);
+    }
+}

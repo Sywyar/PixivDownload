@@ -171,9 +171,23 @@ public class PixivProxyController {
                 b.path("xRestrict").asInt(0),
                 b.path("aiType").asInt(0) >= 2,
                 b.path("bookmarkCount").asInt(-1),
+                parsePositiveLong(b.path("userId").asText(null)),
+                b.path("userName").asText(""),
                 b.path("description").asText(""),
                 extractTags(b)
         ));
+    }
+
+    private static Long parsePositiveLong(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            long parsed = Long.parseLong(value);
+            return parsed > 0 ? parsed : null;
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     private static List<TagDto> extractTags(JsonNode body) {

@@ -36,7 +36,6 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Instant;
 import java.util.*;
-import java.util.regex.Pattern;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
@@ -100,6 +99,8 @@ public class DownloadService {
         eventPublisher.publishEvent(new DownloadProgressEvent(this, artworkId, status, userUuid));
 
         try {
+            FileNamePlan fileNamePlan = buildFileNamePlan(artworkId, title, imageUrls.size(), other);
+            other.setFileNames(fileNamePlan.baseNames());
             String folderName = String.valueOf(artworkId);
 
             // 创建文件夹结构
@@ -156,7 +157,7 @@ public class DownloadService {
                     try {
                         String extension = getFileExtension(imageUrl);
                         fileExtensions.add(extension);
-                        String filename = artworkId + "_p" + i + "." + extension;
+                        String filename = fileNamePlan.baseName(i) + "." + extension;
                         Path filePath = downloadPath.resolve(filename);
                         int imageNumber = i + 1;
                         Consumer<ImageDownloadProgress> imageProgressListener = progress -> {
@@ -185,7 +186,8 @@ public class DownloadService {
 
             // 记录下载信息
             recordDownload(artworkId, title, status.getDownloadPath(), fileExtensions,
-                    successCount.get(), other.getXRestrict(), other.isAi(), other.getAuthorId(), other.getDescription(), other.getTags());
+                    successCount.get(), other.getXRestrict(), other.isAi(), other.getAuthorId(), other.getDescription(), other.getTags(),
+                    fileNamePlan.templateId(), fileNamePlan.recordTime());
 
             recordStatistics(imageUrls.size());
             recordAuthorInfo(artworkId, other, cookie);
@@ -412,18 +414,53 @@ public class DownloadService {
         return parts.length > 1 ? parts[parts.length - 1] : "jpg";
     }
 
+    private FileNamePlan buildFileNamePlan(Long artworkId, String title, int count, DownloadRequest.Other other) {
+        String template = ArtworkFileNameFormatter.normalizeTemplate(other.getFileNameTemplate());
+        long templateId = pixivDatabase.getOrCreateFileNameTemplateId(template);
+        if (templateId <= 0) {
+            templateId = ArtworkFileNameFormatter.DEFAULT_TEMPLATE_ID;
+        }
+        long preferredTime = other.getFileNameTimestamp() == null ? 0L : other.getFileNameTimestamp();
+        long recordTime = preferredTime > 0 ? pixivDatabase.getUniqueTime(preferredTime) : pixivDatabase.getUniqueTime();
+        List<String> computed = ArtworkFileNameFormatter.formatAll(
+                template,
+                artworkId,
+                title,
+                other.getAuthorId(),
+                other.getAuthorName(),
+                recordTime,
+                count,
+                other.isAi(),
+                other.getXRestrict()
+        );
+        List<String> provided = ArtworkFileNameFormatter.normalizeProvidedBaseNames(other.getFileNames(), count, artworkId);
+        if (!provided.isEmpty() && !provided.equals(computed)) {
+            log.debug("前端文件名与后端模板计算结果不一致，使用后端结果: artworkId={}", artworkId);
+        }
+        return new FileNamePlan(templateId, recordTime, provided.equals(computed) ? provided : computed);
+    }
+
     private void recordDownload(Long artworkId, String title, String folderPath, HashSet<String> fileExtensions,
-                                int count, int xRestrict, boolean isAi, Long authorId, String description, List<TagDto> tags) {
+                                int count, int xRestrict, boolean isAi, Long authorId, String description, List<TagDto> tags,
+                                long fileNameId, long recordTime) {
         try {
-            long time = pixivDatabase.getUniqueTime();
             pixivDatabase.insertArtwork(
                     artworkId, title,
                     Path.of(folderPath).toAbsolutePath().toString(),
-                    count, String.join(",", fileExtensions), time, xRestrict, isAi, authorId, description
+                    count, String.join(",", fileExtensions), recordTime, xRestrict, isAi, authorId, description, fileNameId
             );
             pixivDatabase.saveArtworkTags(artworkId, tags);
         } catch (Exception e) {
             log.error(logMessage("download.log.record-history.failed", e.getMessage()), e);
+        }
+    }
+
+    private record FileNamePlan(long templateId, long recordTime, List<String> baseNames) {
+        String baseName(int page) {
+            if (page >= 0 && page < baseNames.size()) {
+                return baseNames.get(page);
+            }
+            return "page_" + Math.max(page, 0);
         }
     }
 
@@ -488,25 +525,11 @@ public class DownloadService {
             return null;
         }
 
-        String dirPath = artwork.moved() ? artwork.moveFolder() : artwork.folder();
-        String extension = artwork.extensions();
-
-        File imageFile;
-        if (count == 1) {
-            imageFile = Paths.get(dirPath, artworkId + "_p0." + extension).toFile();
-        } else {
-            String fileName = artworkId + "_p" + page;
-            String[] extensions = extension.split(",");
-            if (extensions.length > 1) {
-                imageFile = findFileByName(dirPath, fileName);
-                if (imageFile == null) {
-                    return null;
-                }
-                extension = getFileExtension(imageFile.getName());
-            } else {
-                imageFile = Paths.get(dirPath, fileName + "." + extension).toFile();
-            }
+        File imageFile = resolveImageFile(artwork, page);
+        if (imageFile == null) {
+            return null;
         }
+        String extension = getFileExtension(imageFile.getName()).toLowerCase(Locale.ROOT);
 
         boolean isWebp = "webp".equals(extension);
 
@@ -521,7 +544,9 @@ public class DownloadService {
 
         // WebP 缩略图：使用伴随的 _p0_thumb.jpg 文件
         if (isWebp) {
-            File thumbFile = Paths.get(dirPath, artworkId + "_p0_thumb.jpg").toFile();
+            String dirPath = resolveArtworkDirectory(artwork);
+            String baseName = resolveStoredFileBaseName(artwork, page);
+            File thumbFile = Paths.get(dirPath, baseName + "_thumb.jpg").toFile();
             if (!thumbFile.exists()) {
                 return null;
             }
@@ -552,23 +577,7 @@ public class DownloadService {
         int count = artwork.count();
         if (count <= page || page < 0) return null;
 
-        String dirPath = artwork.moved() ? artwork.moveFolder() : artwork.folder();
-        String extension = artwork.extensions();
-
-        File imageFile;
-        if (count == 1) {
-            imageFile = Paths.get(dirPath, artworkId + "_p0." + extension).toFile();
-        } else {
-            String fileName = artworkId + "_p" + page;
-            String[] extensions = extension.split(",");
-            if (extensions.length > 1) {
-                imageFile = findFileByName(dirPath, fileName);
-            } else {
-                imageFile = Paths.get(dirPath, fileName + "." + extension).toFile();
-            }
-        }
-
-        return (imageFile != null && imageFile.exists()) ? imageFile : null;
+        return resolveImageFile(artwork, page);
     }
 
     private boolean hasArtworkFiles(ArtworkRecord artwork) {
@@ -580,19 +589,62 @@ public class DownloadService {
         if (!directory.isDirectory()) {
             return false;
         }
-        File[] files = directory.listFiles(File::isFile);
-        if (files == null || files.length == 0) {
-            return false;
+        for (int page = 0; page < Math.max(artwork.count(), 1); page++) {
+            File file = resolveImageFile(artwork, page);
+            if (file != null && IMAGE_EXTENSIONS.contains(getFileExtension(file.getName()).toLowerCase(Locale.ROOT))) {
+                return true;
+            }
         }
+        return false;
+    }
 
-        Pattern artworkImagePattern = Pattern.compile("^" + artwork.artworkId() + "_p\\d+\\.[^.]+$",
-                Pattern.CASE_INSENSITIVE);
-        return Arrays.stream(files)
-                .map(File::getName)
-                .filter(artworkImagePattern.asMatchPredicate())
-                .map(this::getFileExtension)
-                .map(ext -> ext == null ? "" : ext.toLowerCase(Locale.ROOT))
-                .anyMatch(IMAGE_EXTENSIONS::contains);
+    private File resolveImageFile(ArtworkRecord artwork, int page) {
+        String directoryPath = resolveArtworkDirectory(artwork);
+        if (!StringUtils.hasText(directoryPath)) {
+            return null;
+        }
+        String baseName = resolveStoredFileBaseName(artwork, page);
+        String[] extensions = artwork.extensions() == null ? new String[0] : artwork.extensions().split(",");
+        File imageFile;
+        if (extensions.length > 1) {
+            imageFile = findFileByName(directoryPath, baseName);
+        } else {
+            String extension = extensions.length == 0 || !StringUtils.hasText(extensions[0]) ? "jpg" : extensions[0];
+            imageFile = Paths.get(directoryPath, baseName + "." + extension).toFile();
+        }
+        return imageFile != null && imageFile.exists() ? imageFile : null;
+    }
+
+    private String resolveStoredFileBaseName(ArtworkRecord artwork, int page) {
+        long fileNameId = artwork.fileName() == null
+                ? ArtworkFileNameFormatter.DEFAULT_TEMPLATE_ID
+                : artwork.fileName();
+        String template = pixivDatabase.getFileNameTemplate(fileNameId);
+        int count = Math.max(artwork.count(), page + 1);
+        List<String> baseNames = ArtworkFileNameFormatter.formatAll(
+                template,
+                artwork.artworkId(),
+                artwork.title(),
+                artwork.authorId(),
+                resolveAuthorName(artwork.authorId()),
+                artwork.time(),
+                count,
+                artwork.isAi(),
+                artwork.xRestrict()
+        );
+        return baseNames.get(page);
+    }
+
+    private String resolveAuthorName(Long authorId) {
+        if (authorId == null) {
+            return null;
+        }
+        try {
+            return authorService.getAuthorNames(Set.of(authorId)).get(authorId);
+        } catch (Exception e) {
+            log.debug("读取作者名失败: authorId={}", authorId, e);
+            return null;
+        }
     }
 
     private String resolveArtworkDirectory(ArtworkRecord artwork) {

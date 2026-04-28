@@ -338,8 +338,14 @@ public class DownloadController {
                 .authorId(artwork.authorId())
                 .authorName(artwork.authorId() == null ? null : authorNames.get(artwork.authorId()))
                 .description(artwork.description())
+                .fileName(artwork.fileName())
+                .fileNameTemplate(pixivDatabase.getFileNameTemplate(resolveFileNameId(artwork)))
                 .tags(tags)
                 .build();
+    }
+
+    private long resolveFileNameId(ArtworkRecord artwork) {
+        return artwork.fileName() == null ? 1L : artwork.fileName();
     }
 
     private Map<Long, String> resolveAuthorNames(Collection<ArtworkRecord> artworks) {

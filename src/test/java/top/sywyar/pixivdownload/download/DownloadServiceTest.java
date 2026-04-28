@@ -304,6 +304,22 @@ class DownloadServiceTest {
             assertThat(result).isSameAs(record);
             verify(pixivDatabase, never()).deleteArtwork(32345L);
         }
+
+        @Test
+        @DisplayName("verifyFiles=true 时应按数据库文件名模板检测作品图片文件")
+        void shouldVerifyArtworkFilesByStoredFileNameTemplate() throws Exception {
+            Path folder = Files.createDirectories(tempDir.resolve("42345"));
+            Files.write(folder.resolve("42345-Title_Name_p0.jpg"), new byte[]{1, 2, 3});
+            ArtworkRecord record = new ArtworkRecord(42345L, "Title/Name", folder.toString(),
+                    1, "jpg", 1700000000L, false, null, null, 0, false, null, null, 9L);
+            when(pixivDatabase.getArtwork(42345L)).thenReturn(record);
+            when(pixivDatabase.getFileNameTemplate(9L)).thenReturn("{artwork_id}-{artwork_title}_p{page}");
+
+            ArtworkRecord result = downloadService.getDownloadedRecord(42345L, true);
+
+            assertThat(result).isSameAs(record);
+            verify(pixivDatabase, never()).deleteArtwork(42345L);
+        }
     }
 
     // ========== recordStatistics ==========
@@ -388,7 +404,7 @@ class DownloadServiceTest {
                     "https://www.pixiv.net/", other, null, null);
 
             verify(pixivDatabase).insertArtwork(12345L, "test", tempDir.resolve("12345").toAbsolutePath().toString(),
-                    1, "webp", 1700000100L, 0, false, 999L, null);
+                    1, "webp", 1700000100L, 0, false, 999L, null, 1L);
         }
     }
 
@@ -429,7 +445,7 @@ class DownloadServiceTest {
                     any()
             );
             verify(pixivDatabase).insertArtwork(12345L, "test", expectedPath.toAbsolutePath().toString(),
-                    1, "webp", 1700000100L, 0, false, null, null);
+                    1, "webp", 1700000100L, 0, false, null, null, 1L);
             verify(collectionService).addArtwork(7L, 12345L);
         }
     }

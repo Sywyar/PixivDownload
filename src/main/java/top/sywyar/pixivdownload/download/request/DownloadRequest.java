@@ -46,5 +46,8 @@ public class DownloadRequest {
         private Long collectionId;
         private String description;
         private List<TagDto> tags;
+        private String fileNameTemplate;
+        private List<String> fileNames;
+        private Long fileNameTimestamp;
     }
 }
