@@ -309,6 +309,20 @@ class DownloadControllerTest {
 
             verify(downloadService).getDownloadedRecord(12345L, true);
         }
+
+        @Test
+        @DisplayName("响应应输出 xRestrict 整数字段，且不再含旧的 R18 布尔字段")
+        void shouldSerializeXRestrictInsteadOfLegacyR18Boolean() throws Exception {
+            ArtworkRecord record = new ArtworkRecord(12345L, "title", "/path/to/folder",
+                    1, "jpg", 1700000000L, false, null, null, 2, null, null, null);
+            when(downloadService.getDownloadedRecord(12345L, false)).thenReturn(record);
+
+            mockMvc.perform(get("/api/downloaded/12345"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.xRestrict").value(2))
+                    .andExpect(jsonPath("$.R18").doesNotExist())
+                    .andExpect(jsonPath("$.r18").doesNotExist());
+        }
     }
 
     // ========== POST /api/downloaded/batch ==========

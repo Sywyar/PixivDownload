@@ -12,6 +12,7 @@ import java.util.List;
 public class ArtworkMetaResponse {
     private final int illustType;
     private final String illustTitle;
+    @JsonProperty("xRestrict")
     private final int xRestrict;
     @JsonProperty("isAi")
     private final boolean isAi;

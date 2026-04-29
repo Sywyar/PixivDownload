@@ -19,6 +19,7 @@ import top.sywyar.pixivdownload.i18n.AppMessages;
 import java.time.Instant;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -150,6 +151,73 @@ class AuthorServiceTest {
 
         verify(pixivDatabase).updateAuthorId(999L, 456L);
         verify(authorMapper).insertIfAbsent(eq(456L), eq("Bob"), anyLong());
+    }
+
+    @org.junit.jupiter.api.Nested
+    @DisplayName("getPagedAuthorsWithArtworks 边界")
+    class PagedAuthorsTests {
+
+        @org.junit.jupiter.api.Test
+        @DisplayName("无搜索词应使用通配符并归一化排序、计算 totalPages")
+        void shouldComputePagedAuthorsWithDefaultsAndTotalPages() {
+            when(authorMapper.countAuthorsWithArtworks("%")).thenReturn(45L);
+            when(authorMapper.findAuthorsWithArtworks(eq("%"), eq("name"), eq(20), eq(0)))
+                    .thenReturn(java.util.List.of(new AuthorSummary(1L, "A", 2L)));
+
+            AuthorService.PagedAuthors paged = authorService.getPagedAuthorsWithArtworks(0, 20, null, null);
+
+            org.assertj.core.api.Assertions.assertThat(paged.totalElements()).isEqualTo(45L);
+            org.assertj.core.api.Assertions.assertThat(paged.totalPages()).isEqualTo(3);
+            org.assertj.core.api.Assertions.assertThat(paged.page()).isZero();
+            org.assertj.core.api.Assertions.assertThat(paged.size()).isEqualTo(20);
+            org.assertj.core.api.Assertions.assertThat(paged.content()).hasSize(1);
+        }
+
+        @org.junit.jupiter.api.Test
+        @DisplayName("page 应被 clamp 到 [0, +∞)，size 应被 clamp 到 [1, 200]")
+        void shouldClampPageAndSize() {
+            when(authorMapper.countAuthorsWithArtworks("%")).thenReturn(10L);
+            when(authorMapper.findAuthorsWithArtworks(anyString(), anyString(), anyInt(), anyInt()))
+                    .thenReturn(java.util.List.of());
+
+            AuthorService.PagedAuthors paged =
+                    authorService.getPagedAuthorsWithArtworks(-3, 9999, null, "artworks");
+
+            org.assertj.core.api.Assertions.assertThat(paged.page()).isZero();
+            org.assertj.core.api.Assertions.assertThat(paged.size()).isEqualTo(200);
+            // sort='artworks' 应被透传
+            verify(authorMapper).findAuthorsWithArtworks(eq("%"), eq("artworks"), eq(200), eq(0));
+        }
+
+        @org.junit.jupiter.api.Test
+        @DisplayName("非法 sort 应回退为 'name'，size<1 应被 clamp 到 1")
+        void shouldFallbackInvalidSortAndClampSizeUp() {
+            when(authorMapper.countAuthorsWithArtworks("%")).thenReturn(0L);
+
+            AuthorService.PagedAuthors paged =
+                    authorService.getPagedAuthorsWithArtworks(2, 0, null, "weird");
+
+            org.assertj.core.api.Assertions.assertThat(paged.totalElements()).isZero();
+            org.assertj.core.api.Assertions.assertThat(paged.totalPages()).isZero();
+            org.assertj.core.api.Assertions.assertThat(paged.size()).isEqualTo(1);
+            // total=0 不应再调 mapper.findAuthorsWithArtworks
+            verify(authorMapper, never()).findAuthorsWithArtworks(anyString(), anyString(), anyInt(), anyInt());
+        }
+
+        @org.junit.jupiter.api.Test
+        @DisplayName("搜索词应被 trim 并包成 %xxx%")
+        void shouldWrapSearchTermAsLikePattern() {
+            when(authorMapper.countAuthorsWithArtworks("%alice%")).thenReturn(1L);
+            when(authorMapper.findAuthorsWithArtworks(eq("%alice%"), eq("authorId"), eq(20), eq(20)))
+                    .thenReturn(java.util.List.of(new AuthorSummary(7L, "Alice", 1L)));
+
+            AuthorService.PagedAuthors paged =
+                    authorService.getPagedAuthorsWithArtworks(1, 20, "  alice  ", "authorId");
+
+            org.assertj.core.api.Assertions.assertThat(paged.content())
+                    .singleElement()
+                    .matches(s -> s.authorId() == 7L);
+        }
     }
 
     private JsonNode json(String text) throws Exception {

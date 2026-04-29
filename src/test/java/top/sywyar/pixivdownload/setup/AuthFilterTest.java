@@ -232,6 +232,41 @@ class AuthFilterTest {
         }
 
         @ParameterizedTest
+        @ValueSource(strings = {
+                "/api/gallery/artworks",
+                "/api/gallery/tags",
+                "/api/gallery/tags/lookup",
+                "/api/gallery/artwork/12345",
+                "/api/collections",
+                "/api/collections/7/artworks/12345"
+        })
+        @DisplayName("画廊/收藏夹 API 应按 monitor 权限保护，本地无 session 也应 401")
+        void shouldRequireLoginForGalleryAndCollectionApi(String path) throws Exception {
+            request.setMethod("GET");
+            request.setRequestURI(path);
+            request.setRemoteAddr("127.0.0.1");
+
+            authFilter.doFilterInternal(request, response, filterChain);
+
+            assertThat(response.getStatus()).isEqualTo(401);
+            verify(filterChain, never()).doFilter(request, response);
+        }
+
+        @ParameterizedTest
+        @ValueSource(strings = {"/pixiv-gallery.html", "/pixiv-artwork.html"})
+        @DisplayName("画廊/作品详情页应按 monitor 权限保护，未登录时重定向到 /login.html")
+        void shouldRedirectGalleryPagesToLoginWhenNotLoggedIn(String path) throws Exception {
+            request.setMethod("GET");
+            request.setRequestURI(path);
+            request.setRemoteAddr("127.0.0.1");
+
+            authFilter.doFilterInternal(request, response, filterChain);
+
+            assertThat(response.getRedirectedUrl()).startsWith("/login.html?redirect=");
+            verify(filterChain, never()).doFilter(request, response);
+        }
+
+        @ParameterizedTest
         @ValueSource(strings = {"0:0:0:0:0:0:0:1", "::1", "::ffff:127.0.0.1"})
         @DisplayName("各种本地 IPv6 地址也应被识别为本地")
         void shouldRecognizeIpv6LocalAddresses(String addr) throws Exception {
@@ -588,7 +623,7 @@ class AuthFilterTest {
         }
 
         @Test
-        @DisplayName("非 intro 模式下应重定向到 pixiv-batch.html")
+        @DisplayName("multi 模式下应重定向到 pixiv-batch.html")
         void shouldRedirectToPixivBatchWhenNotInIntroMode() throws Exception {
             when(setupService.isIntroMode()).thenReturn(false);
             when(setupService.getMode()).thenReturn("multi");
@@ -603,7 +638,7 @@ class AuthFilterTest {
         }
 
         @Test
-        @DisplayName("无 canvas 参数时非 intro 模式也应重定向到 pixiv-batch.html")
+        @DisplayName("multi 模式无 canvas 参数也应重定向到 pixiv-batch.html")
         void shouldRedirectToPixivBatchWithoutCanvasParam() throws Exception {
             when(setupService.isIntroMode()).thenReturn(false);
             when(setupService.getMode()).thenReturn("multi");
@@ -614,6 +649,21 @@ class AuthFilterTest {
             authFilter.doFilterInternal(request, response, filterChain);
 
             assertThat(response.getRedirectedUrl()).isEqualTo("/pixiv-batch.html");
+        }
+
+        @Test
+        @DisplayName("solo 模式下应重定向到 pixiv-gallery.html")
+        void shouldRedirectToGalleryInSoloMode() throws Exception {
+            when(setupService.isIntroMode()).thenReturn(false);
+            when(setupService.getMode()).thenReturn("solo");
+
+            request.setMethod("GET");
+            request.setRequestURI("/redirect");
+            request.addParameter("canvas", "true");
+
+            authFilter.doFilterInternal(request, response, filterChain);
+
+            assertThat(response.getRedirectedUrl()).isEqualTo("/pixiv-gallery.html");
         }
 
         @Test

@@ -409,6 +409,93 @@ class DownloadServiceTest {
     }
 
     @Nested
+    @DisplayName("xRestrict 子目录分支")
+    class XRestrictDirectoryTests {
+
+        @BeforeEach
+        void setupDownloadPath() {
+            lenient().when(downloadConfig.getRootFolder()).thenReturn(tempDir.toString());
+            // 走用户独立目录分支：isUserDownload=true 且 isUserFlatFolder=false
+            lenient().when(downloadConfig.isUserFlatFolder()).thenReturn(false);
+            lenient().when(ugoiraService.processUgoira(anyLong(), any(), any(), anyString(), any(), any()))
+                    .thenReturn(1);
+            lenient().when(pixivDatabase.getUniqueTime()).thenReturn(1700000100L);
+        }
+
+        private DownloadRequest.Other userOther(int xRestrict) {
+            DownloadRequest.Other other = new DownloadRequest.Other();
+            other.setUgoira(true);
+            other.setUgoiraZipUrl("https://public-img-zip.pximg.net/test.zip");
+            other.setUgoiraDelays(List.of(100));
+            other.setUserDownload(true);
+            other.setUsername("alice");
+            other.setXRestrict(xRestrict);
+            return other;
+        }
+
+        @Test
+        @DisplayName("xRestrict==1 时下载目录应进入 R18 子目录")
+        void shouldRouteToR18WhenXRestrictIsOne() {
+            DownloadRequest.Other other = userOther(1);
+
+            downloadService.downloadImages(12345L, "title", List.of("https://public-img-zip.pximg.net/test.zip"),
+                    "https://www.pixiv.net/", other, null, null);
+
+            Path expected = tempDir.resolve("alice").resolve("R18").resolve("12345");
+            verify(pixivDatabase).insertArtwork(eq(12345L), eq("title"),
+                    eq(expected.toAbsolutePath().toString()),
+                    eq(1), eq("webp"), eq(1700000100L), eq(1), eq(false),
+                    isNull(), isNull(), eq(1L), isNull());
+        }
+
+        @Test
+        @DisplayName("xRestrict==2 时下载目录应进入 R18G 子目录")
+        void shouldRouteToR18gWhenXRestrictIsTwo() {
+            DownloadRequest.Other other = userOther(2);
+
+            downloadService.downloadImages(22345L, "title", List.of("https://public-img-zip.pximg.net/test.zip"),
+                    "https://www.pixiv.net/", other, null, null);
+
+            Path expected = tempDir.resolve("alice").resolve("R18G").resolve("22345");
+            verify(pixivDatabase).insertArtwork(eq(22345L), eq("title"),
+                    eq(expected.toAbsolutePath().toString()),
+                    eq(1), eq("webp"), eq(1700000100L), eq(2), eq(false),
+                    isNull(), isNull(), eq(1L), isNull());
+        }
+
+        @Test
+        @DisplayName("xRestrict==0 时不应再插入 R18/R18G 子目录")
+        void shouldNotAddR18FolderWhenSafeWork() {
+            DownloadRequest.Other other = userOther(0);
+
+            downloadService.downloadImages(32345L, "title", List.of("https://public-img-zip.pximg.net/test.zip"),
+                    "https://www.pixiv.net/", other, null, null);
+
+            Path expected = tempDir.resolve("alice").resolve("32345");
+            verify(pixivDatabase).insertArtwork(eq(32345L), eq("title"),
+                    eq(expected.toAbsolutePath().toString()),
+                    eq(1), eq("webp"), eq(1700000100L), eq(0), eq(false),
+                    isNull(), isNull(), eq(1L), isNull());
+        }
+
+        @Test
+        @DisplayName("isUserFlatFolder=true 时即便 xRestrict==2 也不应下沉到 R18G")
+        void shouldRespectFlatFolderEvenWhenXRestrictIsR18g() {
+            when(downloadConfig.isUserFlatFolder()).thenReturn(true);
+            DownloadRequest.Other other = userOther(2);
+
+            downloadService.downloadImages(42345L, "title", List.of("https://public-img-zip.pximg.net/test.zip"),
+                    "https://www.pixiv.net/", other, null, null);
+
+            Path expected = tempDir.resolve("42345");
+            verify(pixivDatabase).insertArtwork(eq(42345L), eq("title"),
+                    eq(expected.toAbsolutePath().toString()),
+                    eq(1), eq("webp"), eq(1700000100L), eq(2), eq(false),
+                    isNull(), isNull(), eq(1L), isNull());
+        }
+    }
+
+    @Nested
     @DisplayName("collection download root")
     class CollectionDownloadRootTests {
 

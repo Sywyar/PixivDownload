@@ -1,6 +1,7 @@
 package top.sywyar.pixivdownload.download.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -22,6 +23,7 @@ import top.sywyar.pixivdownload.quota.UserQuotaService;
 import top.sywyar.pixivdownload.setup.SetupService;
 
 import java.net.URI;
+import java.util.UUID;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasSize;
@@ -236,6 +238,173 @@ class PixivProxyControllerTest {
             mockMvc.perform(get("/api/pixiv/thumbnail-proxy")
                             .param("url", "https://www.pixiv.net/some/image.jpg"))
                     .andExpect(status().isBadRequest());
+        }
+    }
+
+    // ========== 多人模式访问控制 ==========
+
+    @Nested
+    @DisplayName("多人模式访问控制 (checkMultiModeAccess)")
+    class MultiModeAccessTests {
+
+        @BeforeEach
+        void setUpMultiMode() {
+            when(setupService.getMode()).thenReturn("multi");
+        }
+
+        @Test
+        @DisplayName("缺少 UUID（cookie/header 都无）应返回 401")
+        void shouldReturn401WhenUuidMissing() throws Exception {
+            mockMvc.perform(get("/api/pixiv/user/9999/artworks"))
+                    .andExpect(status().isUnauthorized())
+                    .andExpect(jsonPath("$.error").value(containsString("UUID")));
+
+            verify(userQuotaService, never()).checkAndReserveProxy(any());
+        }
+
+        @Test
+        @DisplayName("UUID 已存在但代理请求超额应返回 429 + 提示")
+        void shouldReturn429WhenProxyQuotaExceeded() throws Exception {
+            String uuid = UUID.randomUUID().toString();
+            multiModeConfig.getQuota().setMaxProxyRequests(20);
+            multiModeConfig.getQuota().setResetPeriodHours(24);
+            when(userQuotaService.checkAndReserveProxy(uuid)).thenReturn(false);
+
+            mockMvc.perform(get("/api/pixiv/user/9999/artworks")
+                            .cookie(new Cookie("pixiv_user_id", uuid)))
+                    .andExpect(status().isTooManyRequests())
+                    .andExpect(jsonPath("$.maxRequests").value(20))
+                    .andExpect(jsonPath("$.windowHours").value(24));
+        }
+
+        @Test
+        @DisplayName("多人模式下管理员应跳过代理请求限流")
+        void shouldBypassProxyLimitForAdmin() throws Exception {
+            when(setupService.isAdminLoggedIn(any())).thenReturn(true);
+            when(restTemplate.exchange(anyString(), eq(HttpMethod.GET), any(), eq(String.class)))
+                    .thenReturn(ResponseEntity.ok("{\"error\":false,\"body\":{\"illusts\":{},\"manga\":{}}}"));
+
+            mockMvc.perform(get("/api/pixiv/user/9999/artworks"))
+                    .andExpect(status().isOk());
+
+            verify(userQuotaService, never()).checkAndReserveProxy(any());
+        }
+
+        @Test
+        @DisplayName("UUID 合法且未超额应放行并消费一次代理配额")
+        void shouldReserveProxyQuotaAndPassThrough() throws Exception {
+            String uuid = UUID.randomUUID().toString();
+            when(userQuotaService.checkAndReserveProxy(uuid)).thenReturn(true);
+            when(restTemplate.exchange(anyString(), eq(HttpMethod.GET), any(), eq(String.class)))
+                    .thenReturn(ResponseEntity.ok("{\"error\":false,\"body\":{\"illusts\":{},\"manga\":{}}}"));
+
+            mockMvc.perform(get("/api/pixiv/user/9999/artworks")
+                            .cookie(new Cookie("pixiv_user_id", uuid)))
+                    .andExpect(status().isOk());
+
+            verify(userQuotaService).checkAndReserveProxy(uuid);
+        }
+    }
+
+    // ========== GET /api/pixiv/search/fill ==========
+
+    @Nested
+    @DisplayName("GET /api/pixiv/search/fill")
+    class SearchFillTests {
+
+        @Test
+        @DisplayName("当前 SEARCH_FILL_DISABLED=true 时应直接返回 503")
+        void shouldReturn503BecauseFeatureIsDisabled() throws Exception {
+            mockMvc.perform(get("/api/pixiv/search/fill")
+                            .param("word", "test")
+                            .param("page", "1")
+                            .param("extraPages", "2"))
+                    .andExpect(status().isServiceUnavailable())
+                    // 文案随 locale 变化，仅断言非空错误描述存在
+                    .andExpect(jsonPath("$.error").isNotEmpty());
+
+            // 拦在 SEARCH_FILL_DISABLED 之前，未走多人模式校验，也不应触达 RestTemplate
+            verifyNoInteractions(restTemplate);
+            verify(userQuotaService, never()).checkAndReserveProxy(any());
+        }
+    }
+
+    // ========== GET /api/pixiv/artwork/{id}/meta ==========
+
+    @Nested
+    @DisplayName("GET /api/pixiv/artwork/{id}/meta")
+    class ArtworkMetaTests {
+
+        @BeforeEach
+        void setUpSoloMode() {
+            when(setupService.getMode()).thenReturn("solo");
+        }
+
+        @Test
+        @DisplayName("应返回 xRestrict / bookmarkCount / description / tags 等扩展字段")
+        void shouldReturnExtendedArtworkMetaFields() throws Exception {
+            String body = """
+                    {
+                      "error": false,
+                      "body": {
+                        "illustType": 0,
+                        "illustTitle": "Demo",
+                        "xRestrict": 2,
+                        "aiType": 2,
+                        "bookmarkCount": 1234,
+                        "userId": "55555",
+                        "userName": "TestArtist",
+                        "description": "Hello World",
+                        "tags": {
+                          "tags": [
+                            {"tag": "Cat", "translation": {"en": "猫"}},
+                            {"tag": "Original"}
+                          ]
+                        }
+                      }
+                    }
+                    """;
+            when(restTemplate.exchange(anyString(), eq(HttpMethod.GET), any(), eq(String.class)))
+                    .thenReturn(ResponseEntity.ok(body));
+
+            mockMvc.perform(get("/api/pixiv/artwork/12345/meta"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.illustTitle").value("Demo"))
+                    .andExpect(jsonPath("$.xRestrict").value(2))
+                    .andExpect(jsonPath("$.isAi").value(true))
+                    .andExpect(jsonPath("$.bookmarkCount").value(1234))
+                    .andExpect(jsonPath("$.authorId").value(55555))
+                    .andExpect(jsonPath("$.authorName").value("TestArtist"))
+                    .andExpect(jsonPath("$.description").value("Hello World"))
+                    .andExpect(jsonPath("$.tags", hasSize(2)))
+                    .andExpect(jsonPath("$.tags[0].name").value("Cat"))
+                    .andExpect(jsonPath("$.tags[0].translatedName").value("猫"))
+                    .andExpect(jsonPath("$.tags[1].name").value("Original"))
+                    .andExpect(jsonPath("$.tags[1].translatedName").doesNotExist());
+        }
+
+        @Test
+        @DisplayName("非法 userId 应输出 null authorId 而非异常")
+        void shouldReturnNullAuthorIdWhenUserIdMissing() throws Exception {
+            String body = """
+                    {
+                      "error": false,
+                      "body": {
+                        "illustTitle": "X",
+                        "xRestrict": 0,
+                        "aiType": 0,
+                        "userId": "",
+                        "tags": {"tags": []}
+                      }
+                    }
+                    """;
+            when(restTemplate.exchange(anyString(), eq(HttpMethod.GET), any(), eq(String.class)))
+                    .thenReturn(ResponseEntity.ok(body));
+
+            mockMvc.perform(get("/api/pixiv/artwork/12345/meta"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.authorId").doesNotExist())
+                    .andExpect(jsonPath("$.tags", hasSize(0)));
         }
     }
 }
