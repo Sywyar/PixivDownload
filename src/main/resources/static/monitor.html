@@ -1311,7 +1311,13 @@
                             <th data-i18n="table.ops">OPS</th>
                         </tr>
                         </thead>
-                        <tbody id="historyTableBody"></tbody>
+                        <tbody id="historyTableBody">
+                            <tr id="historyLoadingRow">
+                                <td colspan="10" class="text-center" style="color:var(--text-dim);padding:2rem;letter-spacing:.18em;text-transform:uppercase;font-size:.7rem;">
+                                    <i class="fas fa-spinner fa-spin me-2" style="color:var(--cyan);"></i><span data-i18n="status.loading-lower">loading</span>...
+                                </td>
+                            </tr>
+                        </tbody>
                     </table>
                 </div>
 
@@ -1606,8 +1612,7 @@
     }
 
     // ===================== 初始化 =====================
-    document.addEventListener('DOMContentLoaded', async () => {
-        await initPageI18n();
+    document.addEventListener('DOMContentLoaded', () => {
         artworkModal = new bootstrap.Modal(document.getElementById('artworkModal'));
         imageModal   = new bootstrap.Modal(document.getElementById('imageModal'));
 
@@ -1627,6 +1632,7 @@
             });
         });
 
+        // 立即异步触发数据加载（与 i18n 初始化并行），避免主界面被慢请求阻塞
         initDashboard();
         updateInterval = setInterval(updateDashboard, 5000);
         foregroundBurstUntil = Date.now() + 10000; // 页面打开后 10s 内每秒轮询
@@ -1637,6 +1643,15 @@
             if (e.key === 'ArrowLeft')  navigateFullImg(-1);
             if (e.key === 'ArrowRight') navigateFullImg(1);
         });
+
+        // i18n 在后台加载，加载完成后再补丁式应用翻译并重渲染已到达的动态内容
+        initPageI18n().then(() => {
+            if (allArtworksCache !== null) {
+                renderFromCache();
+                updateChart(allArtworksCache);
+            }
+            renderActiveDownloads();
+        }).catch(err => console.error('i18n 加载失败', err));
     });
 
     document.addEventListener('visibilitychange', () => {

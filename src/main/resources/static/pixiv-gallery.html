@@ -4199,14 +4199,31 @@
 
     // ---------- Boot ----------
     (async function init() {
-        await initPageI18n();
+        // 立即渲染静态控件，避免主界面被网络请求阻塞
         renderFilterModeButtons('tag');
         renderFilterModeButtons('author');
-        await loadCollections();
-        await loadTagOptions();
-        await loadAuthorOptions();
-        await applyNavigationFiltersFromQuery();
-        await loadGallery();
+
+        // i18n 在后台加载，加载完成后补丁式重渲染已到达的动态内容
+        initPageI18n().then(() => {
+            if (state.collections.length) renderCollections();
+            if (state.tags.length) renderTagChips();
+            if (state.authorOptions.length) renderAuthorChips();
+        }).catch(err => console.error('i18n 加载失败', err));
+
+        // 三个独立的侧边栏数据请求并行触发
+        loadCollections();
+        loadAuthorOptions();
+        const tagsPromise = loadTagOptions();
+
+        // 仅当 URL 携带过滤参数时才需要等 tag 选项就绪后解析过滤；常规进入直接放行
+        const params = new URLSearchParams(location.search);
+        const hasNavigationFilter = GALLERY_FILTER_QUERY_KEYS.some(key => params.has(key));
+        if (hasNavigationFilter) {
+            await tagsPromise;
+            await applyNavigationFiltersFromQuery();
+        }
+
+        loadGallery();
     })();
 </script>
 </body>
