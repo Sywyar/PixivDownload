@@ -57,6 +57,7 @@ public class AuthFilter extends OncePerRequestFilter {
     );
 
     private final SetupService setupService;
+    private final StaticResourceRateLimitService staticResourceRateLimitService;
     private final RateLimitService rateLimitService;
     private final AppLocaleResolver localeResolver;
     private final AppMessages messages;
@@ -84,6 +85,14 @@ public class AuthFilter extends OncePerRequestFilter {
                 res.sendRedirect("/pixiv-gallery.html");
             }
             return;
+        }
+
+        if (shouldApplyStaticResourceRateLimit(req, path)) {
+            if (!staticResourceRateLimitService.isAllowed(req.getRemoteAddr())) {
+                log.warn(messages.getForLog("static-resource.log.rate-limit.exceeded", req.getRemoteAddr(), path));
+                sendTextError(req, res, 429, "auth.too-many-requests", "Too Many Requests");
+                return;
+            }
         }
 
         if (isPublic(path)) {
@@ -192,11 +201,34 @@ public class AuthFilter extends OncePerRequestFilter {
                 || path.startsWith("/api/auth/")
                 || path.startsWith("/api/i18n/")
                 || path.startsWith("/api/gui/")
-                || path.startsWith("/api/scripts/");
+                || path.startsWith("/api/scripts/")
+                || path.startsWith("/vendor/");
     }
 
     private boolean isApi(String path) {
         return path.startsWith("/api/");
+    }
+
+    private boolean isStaticResource(String path) {
+        if (path == null || path.isBlank() || path.equals("/redirect") || path.startsWith("/api/")) {
+            return false;
+        }
+        if (path.equals("/") || path.equals("/index")
+                || path.startsWith("/js/")
+                || path.startsWith("/vendor/")
+                || path.startsWith("/userscripts/")) {
+            return true;
+        }
+        int lastSlash = path.lastIndexOf('/');
+        int lastDot = path.lastIndexOf('.');
+        return lastDot > lastSlash;
+    }
+
+    private boolean shouldApplyStaticResourceRateLimit(HttpServletRequest req, String path) {
+        return isStaticResource(path)
+                && setupService.isSetupComplete()
+                && "multi".equals(setupService.getMode())
+                && !setupService.isAdminLoggedIn(req);
     }
 
     private void sendJsonError(HttpServletRequest req, HttpServletResponse res,
@@ -207,6 +239,16 @@ public class AuthFilter extends OncePerRequestFilter {
         res.setContentType(MediaType.APPLICATION_JSON_VALUE);
         res.setCharacterEncoding(StandardCharsets.UTF_8.name());
         res.getWriter().write(mapper.writeValueAsString(new ErrorResponse(message)));
+    }
+
+    private void sendTextError(HttpServletRequest req, HttpServletResponse res,
+                               int status, String messageCode, String defaultMessage) throws IOException {
+        String message = messages.getOrDefault(localeResolver.resolveLocale(req), messageCode, defaultMessage);
+        res.setStatus(status);
+        res.setContentType(MediaType.TEXT_PLAIN_VALUE);
+        res.setCharacterEncoding(StandardCharsets.UTF_8.name());
+        res.setHeader(HttpHeaders.RETRY_AFTER, "60");
+        res.getWriter().write(message);
     }
 
     private void ensureUserUuidCookie(HttpServletRequest req, HttpServletResponse res) {

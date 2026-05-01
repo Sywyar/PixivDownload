@@ -28,6 +28,8 @@ class AuthFilterTest {
     @Mock
     private SetupService setupService;
     @Mock
+    private StaticResourceRateLimitService staticResourceRateLimitService;
+    @Mock
     private RateLimitService rateLimitService;
     @Mock
     private AppLocaleResolver localeResolver;
@@ -42,9 +44,131 @@ class AuthFilterTest {
 
     @BeforeEach
     void setUp() {
-        authFilter = new AuthFilter(setupService, rateLimitService, localeResolver, appMessages);
+        authFilter = new AuthFilter(setupService, staticResourceRateLimitService, rateLimitService, localeResolver, appMessages);
         request = new MockHttpServletRequest();
         response = new MockHttpServletResponse();
+        lenient().when(staticResourceRateLimitService.isAllowed(any())).thenReturn(true);
+        lenient().when(appMessages.getOrDefault(nullable(java.util.Locale.class), anyString(), anyString()))
+                .thenAnswer(inv -> inv.getArgument(2));
+        lenient().when(appMessages.getForLog(anyString(), any(), any())).thenReturn("rate limited");
+    }
+
+    // ========== 静态资源 IP 限流 ==========
+
+    @Nested
+    @DisplayName("静态资源 IP 限流")
+    class StaticResourceRateLimitTests {
+
+        @ParameterizedTest
+        @ValueSource(strings = {
+                "/",
+                "/index",
+                "/login.html",
+                "/pixiv-batch.html",
+                "/js/pixiv-lang-switcher.js",
+                "/vendor/fonts/fonts.css",
+                "/vendor/fontawesome/webfonts/fa-solid-900.woff2"
+        })
+        @DisplayName("静态资源请求应先经过独立的 IP 限流")
+        void shouldCheckStaticResourceRateLimit(String path) throws Exception {
+            when(setupService.isSetupComplete()).thenReturn(true);
+            when(setupService.getMode()).thenReturn("multi");
+
+            request.setMethod("GET");
+            request.setRequestURI(path);
+            request.setRemoteAddr("192.168.1.100");
+
+            authFilter.doFilterInternal(request, response, filterChain);
+
+            verify(staticResourceRateLimitService).isAllowed("192.168.1.100");
+        }
+
+        @Test
+        @DisplayName("静态资源超出 IP 限流时应返回 429 且不消耗多人模式 API 限额")
+        void shouldReturn429WhenStaticResourceRateLimitExceeded() throws Exception {
+            when(setupService.isSetupComplete()).thenReturn(true);
+            when(setupService.getMode()).thenReturn("multi");
+            when(staticResourceRateLimitService.isAllowed("203.0.113.10")).thenReturn(false);
+
+            request.setMethod("GET");
+            request.setRequestURI("/vendor/fonts/fonts.css");
+            request.setRemoteAddr("203.0.113.10");
+
+            authFilter.doFilterInternal(request, response, filterChain);
+
+            assertThat(response.getStatus()).isEqualTo(429);
+            assertThat(response.getHeader("Retry-After")).isEqualTo("60");
+            assertThat(response.getContentAsString()).isEqualTo("Too Many Requests");
+            verify(filterChain, never()).doFilter(request, response);
+            verify(rateLimitService, never()).isAllowed(any());
+        }
+
+        @Test
+        @DisplayName("solo 模式不应启用静态资源 IP 限流")
+        void shouldSkipStaticResourceRateLimitInSoloMode() throws Exception {
+            when(setupService.isSetupComplete()).thenReturn(true);
+            when(setupService.getMode()).thenReturn("solo");
+
+            request.setMethod("GET");
+            request.setRequestURI("/vendor/fonts/fonts.css");
+            request.setRemoteAddr("192.168.1.100");
+
+            authFilter.doFilterInternal(request, response, filterChain);
+
+            verify(staticResourceRateLimitService, never()).isAllowed(any());
+            verify(filterChain).doFilter(request, response);
+        }
+
+        @Test
+        @DisplayName("multi 模式已登录管理员不应启用静态资源 IP 限流")
+        void shouldSkipStaticResourceRateLimitForAdminInMultiMode() throws Exception {
+            when(setupService.isSetupComplete()).thenReturn(true);
+            when(setupService.getMode()).thenReturn("multi");
+            when(setupService.isAdminLoggedIn(any())).thenReturn(true);
+
+            request.setMethod("GET");
+            request.setRequestURI("/vendor/fonts/fonts.css");
+            request.setRemoteAddr("192.168.1.100");
+            request.setCookies(new Cookie("pixiv_session", "valid-token"));
+
+            authFilter.doFilterInternal(request, response, filterChain);
+
+            verify(staticResourceRateLimitService, never()).isAllowed(any());
+            verify(filterChain).doFilter(request, response);
+        }
+
+        @Test
+        @DisplayName("setup 未完成时不应启用静态资源 IP 限流")
+        void shouldSkipStaticResourceRateLimitBeforeSetupComplete() throws Exception {
+            when(setupService.isSetupComplete()).thenReturn(false);
+
+            request.setMethod("GET");
+            request.setRequestURI("/vendor/fonts/fonts.css");
+            request.setRemoteAddr("192.168.1.100");
+
+            authFilter.doFilterInternal(request, response, filterChain);
+
+            verify(staticResourceRateLimitService, never()).isAllowed(any());
+            verify(filterChain).doFilter(request, response);
+        }
+
+        @Test
+        @DisplayName("API 请求不应经过静态资源 IP 限流")
+        void shouldNotCheckStaticResourceRateLimitForApiRequest() throws Exception {
+            when(setupService.isSetupComplete()).thenReturn(true);
+            when(setupService.getMode()).thenReturn("multi");
+            when(rateLimitService.isAllowed(any())).thenReturn(true);
+
+            request.setMethod("GET");
+            request.setRequestURI("/api/download/pixiv");
+            request.setRemoteAddr("192.168.1.100");
+
+            authFilter.doFilterInternal(request, response, filterChain);
+
+            verify(staticResourceRateLimitService, never()).isAllowed(any());
+            verify(rateLimitService).isAllowed(any());
+            verify(filterChain).doFilter(request, response);
+        }
     }
 
     // ========== OPTIONS 预检请求 ==========

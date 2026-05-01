@@ -159,6 +159,19 @@ public final class ConfigFieldRegistry {
                         .help(message("gui.config.field.multi-mode.request-limit-minute.help"))
                         .build(),
 
+                ConfigFieldSpec.builder("multi-mode.static-resource-request-limit-minute", message("gui.config.field.multi-mode.static-resource-request-limit-minute.label"), INT, groupMultiMode)
+                        .defaultValue("1200")
+                        .help(message("gui.config.field.multi-mode.static-resource-request-limit-minute.help"))
+                        .validator(v -> {
+                            try {
+                                int n = Integer.parseInt(v);
+                                return n >= 0 ? null : message("gui.config.validation.non-negative-int");
+                            } catch (NumberFormatException e) {
+                                return message("gui.config.validation.valid-int");
+                            }
+                        })
+                        .build(),
+
                 ConfigFieldSpec.builder("multi-mode.limit-page", message("gui.config.field.multi-mode.limit-page.label"), INT, groupMultiMode)
                         .defaultValue("3")
                         .help(message("gui.config.field.multi-mode.limit-page.help"))

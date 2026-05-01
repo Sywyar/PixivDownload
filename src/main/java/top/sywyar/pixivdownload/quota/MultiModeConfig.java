@@ -27,6 +27,9 @@ public class MultiModeConfig {
     /** 多人模式下每用户每分钟最大请求次数（0 表示不限制） */
     private int requestLimitMinute = 300;
 
+    /** 多人模式游客每 IP 每分钟最大静态资源请求次数（0 表示不限制） */
+    private int staticResourceRequestLimitMinute = 1200;
+
     /** 搜索模式自动向后补页上限（0 表示不限制，仅多人模式生效） */
     private int limitPage = 3;
 
