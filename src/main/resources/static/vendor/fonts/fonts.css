@@ -1,0 +1,32 @@
+/*
+ * Locally hosted Latin web fonts.
+ * Each face only loads when an element actually uses it.
+ *
+ * Inter            — Apache License 2.0 / SIL OFL 1.1, see inter-LICENSE
+ * JetBrains Mono   — SIL OFL 1.1, see jetbrains-mono-LICENSE
+ * Instrument Serif — SIL OFL 1.1, see instrument-serif-LICENSE
+ */
+
+@font-face {
+    font-family: 'Inter';
+    font-style: normal;
+    font-weight: 100 900;
+    font-display: swap;
+    src: url('/vendor/fonts/inter-latin-wght-normal.woff2') format('woff2');
+}
+
+@font-face {
+    font-family: 'JetBrains Mono';
+    font-style: normal;
+    font-weight: 100 800;
+    font-display: swap;
+    src: url('/vendor/fonts/jetbrains-mono-latin-wght-normal.woff2') format('woff2');
+}
+
+@font-face {
+    font-family: 'Instrument Serif';
+    font-style: italic;
+    font-weight: 400;
+    font-display: swap;
+    src: url('/vendor/fonts/instrument-serif-latin-400-italic.woff2') format('woff2');
+}
