@@ -1,11 +1,14 @@
 package top.sywyar.pixivdownload.gallery;
 
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import top.sywyar.pixivdownload.download.response.DownloadedResponse;
 import top.sywyar.pixivdownload.download.response.PagedHistoryResponse;
 import top.sywyar.pixivdownload.i18n.AppMessages;
+import top.sywyar.pixivdownload.setup.guest.GuestAccessGuard;
+import top.sywyar.pixivdownload.setup.guest.GuestInviteSession;
 
 import java.util.*;
 
@@ -15,6 +18,7 @@ import java.util.*;
 public class GalleryController {
 
     private final GalleryService galleryService;
+    private final GuestAccessGuard guestAccessGuard;
     private final AppMessages messages;
 
     @GetMapping("/artworks")
@@ -34,7 +38,8 @@ public class GalleryController {
             @RequestParam(required = false) String authorIds,
             @RequestParam(required = false) String notAuthorIds,
             @RequestParam(required = false) String orAuthorIds,
-            @RequestParam(required = false) Long authorId) {
+            @RequestParam(required = false) Long authorId,
+            HttpServletRequest httpRequest) {
 
         List<Long> requiredAuthorIds = parseLongList(authorIds);
         if (authorId != null && authorId > 0) {
@@ -51,6 +56,7 @@ public class GalleryController {
                 requiredAuthorIds,
                 parseLongList(notAuthorIds),
                 parseLongList(orAuthorIds));
+        query.setGuestRestriction(GuestRestriction.from(GuestAccessGuard.extractSession(httpRequest)));
         return galleryService.query(query);
     }
 
@@ -71,7 +77,9 @@ public class GalleryController {
     }
 
     @GetMapping("/artwork/{artworkId}")
-    public ResponseEntity<DownloadedResponse> artwork(@PathVariable long artworkId) {
+    public ResponseEntity<DownloadedResponse> artwork(@PathVariable long artworkId,
+                                                      HttpServletRequest httpRequest) {
+        guestAccessGuard.requireVisible(httpRequest, artworkId);
         DownloadedResponse resp = galleryService.findArtwork(artworkId);
         return resp == null ? ResponseEntity.notFound().build() : ResponseEntity.ok(resp);
     }
@@ -79,15 +87,35 @@ public class GalleryController {
     @GetMapping("/artwork/{artworkId}/related")
     public ResponseEntity<List<DownloadedResponse>> related(
             @PathVariable long artworkId,
-            @RequestParam(defaultValue = "12") int limit) {
-        return ResponseEntity.ok(galleryService.related(artworkId, limit));
+            @RequestParam(defaultValue = "12") int limit,
+            HttpServletRequest httpRequest) {
+        guestAccessGuard.requireVisible(httpRequest, artworkId);
+        GuestInviteSession session = GuestAccessGuard.extractSession(httpRequest);
+        List<DownloadedResponse> all = galleryService.related(artworkId, limit);
+        return ResponseEntity.ok(filterForGuest(all, session));
     }
 
     @GetMapping("/artwork/{artworkId}/by-author")
     public ResponseEntity<List<DownloadedResponse>> byAuthor(
             @PathVariable long artworkId,
-            @RequestParam(defaultValue = "12") int limit) {
-        return ResponseEntity.ok(galleryService.byAuthor(artworkId, limit));
+            @RequestParam(defaultValue = "12") int limit,
+            HttpServletRequest httpRequest) {
+        guestAccessGuard.requireVisible(httpRequest, artworkId);
+        GuestInviteSession session = GuestAccessGuard.extractSession(httpRequest);
+        List<DownloadedResponse> all = galleryService.byAuthor(artworkId, limit);
+        return ResponseEntity.ok(filterForGuest(all, session));
+    }
+
+    private List<DownloadedResponse> filterForGuest(List<DownloadedResponse> items, GuestInviteSession session) {
+        if (session == null || items == null || items.isEmpty()) return items;
+        List<DownloadedResponse> out = new ArrayList<>(items.size());
+        for (DownloadedResponse item : items) {
+            if (item == null) continue;
+            if (guestAccessGuard.isVisibleToGuest(item.getArtworkId(), session)) {
+                out.add(item);
+            }
+        }
+        return out;
     }
 
     @ExceptionHandler(IllegalArgumentException.class)

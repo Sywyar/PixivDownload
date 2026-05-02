@@ -20,6 +20,7 @@ import top.sywyar.pixivdownload.quota.MultiModeConfig;
 import top.sywyar.pixivdownload.quota.UserQuotaService;
 import top.sywyar.pixivdownload.quota.response.ProxyRateLimitResponse;
 import top.sywyar.pixivdownload.setup.SetupService;
+import top.sywyar.pixivdownload.setup.guest.GuestAccessGuard;
 
 import org.springframework.web.util.UriComponentsBuilder;
 
@@ -55,6 +56,7 @@ public class PixivProxyController {
     private final SetupService setupService;
     private final UserQuotaService userQuotaService;
     private final MultiModeConfig multiModeConfig;
+    private final GuestAccessGuard guestAccessGuard;
     private final AppMessages messages;
 
     /**
@@ -83,6 +85,20 @@ public class PixivProxyController {
                     max, hours));
         }
         return null;
+    }
+
+    /**
+     * 若请求来自访客邀请会话，校验作品是否在可见范围；越界 403。
+     * 非访客请求直接放行（管理员/普通访问由 AuthFilter 决定）。
+     */
+    private void guardArtworkForGuest(HttpServletRequest request, String artworkId) {
+        if (artworkId == null || artworkId.isBlank()) return;
+        try {
+            long id = Long.parseLong(artworkId.trim());
+            guestAccessGuard.requireVisible(request, id);
+        } catch (NumberFormatException ignored) {
+            // 非数字 ID 不命中数据库，让现有逻辑处理；越界由其他校验拦下
+        }
     }
 
     private String proxyGet(String url, String cookie) {
@@ -155,6 +171,7 @@ public class PixivProxyController {
             @PathVariable String artworkId,
             @RequestHeader(value = "X-Pixiv-Cookie", required = false) String cookie,
             HttpServletRequest request) throws IOException {
+        guardArtworkForGuest(request, artworkId);
         ResponseEntity<?> deny = checkMultiModeAccess(request);
         if (deny != null) return deny;
         String body = proxyGet(
@@ -215,6 +232,7 @@ public class PixivProxyController {
             @PathVariable String artworkId,
             @RequestHeader(value = "X-Pixiv-Cookie", required = false) String cookie,
             HttpServletRequest request) throws IOException {
+        guardArtworkForGuest(request, artworkId);
         ResponseEntity<?> deny = checkMultiModeAccess(request);
         if (deny != null) return deny;
         String body = proxyGet(
@@ -237,6 +255,7 @@ public class PixivProxyController {
             @PathVariable String artworkId,
             @RequestHeader(value = "X-Pixiv-Cookie", required = false) String cookie,
             HttpServletRequest request) throws IOException {
+        guardArtworkForGuest(request, artworkId);
         ResponseEntity<?> deny = checkMultiModeAccess(request);
         if (deny != null) return deny;
         String body = proxyGet(

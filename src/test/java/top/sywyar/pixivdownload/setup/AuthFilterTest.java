@@ -14,9 +14,14 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 
+import org.springframework.beans.factory.ObjectProvider;
 import top.sywyar.pixivdownload.i18n.AppLocaleResolver;
 import top.sywyar.pixivdownload.i18n.AppMessages;
+import top.sywyar.pixivdownload.maintenance.MaintenanceCoordinator;
 import top.sywyar.pixivdownload.quota.RateLimitService;
+import top.sywyar.pixivdownload.setup.guest.GuestInviteService;
+
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -37,6 +42,10 @@ class AuthFilterTest {
     private AppMessages appMessages;
     @Mock
     private FilterChain filterChain;
+    @Mock
+    private ObjectProvider<MaintenanceCoordinator> maintenanceProvider;
+    @Mock
+    private GuestInviteService guestInviteService;
 
     private AuthFilter authFilter;
     private MockHttpServletRequest request;
@@ -44,13 +53,16 @@ class AuthFilterTest {
 
     @BeforeEach
     void setUp() {
-        authFilter = new AuthFilter(setupService, staticResourceRateLimitService, rateLimitService, localeResolver, appMessages);
+        authFilter = new AuthFilter(setupService, staticResourceRateLimitService, rateLimitService,
+                localeResolver, appMessages, maintenanceProvider, guestInviteService);
         request = new MockHttpServletRequest();
         response = new MockHttpServletResponse();
         lenient().when(staticResourceRateLimitService.isAllowed(any())).thenReturn(true);
         lenient().when(appMessages.getOrDefault(nullable(java.util.Locale.class), anyString(), anyString()))
                 .thenAnswer(inv -> inv.getArgument(2));
         lenient().when(appMessages.getForLog(anyString(), any(), any())).thenReturn("rate limited");
+        lenient().when(maintenanceProvider.getIfAvailable()).thenReturn(null);
+        lenient().when(guestInviteService.resolveByCode(any())).thenReturn(Optional.empty());
     }
 
     // ========== 静态资源 IP 限流 ==========

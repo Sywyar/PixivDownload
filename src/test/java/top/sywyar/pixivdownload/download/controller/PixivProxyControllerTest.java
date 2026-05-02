@@ -46,6 +46,8 @@ class PixivProxyControllerTest {
     private SetupService setupService;
     @Mock
     private UserQuotaService userQuotaService;
+    @Mock
+    private top.sywyar.pixivdownload.setup.guest.GuestAccessGuard guestAccessGuard;
 
     private MultiModeConfig multiModeConfig;
 
@@ -53,7 +55,8 @@ class PixivProxyControllerTest {
     void setUp() {
         multiModeConfig = new MultiModeConfig();
         PixivProxyController controller = new PixivProxyController(
-                objectMapper, restTemplate, setupService, userQuotaService, multiModeConfig, APP_MESSAGES);
+                objectMapper, restTemplate, setupService, userQuotaService, multiModeConfig,
+                guestAccessGuard, APP_MESSAGES);
         mockMvc = MockMvcBuilders.standaloneSetup(controller)
                 .setControllerAdvice(new GlobalExceptionHandler(APP_MESSAGES))
                 .build();

@@ -51,6 +51,8 @@ public class GalleryQuery {
     private List<Long> excludedAuthorIds;
     /** 可选命中的作者 ID（OR 语义，参与“必须标签 OR 可选作者”子句）。 */
     private List<Long> optionalAuthorIds;
+    /** 访客邀请会话施加的额外限制（年龄分级 + 标签/作者 OR 白名单）；管理员/普通访问为 {@code null}。 */
+    private GuestRestriction guestRestriction;
 
     public static GalleryQuery normalize(Integer page, Integer size, String sort, String order,
                                          String search, String r18, String ai,

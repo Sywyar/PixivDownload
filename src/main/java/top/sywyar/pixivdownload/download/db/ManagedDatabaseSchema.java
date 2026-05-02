@@ -133,6 +133,61 @@ public final class ManagedDatabaseSchema {
                 )
         ));
 
+        tables.put("guest_invites", new TableSpec(
+                "guest_invites",
+                List.of(
+                        column("id", "INTEGER", false, null, 1),
+                        column("code", "TEXT", true, null, 0),
+                        column("name", "TEXT", true, null, 0),
+                        column("expire_time", "INTEGER", false, null, 0),
+                        column("allow_sfw", "INTEGER", true, "1", 0),
+                        column("allow_r18", "INTEGER", true, "0", 0),
+                        column("allow_r18g", "INTEGER", true, "0", 0),
+                        column("tag_unrestricted", "INTEGER", true, "1", 0),
+                        column("author_unrestricted", "INTEGER", true, "1", 0),
+                        column("created_time", "INTEGER", true, null, 0),
+                        column("paused", "INTEGER", true, "0", 0),
+                        column("revoked", "INTEGER", true, "0", 0),
+                        column("first_used_time", "INTEGER", false, null, 0),
+                        column("last_used_time", "INTEGER", false, null, 0),
+                        column("total_request_count", "INTEGER", true, "0", 0)
+                ),
+                List.of(
+                        uniqueConstraint("code"),
+                        explicitIndex("idx_guest_invites_code", false, "code")
+                )
+        ));
+
+        tables.put("guest_invite_tags", new TableSpec(
+                "guest_invite_tags",
+                List.of(
+                        column("invite_id", "INTEGER", true, null, 1),
+                        column("tag_id", "INTEGER", true, null, 2)
+                ),
+                List.of()
+        ));
+
+        tables.put("guest_invite_authors", new TableSpec(
+                "guest_invite_authors",
+                List.of(
+                        column("invite_id", "INTEGER", true, null, 1),
+                        column("author_id", "INTEGER", true, null, 2)
+                ),
+                List.of()
+        ));
+
+        tables.put("guest_invite_access_stats", new TableSpec(
+                "guest_invite_access_stats",
+                List.of(
+                        column("invite_id", "INTEGER", true, null, 1),
+                        column("bucket_hour", "INTEGER", true, null, 2),
+                        column("request_count", "INTEGER", true, "0", 0)
+                ),
+                List.of(
+                        explicitIndex("idx_guest_invite_access_stats_bucket", false, "bucket_hour")
+                )
+        ));
+
         return new DatabaseSchema(Map.copyOf(tables));
     }
 

@@ -14,19 +14,24 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseCookie;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
+import org.springframework.beans.factory.ObjectProvider;
 import top.sywyar.pixivdownload.common.NetworkUtils;
 import top.sywyar.pixivdownload.common.SessionUtils;
 import top.sywyar.pixivdownload.common.UuidUtils;
 import top.sywyar.pixivdownload.download.response.ErrorResponse;
 import top.sywyar.pixivdownload.i18n.AppLocaleResolver;
 import top.sywyar.pixivdownload.i18n.AppMessages;
+import top.sywyar.pixivdownload.maintenance.MaintenanceCoordinator;
 import top.sywyar.pixivdownload.quota.RateLimitService;
+import top.sywyar.pixivdownload.setup.guest.GuestInviteService;
+import top.sywyar.pixivdownload.setup.guest.GuestInviteSession;
 
 import java.io.IOException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 
 @Component
@@ -39,6 +44,8 @@ public class AuthFilter extends OncePerRequestFilter {
             "/monitor.html",
             "/pixiv-gallery.html",
             "/pixiv-artwork.html",
+            "/pixiv-invite-manage.html",
+            "/pixiv-invite-detail.html",
             "/api/downloaded/statistics",
             "/api/downloaded/history",
             "/api/downloaded/history/paged",
@@ -53,14 +60,43 @@ public class AuthFilter extends OncePerRequestFilter {
             "/api/downloaded/image/",
             "/api/authors",
             "/api/gallery/",
-            "/api/collections"
+            "/api/collections",
+            "/api/admin/"
     );
+
+    /** 访客邀请会话被允许访问的精确路径。 */
+    private static final Set<String> GUEST_ALLOWED_EXACT = Set.of(
+            "/pixiv-gallery.html",
+            "/pixiv-artwork.html",
+            "/api/downloaded/statistics",
+            "/api/downloaded/history",
+            "/api/downloaded/history/paged",
+            "/api/downloaded/by-move-folder",
+            "/api/download/status/active"
+    );
+
+    /** 访客邀请会话被允许访问的前缀路径（仅 GET）。 */
+    private static final List<String> GUEST_ALLOWED_PREFIX = List.of(
+            "/api/downloaded/thumbnail/",
+            "/api/downloaded/rawfile/",
+            "/api/downloaded/image/",
+            "/api/download/status/",
+            "/api/authors",
+            "/api/gallery/",
+            "/api/collections",
+            "/api/pixiv/artwork/"
+    );
+
+    /** 访客邀请 cookie 名（浏览器会话 cookie，不带 Max-Age）。 */
+    public static final String INVITE_COOKIE = "pixiv_invite_token";
 
     private final SetupService setupService;
     private final StaticResourceRateLimitService staticResourceRateLimitService;
     private final RateLimitService rateLimitService;
     private final AppLocaleResolver localeResolver;
     private final AppMessages messages;
+    private final ObjectProvider<MaintenanceCoordinator> maintenanceCoordinatorProvider;
+    private final GuestInviteService guestInviteService;
 
     @Override
     protected void doFilterInternal(HttpServletRequest req, HttpServletResponse res,
@@ -70,6 +106,22 @@ public class AuthFilter extends OncePerRequestFilter {
 
         if ("OPTIONS".equalsIgnoreCase(method)) {
             chain.doFilter(req, res);
+            return;
+        }
+
+        // 维护窗口：非本地管理员一律 503（避免维护中错改数据）
+        MaintenanceCoordinator maintenance = maintenanceCoordinatorProvider.getIfAvailable();
+        if (maintenance != null && maintenance.isPaused()
+                && !(NetworkUtils.isLocalAddress(req.getRemoteAddr())
+                        && setupService.isAdminLoggedIn(req))) {
+            res.setStatus(503);
+            res.setHeader(HttpHeaders.RETRY_AFTER, "60");
+            res.setContentType(MediaType.APPLICATION_JSON_VALUE);
+            res.setCharacterEncoding(StandardCharsets.UTF_8.name());
+            String message = messages.getOrDefault(localeResolver.resolveLocale(req),
+                    "auth.maintenance", "服务正在维护，请稍后再试");
+            res.getWriter().write(new ObjectMapper()
+                    .writeValueAsString(new ErrorResponse(message)));
             return;
         }
 
@@ -102,6 +154,12 @@ public class AuthFilter extends OncePerRequestFilter {
             return;
         }
 
+        // 邀请兑换通过 GET /invite?code=...：服务端尝试发 cookie 并 302 到画廊
+        if (path.equals("/invite")) {
+            handleInviteRedeemRedirect(req, res);
+            return;
+        }
+
         if (isPublic(path)) {
             chain.doFilter(req, res);
             return;
@@ -125,9 +183,34 @@ public class AuthFilter extends OncePerRequestFilter {
             return;
         }
 
+        // 解析访客邀请会话（若 cookie 有效）：挂到 request attribute，用于后续过滤与单作品守卫
+        GuestInviteSession guestSession = resolveGuestInviteSession(req, res);
+        if (guestSession != null) {
+            req.setAttribute(GuestInviteSession.REQUEST_ATTR, guestSession);
+        }
+
         if (isMonitorProtected(path)) {
             String token = SessionUtils.extractToken(req);
-            if (!setupService.isValidSession(token)) {
+            boolean adminValid = setupService.isValidSession(token);
+            if (!adminValid && guestSession != null && isAllowedForGuestInvite(path, method)) {
+                if (isApi(path)) {
+                    String key = rateLimitService.resolveLimitKey(req);
+                    if (!rateLimitService.isAllowed(key)) {
+                        sendJsonError(req, res, 429, "auth.too-many-requests", "Too Many Requests");
+                        return;
+                    }
+                }
+                guestInviteService.recordHit(guestSession.id());
+                chain.doFilter(req, res);
+                return;
+            }
+            if (!adminValid) {
+                if (guestSession != null) {
+                    // guest 携带 cookie 但越界：禁止访问
+                    sendJsonError(req, res, 403, "guest.invite.forbidden",
+                            "该资源不在你的可见范围内");
+                    return;
+                }
                 if (isApi(path)) {
                     sendJsonError(req, res, 401, "auth.unauthorized", "Unauthorized");
                 } else {
@@ -140,6 +223,13 @@ public class AuthFilter extends OncePerRequestFilter {
                 ensureUserUuidCookie(req, res);
             }
             chain.doFilter(req, res);
+            return;
+        }
+
+        // 已识别为访客但未命中受保护路径（即非 monitor 范围内）：禁止越界（除非是 isPublic 路径，已在前面放行）
+        if (guestSession != null) {
+            sendJsonError(req, res, 403, "guest.invite.forbidden",
+                    "该资源不在你的可见范围内");
             return;
         }
 
@@ -263,6 +353,67 @@ public class AuthFilter extends OncePerRequestFilter {
         res.setCharacterEncoding(StandardCharsets.UTF_8.name());
         res.setHeader(HttpHeaders.RETRY_AFTER, "60");
         res.getWriter().write(message);
+    }
+
+    private GuestInviteSession resolveGuestInviteSession(HttpServletRequest req, HttpServletResponse res) {
+        Cookie[] cookies = req.getCookies();
+        if (cookies == null) return null;
+        String code = null;
+        for (Cookie c : cookies) {
+            if (INVITE_COOKIE.equals(c.getName()) && c.getValue() != null && !c.getValue().isBlank()) {
+                code = c.getValue();
+                break;
+            }
+        }
+        if (code == null) return null;
+        Optional<GuestInviteSession> resolved;
+        try {
+            resolved = guestInviteService.resolveByCode(code);
+        } catch (Exception e) {
+            log.warn("Failed to resolve invite cookie: {}", e.getMessage());
+            return null;
+        }
+        if (resolved.isPresent()) return resolved.get();
+        // 失效：让浏览器丢掉无效的 cookie
+        ResponseCookie cleared = ResponseCookie.from(INVITE_COOKIE, "")
+                .path("/").httpOnly(true).sameSite("Strict").maxAge(0).build();
+        res.addHeader(HttpHeaders.SET_COOKIE, cleared.toString());
+        return null;
+    }
+
+    private boolean isAllowedForGuestInvite(String path, String method) {
+        if (!"GET".equalsIgnoreCase(method) && !"HEAD".equalsIgnoreCase(method)) {
+            return false;
+        }
+        if (GUEST_ALLOWED_EXACT.contains(path)) return true;
+        for (String prefix : GUEST_ALLOWED_PREFIX) {
+            if (path.startsWith(prefix)) return true;
+        }
+        return false;
+    }
+
+    private void handleInviteRedeemRedirect(HttpServletRequest req, HttpServletResponse res) throws IOException {
+        String code = req.getParameter("code");
+        if (code == null || code.isBlank()) {
+            res.sendRedirect("/login.html");
+            return;
+        }
+        Optional<GuestInviteSession> session;
+        try {
+            session = guestInviteService.resolveByCode(code);
+        } catch (Exception e) {
+            log.warn("Invite redeem (GET) failed: {}", e.getMessage());
+            res.sendRedirect("/login.html?inviteError=1");
+            return;
+        }
+        if (session.isEmpty()) {
+            res.sendRedirect("/login.html?inviteError=1");
+            return;
+        }
+        ResponseCookie cookie = ResponseCookie.from(INVITE_COOKIE, session.get().code())
+                .path("/").httpOnly(true).sameSite("Strict").build();
+        res.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
+        res.sendRedirect("/pixiv-gallery.html");
     }
 
     private void ensureUserUuidCookie(HttpServletRequest req, HttpServletResponse res) {

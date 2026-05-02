@@ -1,10 +1,13 @@
 package top.sywyar.pixivdownload.quota;
 
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import top.sywyar.pixivdownload.common.UuidUtils;
 import top.sywyar.pixivdownload.i18n.AppMessages;
+import top.sywyar.pixivdownload.setup.guest.GuestInviteSession;
 
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -42,6 +45,18 @@ public class RateLimitService {
             return existing;
         });
         return counter.count.incrementAndGet() <= limit;
+    }
+
+    /**
+     * 解析请求的限流键：访客邀请 token 优先（让同一邀请码跨浏览器共享额度），
+     * 否则回退到多人模式 UUID。
+     */
+    public String resolveLimitKey(HttpServletRequest request) {
+        Object attr = request.getAttribute(GuestInviteSession.REQUEST_ATTR);
+        if (attr instanceof GuestInviteSession session) {
+            return "invite:" + session.code();
+        }
+        return UuidUtils.extractOrGenerateUuid(request);
     }
 
     /** 每分钟清理已过期的分钟窗口计数器，防止内存泄漏。 */

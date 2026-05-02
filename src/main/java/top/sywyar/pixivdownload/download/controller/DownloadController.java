@@ -22,6 +22,7 @@ import top.sywyar.pixivdownload.i18n.AppMessages;
 import top.sywyar.pixivdownload.quota.MultiModeConfig;
 import top.sywyar.pixivdownload.quota.UserQuotaService;
 import top.sywyar.pixivdownload.setup.SetupService;
+import top.sywyar.pixivdownload.setup.guest.GuestAccessGuard;
 
 import java.io.File;
 import java.io.IOException;
@@ -45,6 +46,7 @@ public class DownloadController {
     private final MultiModeConfig multiModeConfig;
     private final PixivDatabase pixivDatabase;
     private final AuthorService authorService;
+    private final GuestAccessGuard guestAccessGuard;
     private final AppMessages messages;
 
     @PostMapping("/download/pixiv")
@@ -188,7 +190,9 @@ public class DownloadController {
     @GetMapping("/downloaded/{artworkId}")
     public ResponseEntity<DownloadedResponse> getDownloaded(
             @PathVariable Long artworkId,
-            @RequestParam(defaultValue = "false") boolean verifyFiles) {
+            @RequestParam(defaultValue = "false") boolean verifyFiles,
+            HttpServletRequest httpRequest) {
+        guestAccessGuard.requireVisible(httpRequest, artworkId);
         DownloadedResponse downloadedResponse = getArtWorkDownloadedResponse(artworkId, verifyFiles);
         if (downloadedResponse == null) {
             return ResponseEntity.status(400).build();
@@ -273,7 +277,9 @@ public class DownloadController {
     @GetMapping("/downloaded/thumbnail/{artworkId}/{page}")
     public ResponseEntity<ImageResponse> getThumbnail(
             @PathVariable Long artworkId,
-            @PathVariable int page) throws IOException {
+            @PathVariable int page,
+            HttpServletRequest httpRequest) throws IOException {
+        guestAccessGuard.requireVisible(httpRequest, artworkId);
         ImageResponse image = downloadService.getImageResponse(artworkId, page, true);
         return image != null ? ResponseEntity.ok(image) : ResponseEntity.status(404).build();
     }
@@ -281,7 +287,9 @@ public class DownloadController {
     @GetMapping("/downloaded/rawfile/{artworkId}/{page}")
     public ResponseEntity<byte[]> getRawFile(
             @PathVariable Long artworkId,
-            @PathVariable int page) throws IOException {
+            @PathVariable int page,
+            HttpServletRequest httpRequest) throws IOException {
+        guestAccessGuard.requireVisible(httpRequest, artworkId);
         File file = downloadService.getImageFile(artworkId, page);
         if (file == null) return ResponseEntity.notFound().build();
 
@@ -304,7 +312,9 @@ public class DownloadController {
     @GetMapping("/downloaded/image/{artworkId}/{page}")
     public ResponseEntity<ImageResponse> getImage(
             @PathVariable Long artworkId,
-            @PathVariable int page) throws IOException {
+            @PathVariable int page,
+            HttpServletRequest httpRequest) throws IOException {
+        guestAccessGuard.requireVisible(httpRequest, artworkId);
         ImageResponse image = downloadService.getImageResponse(artworkId, page, false);
         return image != null ? ResponseEntity.ok(image) : ResponseEntity.status(404).build();
     }

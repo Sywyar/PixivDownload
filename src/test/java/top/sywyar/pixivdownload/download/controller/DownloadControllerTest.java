@@ -52,6 +52,8 @@ class DownloadControllerTest {
     private PixivDatabase pixivDatabase;
     @Mock
     private AuthorService authorService;
+    @Mock
+    private top.sywyar.pixivdownload.setup.guest.GuestAccessGuard guestAccessGuard;
 
     private MultiModeConfig multiModeConfig;
 
@@ -59,7 +61,8 @@ class DownloadControllerTest {
     void setUp() {
         multiModeConfig = new MultiModeConfig();
         DownloadController controller = new DownloadController(
-                downloadService, setupService, userQuotaService, multiModeConfig, pixivDatabase, authorService, APP_MESSAGES);
+                downloadService, setupService, userQuotaService, multiModeConfig, pixivDatabase, authorService,
+                guestAccessGuard, APP_MESSAGES);
         mockMvc = MockMvcBuilders.standaloneSetup(controller)
                 .setControllerAdvice(new GlobalExceptionHandler(APP_MESSAGES))
                 .build();

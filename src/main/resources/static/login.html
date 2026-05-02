@@ -55,6 +55,11 @@
   .btn:hover { opacity: .85; }
   .btn:disabled { opacity: .45; cursor: not-allowed; }
   .btn-green { background: #28a745; }
+  .invite-link-row {
+    margin-top: 14px; text-align: center; font-size: 12px;
+  }
+  .invite-link-row a { color: #28a745; cursor: pointer; text-decoration: underline; }
+  .hidden { display: none; }
 </style>
 </head>
 <body>
@@ -62,7 +67,7 @@
 <header>Pixiv 批量下载器</header>
 
 <div class="center">
-  <div class="card">
+  <div class="card" id="loginCard">
     <div class="card-title">管理员登录</div>
     <div class="field">
       <label>用户名</label>
@@ -78,6 +83,22 @@
     </div>
     <div id="error-msg"></div>
     <button class="btn btn-green" id="login-btn" onclick="doLogin()">登录</button>
+    <div class="invite-link-row">
+      <a id="useInviteCode">使用邀请码</a>
+    </div>
+  </div>
+
+  <div class="card hidden" id="inviteCard">
+    <div class="card-title">使用邀请码</div>
+    <div class="field">
+      <label>邀请码</label>
+      <input type="text" id="inviteCodeInput" placeholder="邀请码" autocomplete="off">
+    </div>
+    <div id="invite-error"></div>
+    <button class="btn btn-green" id="invite-btn" onclick="doInviteRedeem()">进入</button>
+    <div class="invite-link-row">
+      <a id="backToLogin">返回管理员登录</a>
+    </div>
   </div>
 </div>
 
@@ -126,8 +147,61 @@ async function doLogin() {
   }
 }
 
+function showInviteError(msg) {
+  document.getElementById('invite-error').textContent = msg;
+}
+
+async function doInviteRedeem() {
+  const code = document.getElementById('inviteCodeInput').value.trim();
+  if (!code) { showInviteError('请输入邀请码'); return; }
+  const btn = document.getElementById('invite-btn');
+  btn.disabled = true;
+  showInviteError('');
+  try {
+    const res = await fetch('/api/auth/invite-redeem', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code }),
+      credentials: 'same-origin',
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      showInviteError(data.error || '邀请码无效');
+      btn.disabled = false;
+      return;
+    }
+    window.location.href = data.redirect || '/pixiv-gallery.html';
+  } catch (e) {
+    showInviteError('网络错误：' + e.message);
+    btn.disabled = false;
+  }
+}
+
+document.getElementById('useInviteCode').addEventListener('click', () => {
+  document.getElementById('loginCard').classList.add('hidden');
+  document.getElementById('inviteCard').classList.remove('hidden');
+  document.getElementById('inviteCodeInput').focus();
+});
+document.getElementById('backToLogin').addEventListener('click', () => {
+  document.getElementById('inviteCard').classList.add('hidden');
+  document.getElementById('loginCard').classList.remove('hidden');
+});
+
+// 若 URL 带 inviteError，直接展开邀请码面板并提示
+if (new URLSearchParams(window.location.search).has('inviteError')) {
+  document.getElementById('loginCard').classList.add('hidden');
+  document.getElementById('inviteCard').classList.remove('hidden');
+  showInviteError('邀请码无效或已失效');
+}
+
 document.addEventListener('keydown', e => {
-  if (e.key === 'Enter') doLogin();
+  if (e.key === 'Enter') {
+    if (!document.getElementById('inviteCard').classList.contains('hidden')) {
+      doInviteRedeem();
+    } else {
+      doLogin();
+    }
+  }
 });
 
 // 若已登录则直接跳转

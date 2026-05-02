@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>邀请码管理 — Pixiv 批量下载器</title>
+<script src="/js/pixiv-i18n.js"></script>
+<script src="/js/pixiv-theme.js"></script>
+<script src="/js/invite-modals.js"></script>
+<style>
+:root {
+    --bg: #f5f5f5;
+    --surface: #ffffff;
+    --surface-hover: #fafafa;
+    --surface-muted: #f6f6f6;
+    --text: #222;
+    --text-muted: #777;
+    --border: #e5e5e5;
+    --brand: #28a745;
+}
+[data-theme="dark"] {
+    --bg: #1c1c1c;
+    --surface: #262626;
+    --surface-hover: #303030;
+    --surface-muted: #2c2c2c;
+    --text: #e8e8e8;
+    --text-muted: #999;
+    --border: #383838;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg); color: var(--text); font-size: 14px; min-height: 100vh;
+}
+header {
+    background: var(--brand); color: #fff;
+    padding: 14px 20px; display: flex; align-items: center; gap: 16px;
+}
+header h1 { font-size: 16px; font-weight: 600; flex: 1; }
+header a { color: #fff; text-decoration: none; font-size: 13px; opacity: 0.9; }
+header a:hover { opacity: 1; }
+.wrap { max-width: 1200px; margin: 24px auto; padding: 0 20px; }
+.toolbar {
+    display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
+    margin-bottom: 16px; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 8px; padding: 12px;
+}
+.toolbar input[type="text"] {
+    flex: 1; min-width: 180px; padding: 6px 10px;
+    border: 1px solid var(--border); border-radius: 5px; font-size: 13px;
+    background: var(--surface); color: inherit;
+}
+.toolbar button {
+    padding: 6px 14px; border-radius: 5px; cursor: pointer; font-size: 13px;
+    border: 1px solid var(--border); background: var(--surface); color: inherit;
+}
+.toolbar button.primary { background: var(--brand); color: #fff; border-color: var(--brand); }
+.filter-chip {
+    padding: 4px 10px; border-radius: 999px; cursor: pointer; font-size: 12px;
+    border: 1px solid var(--border); background: var(--surface); color: inherit;
+}
+.filter-chip.active { background: var(--brand); color: #fff; border-color: var(--brand); }
+table {
+    width: 100%; border-collapse: collapse; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
+}
+th, td {
+    padding: 10px 12px; text-align: left; font-size: 13px;
+    border-bottom: 1px solid var(--border); vertical-align: middle;
+}
+th { background: var(--surface-muted); font-weight: 600; font-size: 12px; color: var(--text-muted); }
+tbody tr:hover { background: var(--surface-hover); }
+.badge {
+    display: inline-block; padding: 2px 8px; border-radius: 999px;
+    font-size: 11px; font-weight: 600;
+}
+.badge-active { background: #e6f6e9; color: #1a7d33; }
+.badge-paused { background: #fff3cd; color: #856404; }
+.badge-expired { background: #f1f1f1; color: #555; }
+.badge-unused { background: #fbe8e8; color: #b41a1a; }
+.badge-used { background: #e6f6e9; color: #1a7d33; }
+.code-cell { font-family: ui-monospace, Consolas, monospace; font-size: 11px; cursor: pointer; }
+.code-cell:hover { color: var(--brand); }
+.action-btn {
+    padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 12px;
+    border: 1px solid var(--brand); background: var(--surface); color: var(--brand);
+}
+.action-btn:hover { background: var(--brand); color: #fff; }
+.empty {
+    padding: 40px; text-align: center; color: var(--text-muted); font-size: 14px;
+}
+</style>
+</head>
+<body>
+<header>
+    <h1>邀请码管理</h1>
+    <a href="/pixiv-gallery.html">← 返回画廊</a>
+</header>
+
+<div class="wrap">
+    <div class="toolbar">
+        <button class="primary" id="btnNewInvite">+ 新建邀请</button>
+        <input type="text" id="searchBox" placeholder="搜索名称或邀请码">
+        <button class="filter-chip active" data-filter="all">全部</button>
+        <button class="filter-chip" data-filter="active">启用</button>
+        <button class="filter-chip" data-filter="paused">暂停</button>
+        <button class="filter-chip" data-filter="expired">已过期</button>
+        <button class="filter-chip" data-filter="unused">未使用</button>
+    </div>
+    <div id="tableContainer">
+        <div class="empty">加载中…</div>
+    </div>
+</div>
+
+<script>
+'use strict';
+
+const state = { invites: [], filter: 'all', keyword: '' };
+
+async function api(url, options) {
+    const res = await fetch(url, {
+        credentials: 'same-origin',
+        ...options,
+        headers: { 'Accept': 'application/json', ...((options || {}).headers || {}) }
+    });
+    if (res.status === 401) {
+        window.location.href = '/login.html?redirect=' + encodeURIComponent(location.pathname);
+        throw new Error('Unauthorized');
+    }
+    if (!res.ok) {
+        let msg = 'HTTP ' + res.status;
+        try { const j = await res.json(); if (j && j.error) msg = j.error; } catch (_) {}
+        throw new Error(msg);
+    }
+    return res.headers.get('content-type')?.includes('json') ? res.json() : res.text();
+}
+
+function fmtTime(ms) {
+    if (ms == null) return '-';
+    const d = new Date(ms);
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-'
+        + String(d.getDate()).padStart(2, '0') + ' '
+        + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+}
+function expireLabel(item) {
+    if (item.expireTime == null) return '永久';
+    const remaining = item.expireTime - Date.now();
+    if (remaining <= 0) return '已过期';
+    const days = Math.floor(remaining / 86400000);
+    if (days >= 1) return `剩 ${days} 天`;
+    const hours = Math.floor(remaining / 3600000);
+    return `剩 ${hours} 小时`;
+}
+function statusOf(item) {
+    if (item.expireTime != null && Date.now() > item.expireTime) return 'expired';
+    if (item.paused) return 'paused';
+    return 'active';
+}
+
+function renderTable() {
+    const container = document.getElementById('tableContainer');
+    let list = state.invites.slice();
+    if (state.filter === 'active') list = list.filter(it => statusOf(it) === 'active');
+    else if (state.filter === 'paused') list = list.filter(it => statusOf(it) === 'paused');
+    else if (state.filter === 'expired') list = list.filter(it => statusOf(it) === 'expired');
+    else if (state.filter === 'unused') list = list.filter(it => !it.used);
+    if (state.keyword) {
+        const k = state.keyword.toLowerCase();
+        list = list.filter(it => (it.name || '').toLowerCase().includes(k)
+            || (it.code || '').toLowerCase().includes(k));
+    }
+    if (list.length === 0) {
+        container.innerHTML = '<div class="empty">无匹配的邀请记录</div>';
+        return;
+    }
+    const rows = list.map(it => {
+        const status = statusOf(it);
+        const statusBadge = status === 'active'
+            ? '<span class="badge badge-active">启用</span>'
+            : status === 'paused'
+                ? '<span class="badge badge-paused">暂停</span>'
+                : '<span class="badge badge-expired">已过期</span>';
+        const usedBadge = it.used
+            ? `<span class="badge badge-used" title="${fmtTime(it.firstUsedTime)}">已使用</span>`
+            : '<span class="badge badge-unused">未使用</span>';
+        return `
+        <tr>
+            <td>${escapeHtml(it.name)}</td>
+            <td class="code-cell" title="点击复制" data-copy="${escapeHtml(it.code)}">${escapeHtml(it.code)}</td>
+            <td>${fmtTime(it.createdTime)}</td>
+            <td>${expireLabel(it)}</td>
+            <td>${statusBadge}</td>
+            <td>${usedBadge}</td>
+            <td>${it.totalRequestCount}</td>
+            <td><a class="action-btn" href="/pixiv-invite-detail.html?id=${it.id}">详情</a></td>
+        </tr>`;
+    }).join('');
+    container.innerHTML = `
+    <table>
+        <thead>
+            <tr>
+                <th>名称</th><th>邀请码</th><th>创建时间</th><th>过期</th>
+                <th>状态</th><th>使用情况</th><th>累计</th><th>操作</th>
+            </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+    </table>`;
+    container.querySelectorAll('.code-cell').forEach(cell => {
+        cell.addEventListener('click', async () => {
+            const ok = await window.InviteModals.copyText(cell.dataset.copy);
+            cell.textContent = ok ? '已复制' : '复制失败';
+            setTimeout(() => { cell.textContent = cell.dataset.copy; }, 1500);
+        });
+    });
+}
+
+function escapeHtml(str) {
+    return String(str || '').replace(/[&<>"']/g, c =>
+        ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+}
+
+async function loadInvites() {
+    try {
+        const data = await api('/api/admin/invites');
+        state.invites = data.invites || [];
+        renderTable();
+    } catch (e) {
+        document.getElementById('tableContainer').innerHTML =
+            '<div class="empty">加载失败：' + escapeHtml(e.message) + '</div>';
+    }
+}
+
+document.querySelectorAll('.filter-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+        document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+        chip.classList.add('active');
+        state.filter = chip.dataset.filter;
+        renderTable();
+    });
+});
+document.getElementById('searchBox').addEventListener('input', e => {
+    state.keyword = e.target.value || '';
+    renderTable();
+});
+
+document.getElementById('btnNewInvite').addEventListener('click', () => {
+    window.InviteModals.openInviteFormModal({
+        title: '新建邀请',
+        submitText: '创建邀请链接',
+        fetchTags: async () => {
+            const data = await api('/api/gallery/tags?limit=2000');
+            return (data.tags || []).map(t => ({
+                id: t.tagId,
+                name: t.translatedName ? `${t.name} · ${t.translatedName}` : t.name
+            }));
+        },
+        fetchAuthors: async () => {
+            const all = []; let page = 0; let totalPages = 1;
+            while (page < totalPages && page < 50) {
+                const data = await api(`/api/authors/paged?page=${page}&size=200&sort=name`);
+                const list = data.content || [];
+                for (const a of list) all.push({ id: a.authorId, name: a.name || ('#' + a.authorId) });
+                totalPages = data.totalPages || 1;
+                page++;
+                if (list.length === 0) break;
+            }
+            return all;
+        },
+        onSubmit: async (payload) => {
+            const result = await api('/api/admin/invites', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            window.InviteModals.openInviteResultModal({ code: result.code, url: result.url });
+            loadInvites();
+        }
+    });
+});
+
+loadInvites();
+</script>
+</body>
+</html>

@@ -29,11 +29,13 @@ class GalleryControllerTest {
 
     @Mock
     private GalleryService galleryService;
+    @Mock
+    private top.sywyar.pixivdownload.setup.guest.GuestAccessGuard guestAccessGuard;
 
     @BeforeEach
     void setUp() {
         mockMvc = MockMvcBuilders.standaloneSetup(
-                new GalleryController(galleryService, TestI18nBeans.appMessages())
+                new GalleryController(galleryService, guestAccessGuard, TestI18nBeans.appMessages())
         ).build();
     }
 

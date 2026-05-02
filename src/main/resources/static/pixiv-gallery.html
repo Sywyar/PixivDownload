@@ -7,6 +7,7 @@
     <script src="/js/pixiv-i18n.js"></script>
     <script src="/js/pixiv-lang-switcher.js"></script>
     <script src="/js/pixiv-theme.js"></script>
+    <script src="/js/invite-modals.js"></script>
     <link rel="stylesheet" href="/vendor/fonts/fonts.css">
     <style>
         :root {
@@ -2149,9 +2150,31 @@
                 </div>
                 <span class="nav-label" data-i18n="nav.monitor">监控</span>
             </a>
+            <a class="nav-item admin-only" id="navInviteManage" href="/pixiv-invite-manage.html" style="display:none">
+                <div class="nav-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                         stroke-linejoin="round">
+                        <path d="M9 11l3 3L22 4"/>
+                        <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+                    </svg>
+                </div>
+                <span class="nav-label" data-i18n="nav.invite-manage">邀请码管理</span>
+            </a>
         </nav>
 
         <div class="sidebar-footer">
+            <button type="button" class="nav-item admin-only" id="btnInviteGuest" style="display:none; width:100%; margin-bottom:8px; background:none; border:none; text-align:left; cursor:pointer;">
+                <div class="nav-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                         stroke-linejoin="round">
+                        <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                        <circle cx="8.5" cy="7" r="4"/>
+                        <line x1="20" y1="8" x2="20" y2="14"/>
+                        <line x1="23" y1="11" x2="17" y2="11"/>
+                    </svg>
+                </div>
+                <span class="nav-label" data-i18n="nav.invite-guest">邀请访客</span>
+            </button>
             <div class="user-card">
                 <div class="user-avatar">P</div>
                 <div class="user-info">
@@ -4224,6 +4247,69 @@
         }
 
         loadGallery();
+    })();
+
+    // ---------- 邀请访客 ----------
+    (async function setupInviteEntry() {
+        try {
+            const ok = await fetch('/api/admin/invites/access-check', { credentials: 'same-origin' });
+            if (!ok.ok) return;
+        } catch (_) { return; }
+        document.querySelectorAll('.admin-only').forEach(node => { node.style.display = ''; });
+
+        const btn = document.getElementById('btnInviteGuest');
+        if (!btn) return;
+        btn.addEventListener('click', () => {
+            const host = window.location.hostname;
+            const isLocal = host === 'localhost' || host === '127.0.0.1' || host === '::1';
+            if (isLocal) {
+                const proceed = window.confirm('当前服务器地址为本地（' + host
+                    + '），通过此按钮生成的链接他人可能无法访问。是否继续？');
+                if (!proceed) return;
+            }
+            openCreateModal();
+        });
+
+        function openCreateModal() {
+            window.InviteModals.openInviteFormModal({
+                title: '邀请访客',
+                submitText: '创建邀请链接',
+                fetchTags: async () => {
+                    const data = await api('/api/gallery/tags?limit=2000');
+                    return (data.tags || []).map(t => ({
+                        id: t.tagId,
+                        name: t.translatedName ? `${t.name} · ${t.translatedName}` : t.name,
+                        secondary: ''
+                    }));
+                },
+                fetchAuthors: async () => {
+                    const all = [];
+                    let page = 0; let totalPages = 1;
+                    while (page < totalPages && page < 50) {
+                        const data = await api(`/api/authors/paged?page=${page}&size=200&sort=name`);
+                        const list = data.items || data.content || data.authors || data.data || [];
+                        for (const a of list) {
+                            const id = a.authorId != null ? a.authorId : a.id;
+                            if (id == null) continue;
+                            all.push({ id, name: a.name || ('#' + id), secondary: '' });
+                        }
+                        totalPages = data.totalPages != null ? data.totalPages
+                            : (list.length === 200 ? page + 2 : page + 1);
+                        page++;
+                        if (list.length === 0) break;
+                    }
+                    return all;
+                },
+                onSubmit: async (payload) => {
+                    const result = await api('/api/admin/invites', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload),
+                    });
+                    window.InviteModals.openInviteResultModal({ code: result.code, url: result.url });
+                }
+            });
+        }
     })();
 </script>
 </body>

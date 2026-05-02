@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>邀请详情 — Pixiv 批量下载器</title>
+<script src="/js/pixiv-i18n.js"></script>
+<script src="/js/pixiv-theme.js"></script>
+<script src="/js/invite-modals.js"></script>
+<style>
+:root {
+    --bg: #f5f5f5;
+    --surface: #ffffff;
+    --surface-hover: #fafafa;
+    --surface-muted: #f6f6f6;
+    --text: #222;
+    --text-muted: #777;
+    --border: #e5e5e5;
+    --brand: #28a745;
+}
+[data-theme="dark"] {
+    --bg: #1c1c1c;
+    --surface: #262626;
+    --surface-hover: #303030;
+    --surface-muted: #2c2c2c;
+    --text: #e8e8e8;
+    --text-muted: #999;
+    --border: #383838;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg); color: var(--text); font-size: 14px; min-height: 100vh;
+}
+header {
+    background: var(--brand); color: #fff;
+    padding: 14px 20px; display: flex; align-items: center; gap: 16px;
+}
+header h1 { font-size: 16px; font-weight: 600; flex: 1; }
+header a { color: #fff; text-decoration: none; font-size: 13px; opacity: 0.9; }
+.wrap { max-width: 1000px; margin: 24px auto; padding: 0 20px; display: grid; gap: 16px; }
+.card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 16px 20px;
+}
+.card-title { font-size: 13px; color: var(--text-muted); margin-bottom: 12px; font-weight: 600; }
+.info-row {
+    display: grid; grid-template-columns: 130px 1fr;
+    padding: 8px 0; border-bottom: 1px dashed var(--border);
+    font-size: 13px;
+}
+.info-row:last-child { border-bottom: none; }
+.info-row .lbl { color: var(--text-muted); }
+.code-block {
+    display: flex; gap: 8px; align-items: center; padding: 8px 10px;
+    border: 1px solid var(--border); border-radius: 6px;
+    background: var(--surface-muted); margin-top: 4px;
+    font-family: ui-monospace, Consolas, monospace; font-size: 12px;
+}
+.code-block .val { flex: 1; word-break: break-all; }
+.copy-btn, .op-btn {
+    padding: 6px 14px; border-radius: 5px; cursor: pointer; font-size: 13px;
+    border: 1px solid var(--border); background: var(--surface); color: inherit;
+}
+.copy-btn:hover, .op-btn:hover { background: var(--surface-hover); }
+.op-btn.primary { background: var(--brand); color: #fff; border-color: var(--brand); }
+.op-btn.danger { background: #dc3545; color: #fff; border-color: #dc3545; }
+.ops { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.chip-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.chip {
+    background: var(--surface-muted); border: 1px solid var(--border);
+    padding: 3px 10px; border-radius: 999px; font-size: 12px;
+}
+.chart-toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; }
+.chart-toolbar .filter-chip {
+    padding: 4px 10px; border-radius: 999px; cursor: pointer; font-size: 12px;
+    border: 1px solid var(--border); background: var(--surface); color: inherit;
+}
+.chart-toolbar .filter-chip.active { background: var(--brand); color: #fff; border-color: var(--brand); }
+canvas#statsCanvas { width: 100%; height: 280px; display: block; }
+.error { padding: 16px; color: #dc3545; }
+</style>
+</head>
+<body>
+<header>
+    <h1>邀请详情</h1>
+    <a href="/pixiv-invite-manage.html">← 返回列表</a>
+</header>
+
+<div class="wrap" id="wrap">
+    <div class="card"><div class="card-title">加载中…</div></div>
+</div>
+
+<script>
+'use strict';
+
+const inviteId = new URLSearchParams(location.search).get('id');
+let detail = null;
+let chartDays = 7;
+
+async function api(url, options) {
+    const res = await fetch(url, {
+        credentials: 'same-origin',
+        ...options,
+        headers: { 'Accept': 'application/json', ...((options || {}).headers || {}) }
+    });
+    if (res.status === 401) {
+        window.location.href = '/login.html?redirect=' + encodeURIComponent(location.pathname + location.search);
+        throw new Error('Unauthorized');
+    }
+    if (!res.ok) {
+        let msg = 'HTTP ' + res.status;
+        try { const j = await res.json(); if (j && j.error) msg = j.error; } catch (_) {}
+        throw new Error(msg);
+    }
+    return res.headers.get('content-type')?.includes('json') ? res.json() : res.text();
+}
+
+function escapeHtml(str) {
+    return String(str || '').replace(/[&<>"']/g, c =>
+        ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+}
+function fmtTime(ms) {
+    if (ms == null) return '-';
+    const d = new Date(ms);
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-'
+        + String(d.getDate()).padStart(2, '0') + ' '
+        + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+}
+
+function ageRatingLabel(d) {
+    const parts = [];
+    if (d.allowSfw) parts.push('SFW');
+    if (d.allowR18) parts.push('R18');
+    if (d.allowR18g) parts.push('R18G');
+    return parts.length ? parts.join(', ') : '(无)';
+}
+
+function render() {
+    const wrap = document.getElementById('wrap');
+    const d = detail;
+    if (!d) return;
+    const tagsHtml = d.tagUnrestricted
+        ? '<span class="chip">全部标签</span>'
+        : (d.tags && d.tags.length
+            ? d.tags.map(t => `<span class="chip">${escapeHtml(t.name)}${t.translatedName ? ' · ' + escapeHtml(t.translatedName) : ''}</span>`).join('')
+            : '<span class="chip">（未配置）</span>');
+    const authorsHtml = d.authorUnrestricted
+        ? '<span class="chip">全部作者</span>'
+        : (d.authors && d.authors.length
+            ? d.authors.map(a => `<span class="chip">${escapeHtml(a.name)}</span>`).join('')
+            : '<span class="chip">（未配置）</span>');
+
+    wrap.innerHTML = `
+    <div class="card">
+        <div class="card-title">基础信息</div>
+        <div class="info-row"><div class="lbl">名称</div><div>${escapeHtml(d.name)}</div></div>
+        <div class="info-row"><div class="lbl">创建时间</div><div>${fmtTime(d.createdTime)}</div></div>
+        <div class="info-row"><div class="lbl">过期时间</div><div>${d.expireTime == null ? '永久' : fmtTime(d.expireTime)}</div></div>
+        <div class="info-row"><div class="lbl">状态</div><div>${d.paused ? '已暂停' : '启用中'}</div></div>
+        <div class="info-row"><div class="lbl">是否被使用</div><div>${d.used ? '已使用（首次：' + fmtTime(d.firstUsedTime) + '，最近：' + fmtTime(d.lastUsedTime) + '）' : '未使用'}</div></div>
+        <div class="info-row"><div class="lbl">累计访问</div><div>${d.totalRequestCount}</div></div>
+        <div class="info-row"><div class="lbl">年龄分级</div><div>${ageRatingLabel(d)}</div></div>
+        <div class="info-row"><div class="lbl">可见标签</div><div><div class="chip-list">${tagsHtml}</div></div></div>
+        <div class="info-row"><div class="lbl">可见作者</div><div><div class="chip-list">${authorsHtml}</div></div></div>
+        <div class="info-row"><div class="lbl">邀请链接</div>
+            <div><div class="code-block"><span class="val">${escapeHtml(d.url)}</span>
+                <button class="copy-btn" data-copy="${escapeHtml(d.url)}">复制</button></div></div></div>
+        <div class="info-row"><div class="lbl">邀请码</div>
+            <div><div class="code-block"><span class="val">${escapeHtml(d.code)}</span>
+                <button class="copy-btn" data-copy="${escapeHtml(d.code)}">复制</button></div></div></div>
+    </div>
+
+    <div class="card">
+        <div class="card-title">操作</div>
+        <div class="ops">
+            <button class="op-btn primary" id="btnEdit">编辑</button>
+            <button class="op-btn" id="btnTogglePause">${d.paused ? '恢复' : '暂停'}</button>
+            <button class="op-btn danger" id="btnDelete">删除</button>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-title">访问统计</div>
+        <div class="chart-toolbar">
+            <button class="filter-chip ${chartDays === 7 ? 'active' : ''}" data-days="7">最近 7 天</button>
+            <button class="filter-chip ${chartDays === 30 ? 'active' : ''}" data-days="30">最近 30 天</button>
+        </div>
+        <canvas id="statsCanvas"></canvas>
+    </div>
+    `;
+
+    wrap.querySelectorAll('.copy-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const ok = await window.InviteModals.copyText(btn.dataset.copy);
+            btn.textContent = ok ? '已复制' : '复制失败';
+            setTimeout(() => { btn.textContent = '复制'; }, 1500);
+        });
+    });
+    document.getElementById('btnEdit').addEventListener('click', openEditModal);
+    document.getElementById('btnTogglePause').addEventListener('click', togglePause);
+    document.getElementById('btnDelete').addEventListener('click', deleteInvite);
+    wrap.querySelectorAll('.chart-toolbar .filter-chip').forEach(chip => {
+        chip.addEventListener('click', () => {
+            chartDays = parseInt(chip.dataset.days, 10);
+            wrap.querySelectorAll('.chart-toolbar .filter-chip').forEach(c => c.classList.remove('active'));
+            chip.classList.add('active');
+            loadStats();
+        });
+    });
+    loadStats();
+}
+
+async function load() {
+    try {
+        detail = await api('/api/admin/invites/' + encodeURIComponent(inviteId));
+        render();
+    } catch (e) {
+        document.getElementById('wrap').innerHTML =
+            '<div class="card"><div class="error">加载失败：' + escapeHtml(e.message) + '</div></div>';
+    }
+}
+
+async function togglePause() {
+    if (!detail) return;
+    const path = detail.paused ? '/resume' : '/pause';
+    try {
+        await api('/api/admin/invites/' + detail.id + path, { method: 'POST' });
+        load();
+    } catch (e) { alert('操作失败：' + e.message); }
+}
+
+async function deleteInvite() {
+    if (!detail) return;
+    if (!confirm(`确认删除邀请「${detail.name}」？该操作不可恢复。`)) return;
+    try {
+        await api('/api/admin/invites/' + detail.id, { method: 'DELETE' });
+        location.href = '/pixiv-invite-manage.html';
+    } catch (e) { alert('删除失败：' + e.message); }
+}
+
+function openEditModal() {
+    if (!detail) return;
+    const expireDays = detail.expireTime == null
+        ? null
+        : Math.max(1, Math.ceil((detail.expireTime - Date.now()) / 86400000));
+    const prefill = {
+        name: detail.name,
+        expireDays,
+        permanent: detail.expireTime == null,
+        allowSfw: detail.allowSfw,
+        allowR18: detail.allowR18,
+        allowR18g: detail.allowR18g,
+        tagUnrestricted: detail.tagUnrestricted,
+        authorUnrestricted: detail.authorUnrestricted,
+        tagIds: (detail.tags || []).map(t => t.tagId),
+        authorIds: (detail.authors || []).map(a => a.authorId),
+    };
+    window.InviteModals.openInviteFormModal({
+        title: '编辑邀请',
+        submitText: '保存',
+        prefill,
+        fetchTags: async () => {
+            const data = await api('/api/gallery/tags?limit=2000');
+            return (data.tags || []).map(t => ({
+                id: t.tagId,
+                name: t.translatedName ? `${t.name} · ${t.translatedName}` : t.name
+            }));
+        },
+        fetchAuthors: async () => {
+            const all = []; let page = 0; let totalPages = 1;
+            while (page < totalPages && page < 50) {
+                const data = await api(`/api/authors/paged?page=${page}&size=200&sort=name`);
+                const list = data.content || [];
+                for (const a of list) all.push({ id: a.authorId, name: a.name || ('#' + a.authorId) });
+                totalPages = data.totalPages || 1;
+                page++;
+                if (list.length === 0) break;
+            }
+            return all;
+        },
+        onSubmit: async (payload) => {
+            await api('/api/admin/invites/' + detail.id, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            load();
+        }
+    });
+}
+
+async function loadStats() {
+    try {
+        const data = await api(`/api/admin/invites/${detail.id}/stats?days=${chartDays}`);
+        drawChart(data.buckets || []);
+    } catch (e) {
+        const c = document.getElementById('statsCanvas');
+        const ctx = c.getContext('2d');
+        ctx.clearRect(0, 0, c.width, c.height);
+        ctx.fillStyle = '#dc3545';
+        ctx.fillText('加载统计失败：' + e.message, 10, 20);
+    }
+}
+
+function drawChart(buckets) {
+    const c = document.getElementById('statsCanvas');
+    const dpr = window.devicePixelRatio || 1;
+    const cssW = c.clientWidth || 600;
+    const cssH = c.clientHeight || 280;
+    c.width = cssW * dpr; c.height = cssH * dpr;
+    const ctx = c.getContext('2d');
+    ctx.scale(dpr, dpr);
+    ctx.clearRect(0, 0, cssW, cssH);
+
+    const padL = 40, padR = 12, padT = 12, padB = 28;
+    const w = cssW - padL - padR, h = cssH - padT - padB;
+    const colorAxis = getCss('--text-muted', '#888');
+    const colorBorder = getCss('--border', '#ddd');
+    const colorBrand = getCss('--brand', '#28a745');
+
+    if (buckets.length === 0) {
+        ctx.fillStyle = colorAxis;
+        ctx.fillText('暂无数据', cssW / 2 - 30, cssH / 2);
+        return;
+    }
+    const maxVal = Math.max(1, ...buckets.map(b => b.count));
+    const stepX = w / Math.max(1, buckets.length - 1);
+
+    // 网格 + Y 轴刻度
+    ctx.strokeStyle = colorBorder;
+    ctx.lineWidth = 1;
+    ctx.fillStyle = colorAxis;
+    ctx.font = '11px sans-serif';
+    for (let i = 0; i <= 4; i++) {
+        const y = padT + (h * i) / 4;
+        const v = Math.round((maxVal * (4 - i)) / 4);
+        ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(cssW - padR, y); ctx.stroke();
+        ctx.fillText(String(v), 4, y + 3);
+    }
+
+    // X 轴：日期标签
+    const dayCount = chartDays;
+    const tickInterval = dayCount === 7 ? 1 : 5;
+    const totalDays = (buckets.length / 24);
+    for (let d = 0; d <= totalDays; d += tickInterval) {
+        const idx = Math.min(buckets.length - 1, Math.round(d * 24));
+        const ts = buckets[idx]?.hourEpochMillis || Date.now();
+        const x = padL + idx * stepX;
+        const date = new Date(ts);
+        const label = (date.getMonth() + 1) + '/' + date.getDate();
+        ctx.fillText(label, x - 10, cssH - 8);
+    }
+
+    // 折线
+    ctx.strokeStyle = colorBrand; ctx.lineWidth = 2; ctx.beginPath();
+    buckets.forEach((b, i) => {
+        const x = padL + i * stepX;
+        const y = padT + h - (b.count / maxVal) * h;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+
+    // 填充
+    ctx.lineTo(padL + (buckets.length - 1) * stepX, padT + h);
+    ctx.lineTo(padL, padT + h);
+    ctx.closePath();
+    ctx.fillStyle = hexToRgba(colorBrand, 0.15);
+    ctx.fill();
+}
+
+function getCss(name, fallback) {
+    const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    return v || fallback;
+}
+function hexToRgba(color, alpha) {
+    if (color.startsWith('#')) {
+        const h = color.slice(1);
+        const r = parseInt(h.length === 3 ? h[0] + h[0] : h.slice(0, 2), 16);
+        const g = parseInt(h.length === 3 ? h[1] + h[1] : h.slice(2, 4), 16);
+        const b = parseInt(h.length === 3 ? h[2] + h[2] : h.slice(4, 6), 16);
+        return `rgba(${r},${g},${b},${alpha})`;
+    }
+    return color;
+}
+
+if (!inviteId) {
+    document.getElementById('wrap').innerHTML =
+        '<div class="card"><div class="error">缺少 ?id 参数</div></div>';
+} else {
+    load();
+}
+</script>
+</body>
+</html>

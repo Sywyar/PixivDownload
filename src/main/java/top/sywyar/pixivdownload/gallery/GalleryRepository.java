@@ -68,6 +68,7 @@ public class GalleryRepository {
         }
 
         appendTagAuthorFilterClauses(where, params, q);
+        appendGuestRestrictionClauses(where, params, q.getGuestRestriction());
 
         String countSql = "SELECT COUNT(*) FROM artworks a"
                 + " LEFT JOIN authors au ON au.author_id = a.author_id"
@@ -226,6 +227,46 @@ public class GalleryRepository {
         }
         where.append(" AND (a.author_id IS NULL OR a.author_id NOT IN (:excludedAuthorIds))");
         params.addValue("excludedAuthorIds", excludedAuthorIds);
+    }
+
+    private void appendGuestRestrictionClauses(StringBuilder where, MapSqlParameterSource params, GuestRestriction r) {
+        if (r == null) return;
+        // 年龄分级白名单
+        java.util.Set<Integer> allowed = r.allowedXRestricts();
+        if (allowed == null || allowed.isEmpty()) {
+            // 不应出现，但若出现则不返回任何作品
+            where.append(" AND 1 = 0");
+            return;
+        }
+        List<String> ratingClauses = new ArrayList<>();
+        if (allowed.contains(0)) ratingClauses.add("a.\"R18\" = 0 OR a.\"R18\" IS NULL");
+        if (allowed.contains(1)) ratingClauses.add("a.\"R18\" = 1");
+        if (allowed.contains(2)) ratingClauses.add("a.\"R18\" = 2");
+        where.append(" AND (").append(String.join(" OR ", ratingClauses)).append(")");
+
+        // 标签 / 作者 OR 白名单
+        if (!r.tagUnrestricted() || !r.authorUnrestricted()) {
+            List<String> orClauses = new ArrayList<>();
+            if (r.tagUnrestricted()) {
+                orClauses.add("1 = 1");
+            } else if (r.tagIds() != null && !r.tagIds().isEmpty()) {
+                orClauses.add("a.artwork_id IN (SELECT DISTINCT artwork_id FROM artwork_tags"
+                        + " WHERE tag_id IN (:guestTagIds))");
+                params.addValue("guestTagIds", r.tagIds());
+            }
+            if (r.authorUnrestricted()) {
+                orClauses.add("1 = 1");
+            } else if (r.authorIds() != null && !r.authorIds().isEmpty()) {
+                orClauses.add("a.author_id IN (:guestAuthorIds)");
+                params.addValue("guestAuthorIds", r.authorIds());
+            }
+            if (orClauses.isEmpty()) {
+                // 两个维度都受限但都没填 -> 不返回任何作品
+                where.append(" AND 1 = 0");
+            } else {
+                where.append(" AND (").append(String.join(" OR ", orClauses)).append(")");
+            }
+        }
     }
 
     private void appendExcludedTagClause(StringBuilder where, MapSqlParameterSource params, List<Long> excludedTagIds) {
