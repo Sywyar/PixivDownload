@@ -61,18 +61,47 @@ public class AuthorService {
         return authorMapper.findAll();
     }
 
+    public List<Author> getAllAuthors(java.util.Set<Long> filterIds) {
+        if (filterIds == null) return getAllAuthors();
+        if (filterIds.isEmpty()) return Collections.emptyList();
+        return authorMapper.findAll().stream()
+                .filter(a -> filterIds.contains(a.authorId()))
+                .toList();
+    }
+
     public PagedAuthors getPagedAuthorsWithArtworks(int page, int size, String search, String sort) {
+        return getPagedAuthorsWithArtworks(page, size, search, sort, null);
+    }
+
+    public PagedAuthors getPagedAuthorsWithArtworks(int page, int size, String search, String sort,
+                                                    java.util.Set<Long> filterIds) {
         int safePage = Math.max(0, page);
         int safeSize = Math.min(Math.max(1, size), 200);
         String normalizedSearch = StringUtils.hasText(search) ? "%" + search.trim() + "%" : "%";
         String normalizedSort = "artworks".equals(sort) || "authorId".equals(sort) ? sort : "name";
-        long total = authorMapper.countAuthorsWithArtworks(normalizedSearch);
-        List<AuthorSummary> rows = total == 0
-                ? Collections.emptyList()
-                : authorMapper.findAuthorsWithArtworks(
-                        normalizedSearch, normalizedSort, safeSize, safePage * safeSize);
+        if (filterIds == null) {
+            long total = authorMapper.countAuthorsWithArtworks(normalizedSearch);
+            List<AuthorSummary> rows = total == 0
+                    ? Collections.emptyList()
+                    : authorMapper.findAuthorsWithArtworks(
+                            normalizedSearch, normalizedSort, safeSize, safePage * safeSize);
+            int totalPages = (int) Math.ceil((double) total / safeSize);
+            return new PagedAuthors(rows, total, safePage, safeSize, totalPages);
+        }
+        if (filterIds.isEmpty()) {
+            return new PagedAuthors(Collections.emptyList(), 0, safePage, safeSize, 0);
+        }
+        // 简化：拉全量后内存过滤再分页（作者总量通常远小于作品量）。
+        List<AuthorSummary> all = authorMapper.findAuthorsWithArtworks(
+                normalizedSearch, normalizedSort, Integer.MAX_VALUE, 0);
+        List<AuthorSummary> filtered = all.stream()
+                .filter(s -> filterIds.contains(s.authorId()))
+                .toList();
+        long total = filtered.size();
         int totalPages = (int) Math.ceil((double) total / safeSize);
-        return new PagedAuthors(rows, total, safePage, safeSize, totalPages);
+        int from = Math.min(safePage * safeSize, filtered.size());
+        int to = Math.min(from + safeSize, filtered.size());
+        return new PagedAuthors(filtered.subList(from, to), total, safePage, safeSize, totalPages);
     }
 
     public record PagedAuthors(List<AuthorSummary> content, long totalElements,

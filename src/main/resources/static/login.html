@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Pixiv 批量下载器 — 登录</title>
+<script src="/js/pixiv-i18n.js"></script>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
@@ -84,20 +85,20 @@
     <div id="error-msg"></div>
     <button class="btn btn-green" id="login-btn" onclick="doLogin()">登录</button>
     <div class="invite-link-row">
-      <a id="useInviteCode">使用邀请码</a>
+      <a id="useInviteCode" data-i18n="invite:login.use-invite-code">使用邀请码</a>
     </div>
   </div>
 
   <div class="card hidden" id="inviteCard">
-    <div class="card-title">使用邀请码</div>
+    <div class="card-title" data-i18n="invite:login.invite.title">使用邀请码</div>
     <div class="field">
-      <label>邀请码</label>
-      <input type="text" id="inviteCodeInput" placeholder="邀请码" autocomplete="off">
+      <label data-i18n="invite:result.code">邀请码</label>
+      <input type="text" id="inviteCodeInput" data-i18n-placeholder="invite:login.invite.placeholder" placeholder="邀请码" autocomplete="off">
     </div>
     <div id="invite-error"></div>
-    <button class="btn btn-green" id="invite-btn" onclick="doInviteRedeem()">进入</button>
+    <button class="btn btn-green" id="invite-btn" onclick="doInviteRedeem()" data-i18n="invite:login.invite.submit">进入</button>
     <div class="invite-link-row">
-      <a id="backToLogin">返回管理员登录</a>
+      <a id="backToLogin" data-i18n="invite:login.invite.back">返回管理员登录</a>
     </div>
   </div>
 </div>
@@ -211,6 +212,15 @@ document.addEventListener('keydown', e => {
     const data = await res.json();
     if (data.valid) window.location.href = getRedirect();
   } catch {}
+})();
+
+// 加载 i18n（只针对新增的邀请码区块；原始管理员登录文本保持现状）
+(async () => {
+  if (!window.PixivI18n) return;
+  try {
+    const i18n = await PixivI18n.create({ namespaces: ['invite', 'common'] });
+    if (i18n.apply) i18n.apply();
+  } catch (_) { /* 忽略 i18n 失败，回退到默认文案 */ }
 })();
 </script>
 </body>

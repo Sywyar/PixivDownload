@@ -1,5 +1,6 @@
 package top.sywyar.pixivdownload.collection;
 
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
@@ -11,13 +12,18 @@ import top.sywyar.pixivdownload.collection.request.CollectionCreateRequest;
 import top.sywyar.pixivdownload.collection.request.CollectionDownloadRootRequest;
 import top.sywyar.pixivdownload.collection.request.CollectionRenameRequest;
 import top.sywyar.pixivdownload.collection.response.CollectionListResponse;
+import top.sywyar.pixivdownload.gallery.GalleryRepository;
+import top.sywyar.pixivdownload.gallery.GuestRestriction;
 import top.sywyar.pixivdownload.i18n.LocalizedException;
+import top.sywyar.pixivdownload.setup.guest.GuestAccessGuard;
+import top.sywyar.pixivdownload.setup.guest.GuestInviteSession;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @RestController
 @RequestMapping("/api/collections")
@@ -26,10 +32,17 @@ public class CollectionController {
 
     private final CollectionService collectionService;
     private final CollectionIconService iconService;
+    private final GalleryRepository galleryRepository;
 
     @GetMapping
-    public CollectionListResponse list() {
-        return new CollectionListResponse(collectionService.listAll());
+    public CollectionListResponse list(HttpServletRequest httpRequest) {
+        List<Collection> all = collectionService.listAll();
+        GuestInviteSession session = GuestAccessGuard.extractSession(httpRequest);
+        if (session == null) return new CollectionListResponse(all);
+        Set<Long> visible = galleryRepository.findVisibleCollectionIds(GuestRestriction.from(session));
+        return new CollectionListResponse(all.stream()
+                .filter(c -> visible.contains(c.id()))
+                .toList());
     }
 
     @PostMapping

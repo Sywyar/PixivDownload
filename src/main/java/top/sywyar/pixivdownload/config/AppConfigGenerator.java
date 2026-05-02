@@ -200,6 +200,10 @@ public class AppConfigGenerator {
         appendSetting(config, locale, "setup.login-rate-limit-minute: 10", "config.template.setup.login-rate-limit-minute.comment");
         appendBlankLine(config);
 
+        appendSection(config, locale, "config.template.section.maintenance");
+        appendSetting(config, locale, "maintenance.enabled: true", "config.template.maintenance.enabled.comment");
+        appendBlankLine(config);
+
         appendSection(config, locale, "config.template.section.ssl");
         appendSetting(config, locale, "ssl.domain: localhost", "config.template.ssl.domain.comment");
         appendSetting(config, locale, "ssl.type: pem", "config.template.ssl.type.comment");

@@ -246,10 +246,14 @@ public class GuestInviteService {
         }
     }
 
-    /** 返回最近 days 天的小时桶序列，缺失桶补 0。days 仅允许 7 或 30。 */
+    /** 返回最近 days 天的小时桶序列，缺失桶补 0。days 允许 1 / 7 / 30。 */
     public List<HourlyBucket> getAccessStats(long id, int days) {
         requireExisting(id);
-        int hours = (days == 30 ? 30 : 7) * 24;
+        int hours = (switch (days) {
+            case 1 -> 1;
+            case 30 -> 30;
+            default -> 7;
+        }) * 24;
         long currentBucket = System.currentTimeMillis() / HOUR_MILLIS;
         long fromBucket = currentBucket - hours + 1;
         var rows = mapper.findAccessStats(id, fromBucket);

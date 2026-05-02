@@ -31,9 +31,20 @@ public class GalleryService {
                 query.getPage(), query.getSize(), totalPages);
     }
 
-    public List<GalleryRepository.TagOption> listTags(String search, int limit) {
+    public List<GalleryRepository.TagOption> listTags(String search, int limit, GuestRestriction restriction) {
         int clamped = limit <= 0 ? 500 : Math.min(limit, 2000);
-        return galleryRepository.findTagsWithCounts(search, clamped);
+        List<GalleryRepository.TagOption> all = galleryRepository.findTagsWithCounts(search, clamped);
+        if (restriction == null) return all;
+        java.util.Set<Long> visible = galleryRepository.findVisibleTagIds(restriction);
+        List<GalleryRepository.TagOption> out = new ArrayList<>(visible.size());
+        for (GalleryRepository.TagOption opt : all) {
+            if (visible.contains(opt.tagId())) out.add(opt);
+        }
+        return out;
+    }
+
+    public List<GalleryRepository.TagOption> listTags(String search, int limit) {
+        return listTags(search, limit, null);
     }
 
     public GalleryRepository.TagOption findTag(String name, String translatedName) {

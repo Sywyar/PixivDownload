@@ -74,6 +74,11 @@ public class AdminInviteController {
     public Map<String, Object> stats(@PathVariable long id,
                                      @RequestParam(defaultValue = "7") int days) {
         List<HourlyBucket> buckets = guestInviteService.getAccessStats(id, days);
-        return Map.of("days", days == 30 ? 30 : 7, "buckets", buckets);
+        int normalized = switch (days) {
+            case 1 -> 1;
+            case 30 -> 30;
+            default -> 7;
+        };
+        return Map.of("days", normalized, "buckets", buckets);
     }
 }

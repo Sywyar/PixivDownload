@@ -7,8 +7,11 @@ import org.springframework.stereotype.Repository;
 
 import javax.sql.DataSource;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
 /**
  * 画廊查询的动态 SQL 仓库。使用 {@link NamedParameterJdbcTemplate} 拼装可选筛选条件。
@@ -230,43 +233,7 @@ public class GalleryRepository {
     }
 
     private void appendGuestRestrictionClauses(StringBuilder where, MapSqlParameterSource params, GuestRestriction r) {
-        if (r == null) return;
-        // 年龄分级白名单
-        java.util.Set<Integer> allowed = r.allowedXRestricts();
-        if (allowed == null || allowed.isEmpty()) {
-            // 不应出现，但若出现则不返回任何作品
-            where.append(" AND 1 = 0");
-            return;
-        }
-        List<String> ratingClauses = new ArrayList<>();
-        if (allowed.contains(0)) ratingClauses.add("a.\"R18\" = 0 OR a.\"R18\" IS NULL");
-        if (allowed.contains(1)) ratingClauses.add("a.\"R18\" = 1");
-        if (allowed.contains(2)) ratingClauses.add("a.\"R18\" = 2");
-        where.append(" AND (").append(String.join(" OR ", ratingClauses)).append(")");
-
-        // 标签 / 作者 OR 白名单
-        if (!r.tagUnrestricted() || !r.authorUnrestricted()) {
-            List<String> orClauses = new ArrayList<>();
-            if (r.tagUnrestricted()) {
-                orClauses.add("1 = 1");
-            } else if (r.tagIds() != null && !r.tagIds().isEmpty()) {
-                orClauses.add("a.artwork_id IN (SELECT DISTINCT artwork_id FROM artwork_tags"
-                        + " WHERE tag_id IN (:guestTagIds))");
-                params.addValue("guestTagIds", r.tagIds());
-            }
-            if (r.authorUnrestricted()) {
-                orClauses.add("1 = 1");
-            } else if (r.authorIds() != null && !r.authorIds().isEmpty()) {
-                orClauses.add("a.author_id IN (:guestAuthorIds)");
-                params.addValue("guestAuthorIds", r.authorIds());
-            }
-            if (orClauses.isEmpty()) {
-                // 两个维度都受限但都没填 -> 不返回任何作品
-                where.append(" AND 1 = 0");
-            } else {
-                where.append(" AND (").append(String.join(" OR ", orClauses)).append(")");
-            }
-        }
+        appendVisibilityClauses(where, params, r, "Main");
     }
 
     private void appendExcludedTagClause(StringBuilder where, MapSqlParameterSource params, List<Long> excludedTagIds) {
@@ -279,6 +246,123 @@ public class GalleryRepository {
     }
 
     public record QueryResult(List<Long> ids, long totalElements) {}
+
+    /**
+     * 在 {@code artworks} 别名 {@code a} 上拼装"对该访客可见"的 SQL 片段，
+     * 并把所需参数注入 {@code params}。{@code r == null} 时不附加任何条件。
+     *
+     * <p>条件分两部分：
+     * <ol>
+     *   <li><b>不可见优先级最高</b>：作品任一标签或作者命中"不可见集合"即排除。
+     *       某维度 {@code unrestricted=true} 时不可见集合为空（默认全部可见，
+     *       picker 中点击不可见会自动翻转为 {@code unrestricted=false}）。
+     *       {@code unrestricted=false} 时不可见集合 = 全部 - 可见列表，因此 SQL 表达为
+     *       "排除任何 artwork 包含一个不在白名单中的标签/作者"。</li>
+     *   <li><b>OR 正向匹配</b>：通过排除后，作品仍需满足 (标签维度命中) 或 (作者维度命中)。</li>
+     * </ol>
+     */
+    void appendVisibilityClauses(StringBuilder sql, MapSqlParameterSource params,
+                                 GuestRestriction r, String paramSuffix) {
+        if (r == null) return;
+        Set<Integer> allowed = r.allowedXRestricts();
+        if (allowed == null || allowed.isEmpty()) {
+            sql.append(" AND 1 = 0");
+            return;
+        }
+        List<String> ratingClauses = new ArrayList<>();
+        if (allowed.contains(0)) ratingClauses.add("a.\"R18\" = 0 OR a.\"R18\" IS NULL");
+        if (allowed.contains(1)) ratingClauses.add("a.\"R18\" = 1");
+        if (allowed.contains(2)) ratingClauses.add("a.\"R18\" = 2");
+        sql.append(" AND (").append(String.join(" OR ", ratingClauses)).append(")");
+
+        // (1) 不可见维度排除（跨维度优先于 OR 匹配）
+        if (!r.tagUnrestricted()) {
+            if (r.tagIds() != null && !r.tagIds().isEmpty()) {
+                String key = "vTagIds" + paramSuffix;
+                // 排除：作品有任意一个标签不在可见白名单中（= 命中"不可见"标签）
+                sql.append(" AND NOT EXISTS (SELECT 1 FROM artwork_tags at_h"
+                        + " WHERE at_h.artwork_id = a.artwork_id"
+                        + " AND at_h.tag_id NOT IN (:" + key + "))");
+                params.addValue(key, r.tagIds());
+            } else {
+                // 可见白名单为空 → 全部不可见 → 排除任何带标签的作品
+                sql.append(" AND NOT EXISTS (SELECT 1 FROM artwork_tags at_h"
+                        + " WHERE at_h.artwork_id = a.artwork_id)");
+            }
+        }
+        if (!r.authorUnrestricted()) {
+            if (r.authorIds() != null && !r.authorIds().isEmpty()) {
+                String key = "vAuthorIds" + paramSuffix;
+                // 排除：作者非空 且 不在可见白名单中
+                sql.append(" AND (a.author_id IS NULL OR a.author_id IN (:" + key + "))");
+                params.addValue(key, r.authorIds());
+            } else {
+                // 可见白名单为空 → 全部不可见 → 排除任何指定了作者的作品
+                sql.append(" AND a.author_id IS NULL");
+            }
+        }
+
+        // (2) OR 正向匹配：至少一个维度产生命中
+        if (r.tagUnrestricted() && r.authorUnrestricted()) return;
+        List<String> orClauses = new ArrayList<>();
+        if (r.tagUnrestricted()) {
+            orClauses.add("1 = 1");
+        } else if (r.tagIds() != null && !r.tagIds().isEmpty()) {
+            String key = "pTagIds" + paramSuffix;
+            orClauses.add("EXISTS (SELECT 1 FROM artwork_tags at_p"
+                    + " WHERE at_p.artwork_id = a.artwork_id"
+                    + " AND at_p.tag_id IN (:" + key + "))");
+            params.addValue(key, r.tagIds());
+        }
+        if (r.authorUnrestricted()) {
+            orClauses.add("1 = 1");
+        } else if (r.authorIds() != null && !r.authorIds().isEmpty()) {
+            String key = "pAuthorIds" + paramSuffix;
+            orClauses.add("a.author_id IN (:" + key + ")");
+            params.addValue(key, r.authorIds());
+        }
+        if (orClauses.isEmpty()) {
+            sql.append(" AND 1 = 0");
+        } else {
+            sql.append(" AND (").append(String.join(" OR ", orClauses)).append(")");
+        }
+    }
+
+    /** 该访客可见的标签 ID 集合（只要有一条可见作品携带该标签即纳入）。 */
+    public Set<Long> findVisibleTagIds(GuestRestriction r) {
+        if (r == null) return Collections.emptySet();
+        StringBuilder sql = new StringBuilder(
+                "SELECT DISTINCT at.tag_id FROM artwork_tags at"
+                        + " JOIN artworks a ON a.artwork_id = at.artwork_id WHERE 1=1");
+        MapSqlParameterSource params = new MapSqlParameterSource();
+        appendVisibilityClauses(sql, params, r, "Tag");
+        List<Long> ids = jdbc.query(sql.toString(), params, (rs, rowNum) -> rs.getLong(1));
+        return new LinkedHashSet<>(ids);
+    }
+
+    /** 该访客可见的作者 ID 集合（仅统计有可见作品的作者）。 */
+    public Set<Long> findVisibleAuthorIds(GuestRestriction r) {
+        if (r == null) return Collections.emptySet();
+        StringBuilder sql = new StringBuilder(
+                "SELECT DISTINCT a.author_id FROM artworks a"
+                        + " WHERE a.author_id IS NOT NULL");
+        MapSqlParameterSource params = new MapSqlParameterSource();
+        appendVisibilityClauses(sql, params, r, "Author");
+        List<Long> ids = jdbc.query(sql.toString(), params, (rs, rowNum) -> rs.getLong(1));
+        return new LinkedHashSet<>(ids);
+    }
+
+    /** 该访客可见的"含有可见作品"的收藏夹 ID 集合。 */
+    public Set<Long> findVisibleCollectionIds(GuestRestriction r) {
+        if (r == null) return Collections.emptySet();
+        StringBuilder sql = new StringBuilder(
+                "SELECT DISTINCT ac.collection_id FROM artwork_collections ac"
+                        + " JOIN artworks a ON a.artwork_id = ac.artwork_id WHERE 1=1");
+        MapSqlParameterSource params = new MapSqlParameterSource();
+        appendVisibilityClauses(sql, params, r, "Collection");
+        List<Long> ids = jdbc.query(sql.toString(), params, (rs, rowNum) -> rs.getLong(1));
+        return new LinkedHashSet<>(ids);
+    }
 
     /**
      * 查询所有标签并统计每个标签被多少作品使用，按使用量降序、标签 ID 升序返回。

@@ -63,8 +63,10 @@ public class GalleryController {
     @GetMapping("/tags")
     public Map<String, Object> listTags(
             @RequestParam(required = false) String search,
-            @RequestParam(required = false, defaultValue = "500") int limit) {
-        List<GalleryRepository.TagOption> tags = galleryService.listTags(search, limit);
+            @RequestParam(required = false, defaultValue = "500") int limit,
+            HttpServletRequest httpRequest) {
+        GuestRestriction restriction = GuestRestriction.from(GuestAccessGuard.extractSession(httpRequest));
+        List<GalleryRepository.TagOption> tags = galleryService.listTags(search, limit, restriction);
         return Map.of("tags", tags);
     }
 

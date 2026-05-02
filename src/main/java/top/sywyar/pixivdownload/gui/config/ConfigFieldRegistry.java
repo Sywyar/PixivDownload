@@ -33,6 +33,7 @@ public final class ConfigFieldRegistry {
                 message("gui.config.group.proxy"),
                 message("gui.config.group.multi-mode"),
                 message("gui.config.group.security"),
+                message("gui.config.group.maintenance"),
                 message("gui.config.group.https")
         );
     }
@@ -44,6 +45,7 @@ public final class ConfigFieldRegistry {
         String groupProxy = message("gui.config.group.proxy");
         String groupMultiMode = message("gui.config.group.multi-mode");
         String groupSecurity = message("gui.config.group.security");
+        String groupMaintenance = message("gui.config.group.maintenance");
         String groupHttps = message("gui.config.group.https");
 
         return List.of(
@@ -189,6 +191,12 @@ public final class ConfigFieldRegistry {
                 ConfigFieldSpec.builder("setup.login-rate-limit-minute", message("gui.config.field.setup.login-rate-limit-minute.label"), INT, groupSecurity)
                         .defaultValue("10")
                         .help(message("gui.config.field.setup.login-rate-limit-minute.help"))
+                        .build(),
+
+                // ── 维护 ───────────────────────────────────────────────────────────
+                ConfigFieldSpec.builder("maintenance.enabled", message("gui.config.field.maintenance.enabled.label"), BOOL, groupMaintenance)
+                        .defaultValue("true")
+                        .help(message("gui.config.field.maintenance.enabled.help"))
                         .build(),
 
                 // ── HTTPS ──────────────────────────────────────────────────────────

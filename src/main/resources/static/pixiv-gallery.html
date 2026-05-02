@@ -8,6 +8,16 @@
     <script src="/js/pixiv-lang-switcher.js"></script>
     <script src="/js/pixiv-theme.js"></script>
     <script src="/js/invite-modals.js"></script>
+    <style>
+        /* 默认隐藏管理员专属元素，避免页面闪烁。JS 探测后再展示。 */
+        .admin-only { display: none !important; }
+        body.admin-mode .admin-only { display: revert !important; }
+        body.admin-mode #btnInviteGuest { display: flex !important; }
+        body.admin-mode #navInviteManage { display: flex !important; }
+        body:not(.admin-mode) .thumb-heart,
+        body:not(.admin-mode) #btnCreateCollection,
+        body:not(.admin-mode) #collectionContextMenu { display: none !important; }
+    </style>
     <link rel="stylesheet" href="/vendor/fonts/fonts.css">
     <style>
         :root {
@@ -2150,7 +2160,7 @@
                 </div>
                 <span class="nav-label" data-i18n="nav.monitor">监控</span>
             </a>
-            <a class="nav-item admin-only" id="navInviteManage" href="/pixiv-invite-manage.html" style="display:none">
+            <a class="nav-item admin-only" id="navInviteManage" href="/pixiv-invite-manage.html">
                 <div class="nav-icon">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
                          stroke-linejoin="round">
@@ -2163,7 +2173,7 @@
         </nav>
 
         <div class="sidebar-footer">
-            <button type="button" class="nav-item admin-only" id="btnInviteGuest" style="display:none; width:100%; margin-bottom:8px; background:none; border:none; text-align:left; cursor:pointer;">
+            <button type="button" class="nav-item admin-only" id="btnInviteGuest" style="width:100%; margin-bottom:8px; background:none; border:none; text-align:left; cursor:pointer;">
                 <div class="nav-icon">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
                          stroke-linejoin="round">
@@ -4255,7 +4265,7 @@
             const ok = await fetch('/api/admin/invites/access-check', { credentials: 'same-origin' });
             if (!ok.ok) return;
         } catch (_) { return; }
-        document.querySelectorAll('.admin-only').forEach(node => { node.style.display = ''; });
+        document.body.classList.add('admin-mode');
 
         const btn = document.getElementById('btnInviteGuest');
         if (!btn) return;

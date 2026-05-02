@@ -3,117 +3,209 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>邀请码管理 — Pixiv 批量下载器</title>
+<title data-i18n="invite:page.manage.title">邀请码管理</title>
 <script src="/js/pixiv-i18n.js"></script>
+<script src="/js/pixiv-lang-switcher.js"></script>
 <script src="/js/pixiv-theme.js"></script>
 <script src="/js/invite-modals.js"></script>
+<link rel="stylesheet" href="/vendor/fonts/fonts.css">
 <style>
 :root {
-    --bg: #f5f5f5;
+    --bg: #ffffff;
     --surface: #ffffff;
-    --surface-hover: #fafafa;
-    --surface-muted: #f6f6f6;
-    --text: #222;
-    --text-muted: #777;
-    --border: #e5e5e5;
-    --brand: #28a745;
+    --line: #efefef;
+    --text: #111111;
+    --muted: #888888;
+    --text-secondary: #333333;
+    --brand: #0096fa;
+    --danger: #dc2626;
+    --control-bg: #ffffff;
+    --control-muted-bg: #fafafa;
+    --hover-bg: #f5f5f5;
+    --scrollbar-thumb: #dddddd;
 }
-[data-theme="dark"] {
-    --bg: #1c1c1c;
-    --surface: #262626;
-    --surface-hover: #303030;
-    --surface-muted: #2c2c2c;
-    --text: #e8e8e8;
-    --text-muted: #999;
-    --border: #383838;
+html[data-theme="dark"] {
+    --bg: #101216;
+    --surface: #171a21;
+    --line: #2a303b;
+    --text: #f4f7fb;
+    --muted: #8d98aa;
+    --text-secondary: #d6dde8;
+    --brand: #4bb3ff;
+    --danger: #f87171;
+    --control-bg: #1e2330;
+    --control-muted-bg: #151922;
+    --hover-bg: #222838;
+    --scrollbar-thumb: #3b4352;
+}
+/* alias 给 invite-modals.js 用 */
+html, html[data-theme="dark"] {
+    --text-muted: var(--muted);
+    --border: var(--line);
+    --surface-muted: var(--control-muted-bg);
+    --surface-hover: var(--hover-bg);
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
 body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", sans-serif;
     background: var(--bg); color: var(--text); font-size: 14px; min-height: 100vh;
 }
-header {
-    background: var(--brand); color: #fff;
-    padding: 14px 20px; display: flex; align-items: center; gap: 16px;
+a { color: inherit; text-decoration: none; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 6px; }
+
+.topbar {
+    display: flex; align-items: center; gap: 16px;
+    padding: 14px 24px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--line);
+    position: sticky; top: 0; z-index: 50;
 }
-header h1 { font-size: 16px; font-weight: 600; flex: 1; }
-header a { color: #fff; text-decoration: none; font-size: 13px; opacity: 0.9; }
-header a:hover { opacity: 1; }
-.wrap { max-width: 1200px; margin: 24px auto; padding: 0 20px; }
+.topbar .brand {
+    font-size: 16px; font-weight: 600; flex: 1;
+    color: var(--text);
+}
+.topbar .back-link {
+    font-size: 13px; color: var(--muted); padding: 6px 10px;
+    border-radius: 6px;
+}
+.topbar .back-link:hover { background: var(--hover-bg); color: var(--text); }
+.topbar-actions {
+    margin-left: auto; display: inline-flex; align-items: center;
+    gap: 8px; flex-shrink: 0;
+}
+
+.pixiv-lang-switcher--default { color: var(--text-secondary) !important; }
+.pixiv-lang-switcher--default .pixiv-lang-switcher__select {
+    border: 1px solid var(--line) !important;
+    background: var(--control-bg) !important;
+    color: var(--text-secondary) !important;
+    padding: 4px 8px !important;
+    border-radius: 6px !important;
+    font-size: 13px !important;
+}
+.pixiv-lang-switcher--default .pixiv-lang-switcher__select option {
+    background: var(--surface);
+    color: var(--text);
+}
+.pixiv-theme-toggle {
+    width: 32px; height: 32px;
+    border: 1px solid var(--line); border-radius: 8px;
+    background: var(--control-bg); color: var(--text-secondary);
+    cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center;
+    transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+.pixiv-theme-toggle:hover { border-color: var(--brand); color: var(--brand); background: var(--hover-bg); }
+.pixiv-theme-toggle svg {
+    width: 16px; height: 16px; fill: none; stroke: currentColor;
+    stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+}
+
+.wrap { max-width: 1200px; margin: 24px auto; padding: 0 24px; }
 .toolbar {
     display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
     margin-bottom: 16px; background: var(--surface);
-    border: 1px solid var(--border); border-radius: 8px; padding: 12px;
+    border: 1px solid var(--line); border-radius: 10px; padding: 12px;
 }
 .toolbar input[type="text"] {
-    flex: 1; min-width: 180px; padding: 6px 10px;
-    border: 1px solid var(--border); border-radius: 5px; font-size: 13px;
-    background: var(--surface); color: inherit;
+    flex: 1; min-width: 180px; padding: 7px 12px;
+    border: 1px solid var(--line); border-radius: 6px; font-size: 13px;
+    background: var(--control-bg); color: inherit;
 }
-.toolbar button {
-    padding: 6px 14px; border-radius: 5px; cursor: pointer; font-size: 13px;
-    border: 1px solid var(--border); background: var(--surface); color: inherit;
+.toolbar input[type="text"]:focus { outline: none; border-color: var(--brand); }
+.toolbar button.btn-primary {
+    padding: 7px 14px; border-radius: 6px; cursor: pointer; font-size: 13px;
+    background: var(--brand); color: #fff; border: 1px solid var(--brand);
+    font-weight: 500;
 }
-.toolbar button.primary { background: var(--brand); color: #fff; border-color: var(--brand); }
 .filter-chip {
-    padding: 4px 10px; border-radius: 999px; cursor: pointer; font-size: 12px;
-    border: 1px solid var(--border); background: var(--surface); color: inherit;
+    padding: 5px 12px; border-radius: 999px; cursor: pointer; font-size: 12px;
+    border: 1px solid var(--line); background: var(--control-bg); color: inherit;
+    transition: background-color .15s, border-color .15s, color .15s;
 }
+.filter-chip:hover { background: var(--hover-bg); }
 .filter-chip.active { background: var(--brand); color: #fff; border-color: var(--brand); }
+
 table {
     width: 100%; border-collapse: collapse; background: var(--surface);
-    border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
+    border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
 }
 th, td {
-    padding: 10px 12px; text-align: left; font-size: 13px;
-    border-bottom: 1px solid var(--border); vertical-align: middle;
+    padding: 12px 14px; text-align: left; font-size: 13px;
+    border-bottom: 1px solid var(--line); vertical-align: middle;
 }
-th { background: var(--surface-muted); font-weight: 600; font-size: 12px; color: var(--text-muted); }
-tbody tr:hover { background: var(--surface-hover); }
+th { background: var(--control-muted-bg); font-weight: 600; font-size: 12px; color: var(--muted); }
+tbody tr:hover { background: var(--hover-bg); }
+tbody tr:last-child td { border-bottom: none; }
+
 .badge {
-    display: inline-block; padding: 2px 8px; border-radius: 999px;
+    display: inline-block; padding: 2px 10px; border-radius: 999px;
     font-size: 11px; font-weight: 600;
 }
-.badge-active { background: #e6f6e9; color: #1a7d33; }
-.badge-paused { background: #fff3cd; color: #856404; }
-.badge-expired { background: #f1f1f1; color: #555; }
-.badge-unused { background: #fbe8e8; color: #b41a1a; }
-.badge-used { background: #e6f6e9; color: #1a7d33; }
-.code-cell { font-family: ui-monospace, Consolas, monospace; font-size: 11px; cursor: pointer; }
+.badge-active { background: rgba(40,167,69,0.15); color: #1a7d33; }
+.badge-paused { background: rgba(255,193,7,0.18); color: #856404; }
+html[data-theme="dark"] .badge-paused { color: #f6c142; }
+.badge-expired { background: var(--control-muted-bg); color: var(--muted); }
+.badge-unused { background: rgba(220,53,69,0.15); color: #b41a1a; }
+html[data-theme="dark"] .badge-unused { color: #f87171; }
+.badge-used { background: rgba(40,167,69,0.15); color: #1a7d33; }
+
+.code-cell {
+    font-family: ui-monospace, "JetBrains Mono", Consolas, monospace;
+    font-size: 11px; cursor: pointer;
+}
 .code-cell:hover { color: var(--brand); }
+
 .action-btn {
-    padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 12px;
-    border: 1px solid var(--brand); background: var(--surface); color: var(--brand);
+    padding: 5px 12px; border-radius: 5px; cursor: pointer; font-size: 12px;
+    border: 1px solid var(--brand); background: transparent; color: var(--brand);
+    transition: all .15s;
 }
 .action-btn:hover { background: var(--brand); color: #fff; }
+
 .empty {
-    padding: 40px; text-align: center; color: var(--text-muted); font-size: 14px;
+    padding: 40px; text-align: center; color: var(--muted); font-size: 14px;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
 }
 </style>
 </head>
 <body>
-<header>
-    <h1>邀请码管理</h1>
-    <a href="/pixiv-gallery.html">← 返回画廊</a>
+<header class="topbar">
+    <span class="brand" data-i18n="invite:page.manage.title">邀请码管理</span>
+    <a class="back-link" href="/pixiv-gallery.html" data-i18n="invite:header.back">← 返回画廊</a>
+    <div class="topbar-actions" id="langSwitcherAnchor"></div>
 </header>
 
 <div class="wrap">
     <div class="toolbar">
-        <button class="primary" id="btnNewInvite">+ 新建邀请</button>
-        <input type="text" id="searchBox" placeholder="搜索名称或邀请码">
-        <button class="filter-chip active" data-filter="all">全部</button>
-        <button class="filter-chip" data-filter="active">启用</button>
-        <button class="filter-chip" data-filter="paused">暂停</button>
-        <button class="filter-chip" data-filter="expired">已过期</button>
-        <button class="filter-chip" data-filter="unused">未使用</button>
+        <button class="btn-primary" id="btnNewInvite" data-i18n="invite:toolbar.create">+ 新建邀请</button>
+        <input type="text" id="searchBox" data-i18n-placeholder="invite:toolbar.search.placeholder" placeholder="搜索名称或邀请码">
+        <button class="filter-chip active" data-filter="all" data-i18n="invite:filter.all">全部</button>
+        <button class="filter-chip" data-filter="active" data-i18n="invite:filter.active">启用</button>
+        <button class="filter-chip" data-filter="paused" data-i18n="invite:filter.paused">暂停</button>
+        <button class="filter-chip" data-filter="expired" data-i18n="invite:filter.expired">已过期</button>
+        <button class="filter-chip" data-filter="unused" data-i18n="invite:filter.unused">未使用</button>
     </div>
     <div id="tableContainer">
-        <div class="empty">加载中…</div>
+        <div class="empty" data-i18n="invite:loading">加载中…</div>
     </div>
 </div>
 
 <script>
 'use strict';
+
+let pageI18n = null;
+function tr(key, fallback, vars) {
+    if (pageI18n && pageI18n.t) return pageI18n.t(key, fallback, vars);
+    return interpolate(fallback || key, vars);
+}
+function interpolate(template, vars) {
+    if (!vars) return template;
+    return String(template).replace(/\{([a-zA-Z0-9_-]+)\}/g, (m, name) =>
+        Object.prototype.hasOwnProperty.call(vars, name) ? vars[name] : m);
+}
 
 const state = { invites: [], filter: 'all', keyword: '' };
 
@@ -143,13 +235,13 @@ function fmtTime(ms) {
         + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
 }
 function expireLabel(item) {
-    if (item.expireTime == null) return '永久';
+    if (item.expireTime == null) return tr('invite:expire.permanent', '永久');
     const remaining = item.expireTime - Date.now();
-    if (remaining <= 0) return '已过期';
+    if (remaining <= 0) return tr('invite:expire.expired', '已过期');
     const days = Math.floor(remaining / 86400000);
-    if (days >= 1) return `剩 ${days} 天`;
+    if (days >= 1) return tr('invite:expire.days', '剩 {days} 天', { days });
     const hours = Math.floor(remaining / 3600000);
-    return `剩 ${hours} 小时`;
+    return tr('invite:expire.hours', '剩 {hours} 小时', { hours });
 }
 function statusOf(item) {
     if (item.expireTime != null && Date.now() > item.expireTime) return 'expired';
@@ -170,37 +262,43 @@ function renderTable() {
             || (it.code || '').toLowerCase().includes(k));
     }
     if (list.length === 0) {
-        container.innerHTML = '<div class="empty">无匹配的邀请记录</div>';
+        container.innerHTML = '<div class="empty">' + escapeHtml(tr('invite:table.empty', '无匹配的邀请记录')) + '</div>';
         return;
     }
     const rows = list.map(it => {
         const status = statusOf(it);
         const statusBadge = status === 'active'
-            ? '<span class="badge badge-active">启用</span>'
+            ? `<span class="badge badge-active">${escapeHtml(tr('invite:status.active', '启用'))}</span>`
             : status === 'paused'
-                ? '<span class="badge badge-paused">暂停</span>'
-                : '<span class="badge badge-expired">已过期</span>';
+                ? `<span class="badge badge-paused">${escapeHtml(tr('invite:status.paused', '暂停'))}</span>`
+                : `<span class="badge badge-expired">${escapeHtml(tr('invite:status.expired', '已过期'))}</span>`;
         const usedBadge = it.used
-            ? `<span class="badge badge-used" title="${fmtTime(it.firstUsedTime)}">已使用</span>`
-            : '<span class="badge badge-unused">未使用</span>';
+            ? `<span class="badge badge-used" title="${fmtTime(it.firstUsedTime)}">${escapeHtml(tr('invite:used.yes', '已使用'))}</span>`
+            : `<span class="badge badge-unused">${escapeHtml(tr('invite:used.no', '未使用'))}</span>`;
         return `
         <tr>
             <td>${escapeHtml(it.name)}</td>
-            <td class="code-cell" title="点击复制" data-copy="${escapeHtml(it.code)}">${escapeHtml(it.code)}</td>
+            <td class="code-cell" title="${escapeHtml(tr('invite:copy', '复制'))}" data-copy="${escapeHtml(it.code)}">${escapeHtml(it.code)}</td>
             <td>${fmtTime(it.createdTime)}</td>
-            <td>${expireLabel(it)}</td>
+            <td>${escapeHtml(expireLabel(it))}</td>
             <td>${statusBadge}</td>
             <td>${usedBadge}</td>
             <td>${it.totalRequestCount}</td>
-            <td><a class="action-btn" href="/pixiv-invite-detail.html?id=${it.id}">详情</a></td>
+            <td><a class="action-btn" href="/pixiv-invite-detail.html?id=${it.id}">${escapeHtml(tr('invite:table.action.detail', '详情'))}</a></td>
         </tr>`;
     }).join('');
     container.innerHTML = `
     <table>
         <thead>
             <tr>
-                <th>名称</th><th>邀请码</th><th>创建时间</th><th>过期</th>
-                <th>状态</th><th>使用情况</th><th>累计</th><th>操作</th>
+                <th>${escapeHtml(tr('invite:column.name', '名称'))}</th>
+                <th>${escapeHtml(tr('invite:column.code', '邀请码'))}</th>
+                <th>${escapeHtml(tr('invite:column.created', '创建时间'))}</th>
+                <th>${escapeHtml(tr('invite:column.expire', '过期'))}</th>
+                <th>${escapeHtml(tr('invite:column.status', '状态'))}</th>
+                <th>${escapeHtml(tr('invite:column.used', '使用情况'))}</th>
+                <th>${escapeHtml(tr('invite:column.total', '累计'))}</th>
+                <th>${escapeHtml(tr('invite:column.actions', '操作'))}</th>
             </tr>
         </thead>
         <tbody>${rows}</tbody>
@@ -208,7 +306,7 @@ function renderTable() {
     container.querySelectorAll('.code-cell').forEach(cell => {
         cell.addEventListener('click', async () => {
             const ok = await window.InviteModals.copyText(cell.dataset.copy);
-            cell.textContent = ok ? '已复制' : '复制失败';
+            cell.textContent = ok ? tr('invite:copy.copied', '已复制') : tr('invite:copy.failed', '复制失败');
             setTimeout(() => { cell.textContent = cell.dataset.copy; }, 1500);
         });
     });
@@ -226,8 +324,28 @@ async function loadInvites() {
         renderTable();
     } catch (e) {
         document.getElementById('tableContainer').innerHTML =
-            '<div class="empty">加载失败：' + escapeHtml(e.message) + '</div>';
+            '<div class="empty">' + escapeHtml(tr('invite:load.failed', '加载失败：{0}', { 0: e.message })) + '</div>';
     }
+}
+
+async function fetchTagsForPicker() {
+    const data = await api('/api/gallery/tags?limit=2000');
+    return (data.tags || []).map(t => ({
+        id: t.tagId,
+        name: t.translatedName ? `${t.name} · ${t.translatedName}` : t.name
+    }));
+}
+async function fetchAuthorsForPicker() {
+    const all = []; let page = 0; let totalPages = 1;
+    while (page < totalPages && page < 50) {
+        const data = await api(`/api/authors/paged?page=${page}&size=200&sort=name`);
+        const list = data.content || [];
+        for (const a of list) all.push({ id: a.authorId, name: a.name || ('#' + a.authorId) });
+        totalPages = data.totalPages || 1;
+        page++;
+        if (list.length === 0) break;
+    }
+    return all;
 }
 
 document.querySelectorAll('.filter-chip').forEach(chip => {
@@ -245,27 +363,10 @@ document.getElementById('searchBox').addEventListener('input', e => {
 
 document.getElementById('btnNewInvite').addEventListener('click', () => {
     window.InviteModals.openInviteFormModal({
-        title: '新建邀请',
-        submitText: '创建邀请链接',
-        fetchTags: async () => {
-            const data = await api('/api/gallery/tags?limit=2000');
-            return (data.tags || []).map(t => ({
-                id: t.tagId,
-                name: t.translatedName ? `${t.name} · ${t.translatedName}` : t.name
-            }));
-        },
-        fetchAuthors: async () => {
-            const all = []; let page = 0; let totalPages = 1;
-            while (page < totalPages && page < 50) {
-                const data = await api(`/api/authors/paged?page=${page}&size=200&sort=name`);
-                const list = data.content || [];
-                for (const a of list) all.push({ id: a.authorId, name: a.name || ('#' + a.authorId) });
-                totalPages = data.totalPages || 1;
-                page++;
-                if (list.length === 0) break;
-            }
-            return all;
-        },
+        title: tr('invite:modal.create.title', '邀请访客'),
+        submitText: tr('invite:modal.create.submit', '创建邀请链接'),
+        fetchTags: fetchTagsForPicker,
+        fetchAuthors: fetchAuthorsForPicker,
         onSubmit: async (payload) => {
             const result = await api('/api/admin/invites', {
                 method: 'POST',
@@ -278,7 +379,26 @@ document.getElementById('btnNewInvite').addEventListener('click', () => {
     });
 });
 
-loadInvites();
+(async () => {
+    try {
+        pageI18n = await PixivI18n.create({ namespaces: ['invite', 'common'] });
+        window.PixivInvitesI18n = pageI18n;
+        if (pageI18n.apply) pageI18n.apply();
+    } catch (_) { /* fallback to defaults */ }
+    if (window.PixivLangSwitcher && window.PixivLangSwitcher.mount && pageI18n) {
+        try {
+            await window.PixivLangSwitcher.mount({
+                mountPoint: document.getElementById('langSwitcherAnchor'),
+                i18n: pageI18n,
+                onChange: client => { pageI18n = client; window.PixivInvitesI18n = client; renderTable(); }
+            });
+        } catch (_) {}
+    }
+    if (window.PixivTheme && window.PixivTheme.mount) {
+        try { window.PixivTheme.mount({ mountPoint: document.getElementById('langSwitcherAnchor') }); } catch (_) {}
+    }
+    loadInvites();
+})();
 </script>
 </body>
 </html>

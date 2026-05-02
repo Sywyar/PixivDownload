@@ -68,17 +68,40 @@ public class GuestAccessGuard {
         };
     }
 
+    /**
+     * 判定流程与 {@code GalleryRepository.appendVisibilityClauses} 一致：
+     * (1) 不可见维度优先排除：作品任一标签/作者命中不可见集合即返回 false；
+     * (2) OR 正向匹配：通过排除后，至少一个维度命中可见白名单即可。
+     */
     private boolean matchesWhitelist(ArtworkRecord rec, GuestInviteSession session) {
-        boolean tagPass = session.tagUnrestricted() || hasTagHit(rec.artworkId(), session.tagIds());
+        List<TagDto> tags = pixivDatabase.getArtworkTags(rec.artworkId());
+
+        // (1) 不可见排除
+        if (!session.tagUnrestricted()) {
+            if (tags != null && !tags.isEmpty()) {
+                for (TagDto tag : tags) {
+                    Long id = tag.getTagId();
+                    if (id != null && !session.tagIds().contains(id)) {
+                        return false; // 命中不可见标签
+                    }
+                }
+            }
+        }
+        if (!session.authorUnrestricted()) {
+            if (rec.authorId() != null && !session.authorIds().contains(rec.authorId())) {
+                return false; // 命中不可见作者
+            }
+        }
+
+        // (2) OR 正向匹配
+        boolean tagPass = session.tagUnrestricted() || hasTagHit(tags, session.tagIds());
         if (tagPass) return true;
         return session.authorUnrestricted()
                 || (rec.authorId() != null && session.authorIds().contains(rec.authorId()));
     }
 
-    private boolean hasTagHit(long artworkId, java.util.Set<Long> whitelist) {
-        if (whitelist == null || whitelist.isEmpty()) return false;
-        List<TagDto> tags = pixivDatabase.getArtworkTags(artworkId);
-        if (tags == null) return false;
+    private boolean hasTagHit(List<TagDto> tags, java.util.Set<Long> whitelist) {
+        if (whitelist == null || whitelist.isEmpty() || tags == null) return false;
         for (TagDto tag : tags) {
             if (tag.getTagId() != null && whitelist.contains(tag.getTagId())) return true;
         }
