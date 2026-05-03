@@ -35,6 +35,8 @@ public class PixivDatabase {
         try { pixivMapper.addDescriptionColumn(); } catch (Exception ignored) {}
         try { pixivMapper.addFileNameColumn(); } catch (Exception ignored) {}
         try { pixivMapper.addFileAuthorNameIdColumn(); } catch (Exception ignored) {}
+        try { pixivMapper.addSeriesIdColumn(); } catch (Exception ignored) {}
+        try { pixivMapper.addSeriesOrderColumn(); } catch (Exception ignored) {}
         log.info(messages.getForLog("download.db.log.initialized"));
     }
 
@@ -60,9 +62,18 @@ public class PixivDatabase {
 
     public void insertArtwork(long artworkId, String title, String folder, int count,
                               String extensions, long time, Integer xRestrict, Boolean isAi, Long authorId,
-                              String description, long fileName, Long fileAuthorNameId) {
+                              String description, long fileName, Long fileAuthorNameId,
+                              Long seriesId, Long seriesOrder) {
         pixivMapper.insertOrIgnore(artworkId, title, stripTrailingSlash(folder),
-                count, extensions, time, xRestrict, isAi, authorId, description, fileName, fileAuthorNameId);
+                count, extensions, time, xRestrict, isAi, authorId, description, fileName, fileAuthorNameId,
+                seriesId, seriesOrder);
+    }
+
+    public void insertArtwork(long artworkId, String title, String folder, int count,
+                              String extensions, long time, Integer xRestrict, Boolean isAi, Long authorId,
+                              String description, long fileName, Long fileAuthorNameId) {
+        insertArtwork(artworkId, title, folder, count, extensions, time, xRestrict, isAi, authorId,
+                description, fileName, fileAuthorNameId, null, null);
     }
 
     public void insertArtwork(long artworkId, String title, String folder, int count,
@@ -181,6 +192,14 @@ public class PixivDatabase {
 
     public List<Long> getArtworkIdsMissingAuthor() {
         return pixivMapper.findIdsMissingAuthor();
+    }
+
+    public void updateSeriesInfo(long artworkId, Long seriesId, Long seriesOrder) {
+        pixivMapper.updateSeriesInfo(artworkId, seriesId, seriesOrder);
+    }
+
+    public List<Long> getArtworkIdsMissingSeries() {
+        return pixivMapper.findIdsMissingSeries();
     }
 
     /**

@@ -29,7 +29,6 @@ import java.util.Set;
  * 综合回填工具：一次 Pixiv AJAX 请求同时补全 artworks 表的 {@code author_id}、{@code "R18"}、
  * {@code is_ai}、{@code description} 四个字段，以及 {@code tags} / {@code artwork_tags} 关系表。
  *
- * <p>取代旧的 {@link AuthorBackfill} / {@link R18Backfill}：每条作品只请求一次
  * {@code /ajax/illust/{id}}，根据响应内容选择性地更新当前仍为 NULL 的列；
  * 若 author_id 被补全，则同步维护 {@code authors} 表。
  * {@code artwork_tags} 中尚无任何记录的作品会把 Pixiv 返回的标签写入
@@ -56,7 +55,13 @@ public class ArtworksBackFill {
             new DatabaseColumn("artworks", "author_id"),
             new DatabaseColumn("artworks", "R18"),
             new DatabaseColumn("artworks", "is_ai"),
-            new DatabaseColumn("artworks", "description")
+            new DatabaseColumn("artworks", "description"),
+            new DatabaseColumn("artworks", "series_id"),
+            new DatabaseColumn("artworks", "series_order")
+    );
+
+    public static final Set<String> SUPPORTED_DATABASE_TABLES = Set.of(
+            normalizeIdentifier("manga_series")
     );
 
     private static final String[] R18_KEYWORDS = {
@@ -81,6 +86,10 @@ public class ArtworksBackFill {
 
     public static boolean supportsDatabaseColumn(String tableName, String columnName) {
         return SUPPORTED_DATABASE_COLUMNS.contains(new DatabaseColumn(tableName, columnName));
+    }
+
+    public static boolean supportsDatabaseTable(String tableName) {
+        return SUPPORTED_DATABASE_TABLES.contains(normalizeIdentifier(tableName));
     }
 
     public static int countCandidates(Options options) throws Exception {
@@ -118,7 +127,7 @@ public class ArtworksBackFill {
             List<Candidate> candidates = findCandidates(conn, options.limit());
             log.info(message("artworks-backfill.log.candidates.count", candidates.size()));
             if (candidates.isEmpty()) {
-                Summary summary = new Summary(0, 0, 0, 0, 0, 0, 0, 0, 0, options.dryRun(), false);
+                Summary summary = new Summary(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, options.dryRun(), false);
                 logSummary(summary);
                 return summary;
             }
@@ -129,6 +138,7 @@ public class ArtworksBackFill {
             int filledAi = 0;
             int filledDescription = 0;
             int filledTags = 0;
+            int filledSeries = 0;
             int deletedCount = 0;
             int skipped = 0;
 
@@ -145,6 +155,7 @@ public class ArtworksBackFill {
                         boolean didAi = candidate.aiMissing;
                         boolean didDesc = candidate.descriptionMissing && result.description != null;
                         boolean didTags = candidate.tagsMissing && result.tags != null;
+                        boolean didSeries = candidate.seriesMissing;
 
                         List<String> changes = new ArrayList<>();
                         if (didAuthor) {
@@ -162,6 +173,9 @@ public class ArtworksBackFill {
                         if (didTags) {
                             changes.add(message("artworks-backfill.log.change.tags", result.tags.size()));
                         }
+                        if (didSeries) {
+                            changes.add(message("artworks-backfill.log.change.series", result.seriesId, result.seriesOrder));
+                        }
 
                         if (changes.isEmpty()) {
                             log.info(message("artworks-backfill.log.no-fillable-data", prefix));
@@ -169,13 +183,14 @@ public class ArtworksBackFill {
                         } else {
                             log.info(message("artworks-backfill.log.changes", prefix, String.join(", ", changes)));
                             if (!options.dryRun()) {
-                                applyUpdates(conn, candidate, result, didAuthor, didR18, didAi, didDesc, didTags);
+                                applyUpdates(conn, candidate, result, didAuthor, didR18, didAi, didDesc, didTags, didSeries);
                             }
                             if (didAuthor) filledAuthor++;
                             if (didR18) filledR18++;
                             if (didAi) filledAi++;
                             if (didDesc) filledDescription++;
                             if (didTags) filledTags++;
+                            if (didSeries) filledSeries++;
                         }
                     }
                     case R18_ONLY -> {
@@ -202,7 +217,7 @@ public class ArtworksBackFill {
                         log.warn(message("artworks-backfill.log.rate-limited", prefix));
                         log.info(message(
                                 "artworks-backfill.log.progress",
-                                i, candidates.size(), filledAuthor, filledR18, filledAi, filledDescription, filledTags, deletedCount, skipped
+                                i, candidates.size(), filledAuthor, filledR18, filledAi, filledDescription, filledTags, filledSeries, deletedCount, skipped
                         ));
                         if (options.dryRun()) {
                             log.info(message("artworks-backfill.log.dry-run"));
@@ -215,6 +230,7 @@ public class ArtworksBackFill {
                                 filledAi,
                                 filledDescription,
                                 filledTags,
+                                filledSeries,
                                 deletedCount,
                                 skipped,
                                 options.dryRun(),
@@ -238,6 +254,7 @@ public class ArtworksBackFill {
                     filledAi,
                     filledDescription,
                     filledTags,
+                    filledSeries,
                     deletedCount,
                     skipped,
                     options.dryRun(),
@@ -273,6 +290,7 @@ public class ArtworksBackFill {
                 summary.filledAi(),
                 summary.filledDescription(),
                 summary.filledTags(),
+                summary.filledSeries(),
                 summary.deletedCount(),
                 summary.skipped()
         ));
@@ -286,12 +304,13 @@ public class ArtworksBackFill {
     }
 
     private static String describeMissing(Candidate c) {
-        List<String> parts = new ArrayList<>(5);
+        List<String> parts = new ArrayList<>(6);
         if (c.authorMissing) parts.add("author");
         if (c.r18Missing) parts.add("R18");
         if (c.aiMissing) parts.add("AI");
         if (c.descriptionMissing) parts.add("desc");
         if (c.tagsMissing) parts.add("tags");
+        if (c.seriesMissing) parts.add("series");
         return String.join("+", parts);
     }
 
@@ -321,10 +340,20 @@ public class ArtworksBackFill {
                 "CREATE INDEX IF NOT EXISTS idx_artwork_tags_tag_id ON artwork_tags(tag_id)")) {
             createIndex.executeUpdate();
         }
+        try (PreparedStatement createSeries = conn.prepareStatement(
+                "CREATE TABLE IF NOT EXISTS manga_series ("
+                        + "series_id INTEGER PRIMARY KEY,"
+                        + "title TEXT NOT NULL,"
+                        + "author_id INTEGER,"
+                        + "updated_time INTEGER NOT NULL)")) {
+            createSeries.executeUpdate();
+        }
         addColumnIfMissing(conn, "ALTER TABLE artworks ADD COLUMN author_id INTEGER DEFAULT NULL");
         addColumnIfMissing(conn, "ALTER TABLE artworks ADD COLUMN \"R18\" INTEGER DEFAULT NULL");
         addColumnIfMissing(conn, "ALTER TABLE artworks ADD COLUMN is_ai INTEGER DEFAULT NULL");
         addColumnIfMissing(conn, "ALTER TABLE artworks ADD COLUMN description TEXT DEFAULT NULL");
+        addColumnIfMissing(conn, "ALTER TABLE artworks ADD COLUMN series_id INTEGER DEFAULT NULL");
+        addColumnIfMissing(conn, "ALTER TABLE artworks ADD COLUMN series_order INTEGER DEFAULT NULL");
     }
 
     private static void addColumnIfMissing(Connection conn, String ddl) {
@@ -339,6 +368,7 @@ public class ArtworksBackFill {
         String sql = "SELECT COUNT(*)"
                 + " FROM artworks a"
                 + " WHERE a.author_id IS NULL OR a.\"R18\" IS NULL OR a.is_ai IS NULL OR a.description IS NULL"
+                + " OR a.series_id IS NULL"
                 + " OR NOT EXISTS (SELECT 1 FROM artwork_tags t WHERE t.artwork_id = a.artwork_id)";
 
         try (PreparedStatement ps = conn.prepareStatement(sql);
@@ -350,9 +380,11 @@ public class ArtworksBackFill {
 
     private static List<Candidate> findCandidates(Connection conn, int limit) throws SQLException {
         String sql = "SELECT a.artwork_id, a.author_id, a.\"R18\", a.is_ai, a.description,"
+                + " a.series_id,"
                 + " (SELECT 1 FROM artwork_tags t WHERE t.artwork_id = a.artwork_id LIMIT 1) AS has_tags"
                 + " FROM artworks a"
                 + " WHERE a.author_id IS NULL OR a.\"R18\" IS NULL OR a.is_ai IS NULL OR a.description IS NULL"
+                + " OR a.series_id IS NULL"
                 + " OR NOT EXISTS (SELECT 1 FROM artwork_tags t WHERE t.artwork_id = a.artwork_id)"
                 + " ORDER BY a.artwork_id";
         if (limit > 0) {
@@ -371,8 +403,9 @@ public class ArtworksBackFill {
                     boolean r18Missing = rs.getObject(3) == null;
                     boolean aiMissing = rs.getObject(4) == null;
                     boolean descMissing = rs.getObject(5) == null;
-                    boolean tagsMissing = rs.getObject(6) == null;
-                    list.add(new Candidate(id, authorMissing, r18Missing, aiMissing, descMissing, tagsMissing));
+                    boolean seriesMissing = rs.getObject(6) == null;
+                    boolean tagsMissing = rs.getObject(7) == null;
+                    list.add(new Candidate(id, authorMissing, r18Missing, aiMissing, descMissing, tagsMissing, seriesMissing));
                 }
             }
         }
@@ -428,7 +461,21 @@ public class ArtworksBackFill {
                 boolean isAi = payload.path("aiType").asInt(0) >= 2;
                 String description = payload.path("description").asText("");
                 List<TagEntry> tags = extractTags(payload);
-                return LookupResult.found(authorId, authorName, xRestrict, isAi, description, tags);
+                long seriesId = 0;
+                long seriesOrder = 0;
+                String seriesTitle = null;
+                JsonNode nav = payload.path("seriesNavData");
+                if (nav.isObject()) {
+                    long sid = nav.path("seriesId").asLong(0);
+                    if (sid > 0) {
+                        seriesId = sid;
+                        seriesOrder = nav.path("order").asLong(0);
+                        seriesTitle = nav.path("title").asText("").trim();
+                        if (seriesTitle.isEmpty()) seriesTitle = String.valueOf(seriesId);
+                    }
+                }
+                return LookupResult.found(authorId, authorName, xRestrict, isAi, description, tags,
+                        seriesId, seriesOrder, seriesTitle);
             });
         } catch (Exception e) {
             return LookupResult.skip(message("artworks-backfill.lookup.request-error", e.getMessage()));
@@ -437,12 +484,17 @@ public class ArtworksBackFill {
 
     private static void applyUpdates(Connection conn, Candidate c, LookupResult result,
                                      boolean updateAuthor, boolean updateR18, boolean updateAi,
-                                     boolean updateDescription, boolean updateTags) throws SQLException {
-        List<String> sets = new ArrayList<>(4);
+                                     boolean updateDescription, boolean updateTags,
+                                     boolean updateSeries) throws SQLException {
+        List<String> sets = new ArrayList<>(6);
         if (updateAuthor) sets.add("author_id = ?");
         if (updateR18) sets.add("\"R18\" = ?");
         if (updateAi) sets.add("is_ai = ?");
         if (updateDescription) sets.add("description = ?");
+        if (updateSeries) {
+            sets.add("series_id = ?");
+            sets.add("series_order = ?");
+        }
 
         if (!sets.isEmpty()) {
             String sql = "UPDATE artworks SET " + String.join(", ", sets) + " WHERE artwork_id = ?";
@@ -452,6 +504,10 @@ public class ArtworksBackFill {
                 if (updateR18) ps.setInt(idx++, result.xRestrict);
                 if (updateAi) ps.setInt(idx++, result.isAi ? 1 : 0);
                 if (updateDescription) ps.setString(idx++, result.description);
+                if (updateSeries) {
+                    ps.setLong(idx++, result.seriesId);
+                    ps.setLong(idx++, result.seriesOrder);
+                }
                 ps.setLong(idx, c.artworkId);
                 ps.executeUpdate();
             }
@@ -463,6 +519,11 @@ public class ArtworksBackFill {
 
         if (updateTags && result.tags != null && !result.tags.isEmpty()) {
             saveTags(conn, c.artworkId, result.tags);
+        }
+
+        if (updateSeries && result.seriesId > 0 && result.seriesTitle != null) {
+            upsertSeries(conn, result.seriesId, result.seriesTitle,
+                    result.authorId > 0 ? result.authorId : null);
         }
     }
 
@@ -528,6 +589,36 @@ public class ArtworksBackFill {
                 "UPDATE artworks SET \"R18\" = 1 WHERE artwork_id = ?")) {
             ps.setLong(1, artworkId);
             ps.executeUpdate();
+        }
+    }
+
+    private static void upsertSeries(Connection conn, long seriesId, String title, Long authorId) throws SQLException {
+        long nowSeconds = Instant.now().getEpochSecond();
+        try (PreparedStatement insertSeries = conn.prepareStatement(
+                "INSERT OR IGNORE INTO manga_series(series_id, title, author_id, updated_time) VALUES(?, ?, ?, ?)");
+             PreparedStatement updateSeries = conn.prepareStatement(
+                     "UPDATE manga_series SET title = ?, author_id = COALESCE(?, author_id),"
+                             + " updated_time = ? WHERE series_id = ? AND title <> ?")) {
+            insertSeries.setLong(1, seriesId);
+            insertSeries.setString(2, title);
+            if (authorId == null) {
+                insertSeries.setNull(3, java.sql.Types.INTEGER);
+            } else {
+                insertSeries.setLong(3, authorId);
+            }
+            insertSeries.setLong(4, nowSeconds);
+            insertSeries.executeUpdate();
+
+            updateSeries.setString(1, title);
+            if (authorId == null) {
+                updateSeries.setNull(2, java.sql.Types.INTEGER);
+            } else {
+                updateSeries.setLong(2, authorId);
+            }
+            updateSeries.setLong(3, nowSeconds);
+            updateSeries.setLong(4, seriesId);
+            updateSeries.setString(5, title);
+            updateSeries.executeUpdate();
         }
     }
 
@@ -619,6 +710,7 @@ public class ArtworksBackFill {
                           int filledAi,
                           int filledDescription,
                           int filledTags,
+                          int filledSeries,
                           int deletedCount,
                           int skipped,
                           boolean dryRun,
@@ -631,15 +723,17 @@ public class ArtworksBackFill {
         final boolean aiMissing;
         final boolean descriptionMissing;
         final boolean tagsMissing;
+        final boolean seriesMissing;
 
         private Candidate(long artworkId, boolean authorMissing, boolean r18Missing, boolean aiMissing,
-                          boolean descriptionMissing, boolean tagsMissing) {
+                          boolean descriptionMissing, boolean tagsMissing, boolean seriesMissing) {
             this.artworkId = artworkId;
             this.authorMissing = authorMissing;
             this.r18Missing = r18Missing;
             this.aiMissing = aiMissing;
             this.descriptionMissing = descriptionMissing;
             this.tagsMissing = tagsMissing;
+            this.seriesMissing = seriesMissing;
         }
     }
 
@@ -659,10 +753,15 @@ public class ArtworksBackFill {
         final boolean isAi;
         final String description;
         final List<TagEntry> tags;
+        final long seriesId;
+        final long seriesOrder;
+        final String seriesTitle;
         final String message;
 
         private LookupResult(ResultType type, long authorId, String authorName, int xRestrict, boolean isAi,
-                             String description, List<TagEntry> tags, String message) {
+                             String description, List<TagEntry> tags,
+                             long seriesId, long seriesOrder, String seriesTitle,
+                             String message) {
             this.type = type;
             this.authorId = authorId;
             this.authorName = authorName;
@@ -670,28 +769,33 @@ public class ArtworksBackFill {
             this.isAi = isAi;
             this.description = description;
             this.tags = tags;
+            this.seriesId = seriesId;
+            this.seriesOrder = seriesOrder;
+            this.seriesTitle = seriesTitle;
             this.message = message;
         }
 
         static LookupResult found(long authorId, String authorName, int xRestrict, boolean isAi,
-                                  String description, List<TagEntry> tags) {
-            return new LookupResult(ResultType.FOUND, authorId, authorName, xRestrict, isAi, description, tags, null);
+                                  String description, List<TagEntry> tags,
+                                  long seriesId, long seriesOrder, String seriesTitle) {
+            return new LookupResult(ResultType.FOUND, authorId, authorName, xRestrict, isAi, description, tags,
+                    seriesId, seriesOrder, seriesTitle, null);
         }
 
         static LookupResult r18Only(String message) {
-            return new LookupResult(ResultType.R18_ONLY, 0, null, 1, false, null, null, message);
+            return new LookupResult(ResultType.R18_ONLY, 0, null, 1, false, null, null, 0, 0, null, message);
         }
 
         static LookupResult deleted(String message) {
-            return new LookupResult(ResultType.DELETED, 0, null, 0, false, null, null, message);
+            return new LookupResult(ResultType.DELETED, 0, null, 0, false, null, null, 0, 0, null, message);
         }
 
         static LookupResult skip(String message) {
-            return new LookupResult(ResultType.SKIP, 0, null, 0, false, null, null, message);
+            return new LookupResult(ResultType.SKIP, 0, null, 0, false, null, null, 0, 0, null, message);
         }
 
         static LookupResult rateLimited() {
-            return new LookupResult(ResultType.RATE_LIMITED, 0, null, 0, false, null, null, "HTTP 429");
+            return new LookupResult(ResultType.RATE_LIMITED, 0, null, 0, false, null, null, 0, 0, null, "HTTP 429");
         }
     }
 

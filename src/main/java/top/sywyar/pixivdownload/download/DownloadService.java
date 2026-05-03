@@ -13,6 +13,7 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestTemplate;
 import top.sywyar.pixivdownload.author.AuthorService;
 import top.sywyar.pixivdownload.collection.CollectionService;
+import top.sywyar.pixivdownload.series.MangaSeriesService;
 import top.sywyar.pixivdownload.download.config.DownloadConfig;
 import top.sywyar.pixivdownload.download.db.ArtworkRecord;
 import top.sywyar.pixivdownload.download.db.PixivDatabase;
@@ -55,6 +56,7 @@ public class DownloadService {
     private final UgoiraService ugoiraService;
     private final AuthorService authorService;
     private final CollectionService collectionService;
+    private final MangaSeriesService mangaSeriesService;
     private final AppMessages messages;
 
     // 存储下载状态
@@ -70,6 +72,7 @@ public class DownloadService {
                            UgoiraService ugoiraService,
                            AuthorService authorService,
                            CollectionService collectionService,
+                           MangaSeriesService mangaSeriesService,
                            AppMessages messages) {
         this.downloadConfig = downloadConfig;
         this.eventPublisher = eventPublisher;
@@ -81,6 +84,7 @@ public class DownloadService {
         this.ugoiraService = ugoiraService;
         this.authorService = authorService;
         this.collectionService = collectionService;
+        this.mangaSeriesService = mangaSeriesService;
         this.messages = messages;
     }
 
@@ -187,10 +191,12 @@ public class DownloadService {
             // 记录下载信息
             recordDownload(artworkId, title, status.getDownloadPath(), fileExtensions,
                     successCount.get(), other.getXRestrict(), other.isAi(), other.getAuthorId(), other.getDescription(), other.getTags(),
-                    fileNamePlan.templateId(), fileNamePlan.recordTime(), fileNamePlan.fileAuthorNameId());
+                    fileNamePlan.templateId(), fileNamePlan.recordTime(), fileNamePlan.fileAuthorNameId(),
+                    other.getSeriesId(), other.getSeriesOrder());
 
             recordStatistics(imageUrls.size());
             recordAuthorInfo(artworkId, other, cookie);
+            recordSeriesInfo(artworkId, other, cookie);
 
             status.setSuccessCount(successCount.get());
             status.setFailedCount(imageUrls.size() - successCount.get());
@@ -444,13 +450,15 @@ public class DownloadService {
 
     private void recordDownload(Long artworkId, String title, String folderPath, HashSet<String> fileExtensions,
                                 int count, int xRestrict, boolean isAi, Long authorId, String description, List<TagDto> tags,
-                                long fileNameId, long recordTime, long fileAuthorNameId) {
+                                long fileNameId, long recordTime, long fileAuthorNameId,
+                                Long seriesId, Long seriesOrder) {
         try {
             pixivDatabase.insertArtwork(
                     artworkId, title,
                     Path.of(folderPath).toAbsolutePath().toString(),
                     count, String.join(",", fileExtensions), recordTime, xRestrict, isAi, authorId, description, fileNameId,
-                    fileAuthorNameId > 0 ? fileAuthorNameId : null
+                    fileAuthorNameId > 0 ? fileAuthorNameId : null,
+                    seriesId, seriesOrder
             );
             pixivDatabase.saveArtworkTags(artworkId, tags);
         } catch (Exception e) {
@@ -476,6 +484,18 @@ public class DownloadService {
             authorService.asyncLookupMissing(artworkId, cookie);
         } catch (Exception e) {
             log.warn(logMessage("download.log.record-author.failed", id(artworkId)), e);
+        }
+    }
+
+    private void recordSeriesInfo(Long artworkId, DownloadRequest.Other other, String cookie) {
+        try {
+            if (other != null && other.getSeriesId() != null && other.getSeriesId() > 0) {
+                mangaSeriesService.observe(other.getSeriesId(), other.getSeriesTitle(), other.getAuthorId());
+                return;
+            }
+            mangaSeriesService.asyncLookupMissingSeries(artworkId, cookie);
+        } catch (Exception e) {
+            log.warn(logMessage("download.log.record-series.failed", id(artworkId)), e);
         }
     }
 

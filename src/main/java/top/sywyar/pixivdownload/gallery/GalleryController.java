@@ -39,12 +39,20 @@ public class GalleryController {
             @RequestParam(required = false) String notAuthorIds,
             @RequestParam(required = false) String orAuthorIds,
             @RequestParam(required = false) Long authorId,
+            @RequestParam(required = false) String seriesIds,
+            @RequestParam(required = false) String notSeriesIds,
+            @RequestParam(required = false) Long seriesId,
             HttpServletRequest httpRequest) {
 
         List<Long> requiredAuthorIds = parseLongList(authorIds);
         if (authorId != null && authorId > 0) {
             if (requiredAuthorIds == null) requiredAuthorIds = new ArrayList<>();
             if (!requiredAuthorIds.contains(authorId)) requiredAuthorIds.add(authorId);
+        }
+        List<Long> requiredSeriesIds = parseLongList(seriesIds);
+        if (seriesId != null && seriesId > 0) {
+            if (requiredSeriesIds == null) requiredSeriesIds = new ArrayList<>();
+            if (!requiredSeriesIds.contains(seriesId)) requiredSeriesIds.add(seriesId);
         }
         GalleryQuery query = GalleryQuery.normalize(
                 page, size, sort, order, search, r18, ai,
@@ -55,7 +63,9 @@ public class GalleryController {
                 parseLongList(orTagIds),
                 requiredAuthorIds,
                 parseLongList(notAuthorIds),
-                parseLongList(orAuthorIds));
+                parseLongList(orAuthorIds),
+                requiredSeriesIds,
+                parseLongList(notSeriesIds));
         query.setGuestRestriction(GuestRestriction.from(GuestAccessGuard.extractSession(httpRequest)));
         return galleryService.query(query);
     }
@@ -106,6 +116,57 @@ public class GalleryController {
         GuestInviteSession session = GuestAccessGuard.extractSession(httpRequest);
         List<DownloadedResponse> all = galleryService.byAuthor(artworkId, limit);
         return ResponseEntity.ok(filterForGuest(all, session));
+    }
+
+    @GetMapping("/artwork/{artworkId}/by-series")
+    public ResponseEntity<List<DownloadedResponse>> bySeries(
+            @PathVariable long artworkId,
+            @RequestParam(defaultValue = "30") int limit,
+            HttpServletRequest httpRequest) {
+        guestAccessGuard.requireVisible(httpRequest, artworkId);
+        GuestInviteSession session = GuestAccessGuard.extractSession(httpRequest);
+        List<DownloadedResponse> all = galleryService.bySeries(artworkId, limit);
+        return ResponseEntity.ok(filterForGuest(all, session));
+    }
+
+    @GetMapping("/artwork/{artworkId}/series")
+    public ResponseEntity<SeriesNavResponse> seriesNav(
+            @PathVariable long artworkId,
+            HttpServletRequest httpRequest) {
+        guestAccessGuard.requireVisible(httpRequest, artworkId);
+        GuestInviteSession session = GuestAccessGuard.extractSession(httpRequest);
+        GalleryRepository.SeriesNeighbors neighbors = galleryService.seriesNeighbors(artworkId);
+        if (neighbors == null) {
+            return ResponseEntity.ok(new SeriesNavResponse(null, null, null, null, null));
+        }
+        SeriesNavResponse.NeighborView prev = neighbors.prev() == null
+                ? null
+                : (session != null && !guestAccessGuard.isVisibleToGuest(neighbors.prev().artworkId(), session)
+                    ? null
+                    : new SeriesNavResponse.NeighborView(
+                        neighbors.prev().artworkId(),
+                        neighbors.prev().title(),
+                        neighbors.prev().seriesOrder()));
+        SeriesNavResponse.NeighborView next = neighbors.next() == null
+                ? null
+                : (session != null && !guestAccessGuard.isVisibleToGuest(neighbors.next().artworkId(), session)
+                    ? null
+                    : new SeriesNavResponse.NeighborView(
+                        neighbors.next().artworkId(),
+                        neighbors.next().title(),
+                        neighbors.next().seriesOrder()));
+        return ResponseEntity.ok(new SeriesNavResponse(
+                neighbors.seriesId(),
+                neighbors.seriesTitle(),
+                neighbors.currentOrder(),
+                prev,
+                next
+        ));
+    }
+
+    public record SeriesNavResponse(Long seriesId, String seriesTitle, Long currentOrder,
+                                    NeighborView prev, NeighborView next) {
+        public record NeighborView(long artworkId, String title, long seriesOrder) {}
     }
 
     private List<DownloadedResponse> filterForGuest(List<DownloadedResponse> items, GuestInviteSession session) {

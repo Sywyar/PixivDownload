@@ -1,0 +1,187 @@
+package top.sywyar.pixivdownload.series;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import jakarta.annotation.PostConstruct;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.ResponseEntity;
+import org.springframework.scheduling.TaskScheduler;
+import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
+import org.springframework.web.client.RestTemplate;
+import top.sywyar.pixivdownload.author.AuthorService;
+import top.sywyar.pixivdownload.download.db.PixivDatabase;
+import top.sywyar.pixivdownload.i18n.AppMessages;
+
+import java.time.Instant;
+import java.util.Collections;
+import java.util.List;
+import java.util.Set;
+
+@Service
+@Slf4j
+public class MangaSeriesService {
+
+    private static final String PIXIV_REFERER = "https://www.pixiv.net/";
+    private static final String USER_AGENT =
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36";
+
+    private final MangaSeriesMapper mangaSeriesMapper;
+    private final AuthorService authorService;
+    private final PixivDatabase pixivDatabase;
+    private final RestTemplate downloadRestTemplate;
+    private final TaskScheduler taskScheduler;
+    private final AppMessages messages;
+
+    public MangaSeriesService(MangaSeriesMapper mangaSeriesMapper,
+                              AuthorService authorService,
+                              PixivDatabase pixivDatabase,
+                              @Qualifier("downloadRestTemplate") RestTemplate downloadRestTemplate,
+                              @Qualifier("taskScheduler") TaskScheduler taskScheduler,
+                              AppMessages messages) {
+        this.mangaSeriesMapper = mangaSeriesMapper;
+        this.authorService = authorService;
+        this.pixivDatabase = pixivDatabase;
+        this.downloadRestTemplate = downloadRestTemplate;
+        this.taskScheduler = taskScheduler;
+        this.messages = messages;
+    }
+
+    @PostConstruct
+    public void init() {
+        mangaSeriesMapper.createMangaSeriesTable();
+    }
+
+    public List<MangaSeries> getAllSeries() {
+        return mangaSeriesMapper.findAll();
+    }
+
+    public List<MangaSeries> getAllSeries(Set<Long> filterIds) {
+        if (filterIds == null) return getAllSeries();
+        if (filterIds.isEmpty()) return Collections.emptyList();
+        return mangaSeriesMapper.findAll().stream()
+                .filter(s -> filterIds.contains(s.seriesId()))
+                .toList();
+    }
+
+    public PagedSeries getPagedSeriesWithArtworks(int page, int size, String search, String sort) {
+        return getPagedSeriesWithArtworks(page, size, search, sort, null);
+    }
+
+    public PagedSeries getPagedSeriesWithArtworks(int page, int size, String search, String sort,
+                                                  Set<Long> filterIds) {
+        int safePage = Math.max(0, page);
+        int safeSize = Math.min(Math.max(1, size), 200);
+        String normalizedSearch = StringUtils.hasText(search) ? "%" + search.trim() + "%" : "%";
+        String normalizedSort = "artworks".equals(sort) || "seriesId".equals(sort) ? sort : "title";
+        if (filterIds == null) {
+            long total = mangaSeriesMapper.countSeriesWithArtworks(normalizedSearch);
+            List<MangaSeriesSummary> rows = total == 0
+                    ? Collections.emptyList()
+                    : mangaSeriesMapper.findSeriesWithArtworks(
+                            normalizedSearch, normalizedSort, safeSize, safePage * safeSize);
+            int totalPages = (int) Math.ceil((double) total / safeSize);
+            return new PagedSeries(rows, total, safePage, safeSize, totalPages);
+        }
+        if (filterIds.isEmpty()) {
+            return new PagedSeries(Collections.emptyList(), 0, safePage, safeSize, 0);
+        }
+        List<MangaSeriesSummary> all = mangaSeriesMapper.findSeriesWithArtworks(
+                normalizedSearch, normalizedSort, Integer.MAX_VALUE, 0);
+        List<MangaSeriesSummary> filtered = all.stream()
+                .filter(s -> filterIds.contains(s.seriesId()))
+                .toList();
+        long total = filtered.size();
+        int totalPages = (int) Math.ceil((double) total / safeSize);
+        int from = Math.min(safePage * safeSize, filtered.size());
+        int to = Math.min(from + safeSize, filtered.size());
+        return new PagedSeries(filtered.subList(from, to), total, safePage, safeSize, totalPages);
+    }
+
+    public record PagedSeries(List<MangaSeriesSummary> content, long totalElements,
+                              int page, int size, int totalPages) {}
+
+    public MangaSeries getSeries(long seriesId) {
+        return mangaSeriesMapper.findById(seriesId);
+    }
+
+    public void observe(long seriesId, String title, Long authorId) {
+        if (seriesId <= 0) return;
+        MangaSeries existing = mangaSeriesMapper.findById(seriesId);
+        String normalizedTitle = StringUtils.hasText(title) ? title.trim() : null;
+        long now = Instant.now().getEpochSecond();
+        if (existing == null) {
+            String initialTitle = normalizedTitle != null ? normalizedTitle : String.valueOf(seriesId);
+            mangaSeriesMapper.insertIfAbsent(seriesId, initialTitle, authorId, now);
+            log.info(messages.getForLog("series.log.observe.first-record", seriesId, initialTitle));
+            if (authorId != null && authorId > 0) {
+                authorService.observe(authorId, null);
+            }
+            return;
+        }
+        // Update only if title or author changes (preserve existing if hint is null)
+        String desiredTitle = normalizedTitle != null ? normalizedTitle : existing.title();
+        Long desiredAuthorId = authorId != null && authorId > 0 ? authorId : existing.authorId();
+        if (!desiredTitle.equals(existing.title())
+                || (desiredAuthorId != null && !desiredAuthorId.equals(existing.authorId()))) {
+            mangaSeriesMapper.updateInfo(seriesId, desiredTitle, desiredAuthorId, now);
+        }
+    }
+
+    public void asyncLookupMissingSeries(long artworkId, String cookie) {
+        taskScheduler.schedule(() -> lookupMissingSeries(artworkId, cookie), Instant.now());
+    }
+
+    void lookupMissingSeries(long artworkId, String cookie) {
+        try {
+            JsonNode root = fetchJson("https://www.pixiv.net/ajax/illust/" + artworkId, cookie);
+            if (root == null || root.path("error").asBoolean(false)) {
+                log.warn(messages.getForLog("series.log.lookup.failed.response", artworkId, root));
+                return;
+            }
+            JsonNode body = root.path("body");
+            JsonNode nav = body.path("seriesNavData");
+            if (nav.isMissingNode() || nav.isNull() || !nav.isObject()) {
+                pixivDatabase.updateSeriesInfo(artworkId, 0L, 0L);
+                return;
+            }
+            long seriesId = nav.path("seriesId").asLong(0);
+            long order = nav.path("order").asLong(0);
+            String title = nav.path("title").asText("").trim();
+            if (seriesId <= 0) {
+                pixivDatabase.updateSeriesInfo(artworkId, 0L, 0L);
+                return;
+            }
+            Long authorId = parsePositiveLong(body.path("userId").asText(null));
+            pixivDatabase.updateSeriesInfo(artworkId, seriesId, order);
+            observe(seriesId, title, authorId);
+        } catch (Exception e) {
+            log.warn(messages.getForLog("series.log.lookup.failed.exception", artworkId), e);
+        }
+    }
+
+    private static Long parsePositiveLong(String value) {
+        if (value == null || value.isBlank()) return null;
+        try {
+            long n = Long.parseLong(value);
+            return n > 0 ? n : null;
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private JsonNode fetchJson(String url, String cookie) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("Referer", PIXIV_REFERER);
+        headers.set("User-Agent", USER_AGENT);
+        if (StringUtils.hasText(cookie)) {
+            headers.set("Cookie", cookie);
+        }
+        ResponseEntity<JsonNode> response = downloadRestTemplate.exchange(
+                url, HttpMethod.GET, new HttpEntity<>(headers), JsonNode.class);
+        return response.getBody();
+    }
+}

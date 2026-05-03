@@ -1327,6 +1327,7 @@
         <div class="tab active" id="tab-ntab" onclick="switchMode('ntab')" data-i18n="mode.ntab">🎨 批量导入作品</div>
         <div class="tab" id="tab-user" onclick="switchMode('user')" data-i18n="mode.user">👤 User 模式</div>
         <div class="tab" id="tab-search" onclick="switchMode('search')" data-i18n="mode.search">🔍 Search 模式</div>
+        <div class="tab" id="tab-series" onclick="switchMode('series')" data-i18n="mode.series">📕 漫画系列</div>
     </div>
 
     <!-- N-Tab panel -->
@@ -1454,6 +1455,22 @@
             <div style="text-align:center;color:#aaa;padding:24px 0;font-size:13px;" data-i18n="status.search-empty">输入关键词后点击搜索；未保存 Cookie 时搜索结果可能减少</div>
         </div>
         <div class="search-pagination" id="search-pagination" style="display:none;"></div>
+    </div>
+
+    <!-- Series panel -->
+    <div class="card mode-panel" id="panel-series">
+        <div class="card-title" data-i18n="card.series">漫画系列批量下载</div>
+        <div class="search-controls">
+            <input type="text" id="series-input-url" data-i18n-placeholder="input.series.placeholder"
+                   placeholder="粘贴系列目录 URL 或同系列作品 URL..."
+                   onkeydown="if(event.key==='Enter')loadSeriesPreview()">
+            <button class="btn btn-blue" onclick="loadSeriesPreview()" data-i18n="button.series-load">📕 解析并预览</button>
+            <button class="btn btn-green" id="btn-series-add-all" onclick="addAllSeriesResultsToQueue()" disabled data-i18n="button.add-all">➕ 全部加入队列</button>
+        </div>
+        <div id="series-meta-display" style="margin:8px 0;font-size:13px;color:#666;"></div>
+        <div id="series-results-area">
+            <div style="text-align:center;color:#aaa;padding:24px 0;font-size:13px;" data-i18n="status.series-empty">粘贴 https://www.pixiv.net/user/{authorId}/series/{seriesId} 或同系列作品链接</div>
+        </div>
     </div>
 
     <!-- Settings -->
@@ -2014,6 +2031,7 @@
         return {
             user: bt('queue.source.user', 'User'),
             search: bt('queue.source.search', 'Search'),
+            series: bt('queue.source.series', 'Series'),
             ntab: bt('queue.source.import', '导入')
         }[source] || bt('queue.source.import', '导入');
     }
@@ -2644,7 +2662,7 @@
         return ensureUniqueBaseNames(names);
     }
 
-    async function sendDownload(artworkId, imageUrls, title, isUserDownload, username, authorId, authorName, xRestrict, isAi, ugoiraData, description, tags) {
+    async function sendDownload(artworkId, imageUrls, title, isUserDownload, username, authorId, authorName, xRestrict, isAi, ugoiraData, description, tags, seriesInfo) {
         const delayMs = getImageDelayMs();
         const collectionId = await resolveBatchCollectionIdForDownload();
         const fileNameTemplate = normalizeFileNameTemplate(state.settings.fileNameTemplate);
@@ -2674,6 +2692,11 @@
             fileNames,
             fileNameTimestamp
         };
+        if (seriesInfo && seriesInfo.seriesId) {
+            other.seriesId = Number(seriesInfo.seriesId);
+            other.seriesOrder = Number(seriesInfo.seriesOrder ?? 0);
+            other.seriesTitle = seriesInfo.seriesTitle || null;
+        }
         if (ugoiraData) {
             other.isUgoira = true;
             other.ugoiraZipUrl = ugoiraData.zipUrl;
@@ -2984,6 +3007,11 @@
             setStatus(bt('status.downloading-title', '下载中：{title}', {title: item.title}), 'info');
             const fallbackAuthorId = isUserMode ? normalizeAuthorId(state.userId) : null;
             const fallbackAuthorName = isUserMode ? (item.username || state.username || state.userId || '') : '';
+            const seriesInfo = (item.seriesId && item.seriesId > 0)
+                ? {seriesId: item.seriesId, seriesOrder: item.seriesOrder ?? 0, seriesTitle: item.seriesTitle || null}
+                : (meta.seriesId
+                    ? {seriesId: meta.seriesId, seriesOrder: meta.seriesOrder ?? 0, seriesTitle: meta.seriesTitle || null}
+                    : null);
             const dlData = await sendDownload(
                 item.id, urls, item.title,
                 isUserMode, item.username || state.username || state.userId,
@@ -2991,7 +3019,8 @@
                 item.authorName || fallbackAuthorName,
                 xRestrict, isAi, ugoiraData,
                 meta.description || '',
-                Array.isArray(meta.tags) ? meta.tags : []
+                Array.isArray(meta.tags) ? meta.tags : [],
+                seriesInfo
             );
             if (dlData && dlData.alreadyDownloaded) {
                 item.status = 'skipped';
@@ -3229,6 +3258,9 @@
                 authorId,
                 authorName,
                 isAi: typeof m.isAi === 'boolean' ? m.isAi : null,
+                seriesId: m.seriesId ? Number(m.seriesId) : null,
+                seriesOrder: m.seriesOrder != null ? Number(m.seriesOrder) : null,
+                seriesTitle: m.seriesTitle || null,
                 totalImages: 0,
                 downloadedCount: 0,
                 startTime: null,
@@ -3404,7 +3436,7 @@
     ============================================================ */
     function switchMode(mode) {
         state.mode = mode;
-        ['ntab', 'user', 'search'].forEach(m => {
+        ['ntab', 'user', 'search', 'series'].forEach(m => {
             document.getElementById('tab-' + m).classList.toggle('active', m === mode);
             document.getElementById('panel-' + m).classList.toggle('active', m === mode);
         });
@@ -3482,11 +3514,14 @@
                 + formatUgoiraProgressHtml(q.ugoiraProgress, q.status);
             const desc = q.lastMessage || queueStatusText(q.status);
             const descHtml = renderQueueMessageHtml(q, desc);
-            const srcLabel = q.source === 'user'
-                ? `<span style="background:#007bff;color:white;border-radius:3px;padding:1px 5px;font-size:10px;margin-left:5px;vertical-align:middle;">${esc(queueSourceText('user'))}</span>`
+            const sourceTone = q.source === 'user'
+                ? {label: queueSourceText('user'), bg: '#007bff'}
                 : q.source === 'search'
-                    ? `<span style="background:#28a745;color:white;border-radius:3px;padding:1px 5px;font-size:10px;margin-left:5px;vertical-align:middle;">${esc(queueSourceText('search'))}</span>`
-                    : `<span style="background:#6610f2;color:white;border-radius:3px;padding:1px 5px;font-size:10px;margin-left:5px;vertical-align:middle;">${esc(queueSourceText('ntab'))}</span>`;
+                    ? {label: queueSourceText('search'), bg: '#28a745'}
+                    : q.source === 'series'
+                        ? {label: queueSourceText('series'), bg: '#6366f1'}
+                        : {label: queueSourceText('ntab'), bg: '#6610f2'};
+            const srcLabel = `<span style="background:${sourceTone.bg};color:white;border-radius:3px;padding:1px 5px;font-size:10px;margin-left:5px;vertical-align:middle;">${esc(sourceTone.label)}</span>`;
             const R18Label = q.xRestrict == null
                 ? `<span style="background:rgba(100,116,139,.15);color:#64748b;border-radius:3px;padding:1px 5px;font-size:10px;margin-left:3px;vertical-align:middle;">${esc(bt('queue.unknown', '未知'))}</span>`
                 : q.xRestrict === 2
@@ -4202,6 +4237,251 @@
                 ? bt('status.added-to-queue', '已加入队列：{title}', {title: item.title})
                 : bt('status.already-in-queue', '已在队列中：{title}', {title: item.title}),
             added > 0 ? 'success' : 'info');
+    }
+
+    /* ============================================================
+       Series mode
+    ============================================================ */
+    const seriesState = {
+        seriesId: null,
+        seriesTitle: '',
+        seriesAuthorId: null,
+        seriesAuthorName: '',
+        seriesTotal: 0,
+        items: [],
+        activeBlobUrls: []
+    };
+
+    function parseSeriesInputUrl(text) {
+        if (!text) return null;
+        const trimmed = text.trim();
+        const seriesMatch = trimmed.match(/\/user\/(\d+)\/series\/(\d+)/);
+        if (seriesMatch) {
+            return {kind: 'series', seriesId: Number(seriesMatch[2])};
+        }
+        const artworkMatch = trimmed.match(/\/artworks\/(\d+)/);
+        if (artworkMatch) {
+            return {kind: 'artwork', artworkId: artworkMatch[1]};
+        }
+        if (/^\d+$/.test(trimmed)) {
+            return {kind: 'series', seriesId: Number(trimmed)};
+        }
+        return null;
+    }
+
+    async function resolveSeriesIdFromArtwork(artworkId) {
+        const res = await fetch(`${BASE}/api/pixiv/artwork/${encodeURIComponent(artworkId)}/meta`,
+            {credentials: 'same-origin', headers: pixivHeader()});
+        if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            throw new Error(data.error || `HTTP ${res.status}`);
+        }
+        const meta = await res.json();
+        if (!meta.seriesId) {
+            throw new Error(bt('status.series-artwork-no-series', '该作品不属于任何漫画系列'));
+        }
+        return Number(meta.seriesId);
+    }
+
+    function cleanupSeriesBlobUrls() {
+        seriesState.activeBlobUrls.forEach(u => {
+            try { URL.revokeObjectURL(u); } catch {}
+        });
+        seriesState.activeBlobUrls = [];
+    }
+
+    async function loadSeriesPreview() {
+        const input = document.getElementById('series-input-url');
+        const parsed = parseSeriesInputUrl(input.value);
+        if (!parsed) {
+            setStatus(bt('status.series-url-invalid', '请输入有效的系列 URL 或作品 URL'), 'error');
+            return;
+        }
+        cleanupSeriesBlobUrls();
+        document.getElementById('series-results-area').innerHTML =
+            `<div style="color:#888;text-align:center;padding:24px 0;">${esc(bt('status.series-loading', '正在加载系列信息...'))}</div>`;
+        document.getElementById('series-meta-display').textContent = '';
+        document.getElementById('btn-series-add-all').disabled = true;
+        try {
+            let seriesId;
+            if (parsed.kind === 'artwork') {
+                seriesId = await resolveSeriesIdFromArtwork(parsed.artworkId);
+            } else {
+                seriesId = parsed.seriesId;
+            }
+            const allItems = [];
+            let meta = null;
+            let lastTotal = 0;
+            for (let page = 1; page <= 50; page++) {
+                const res = await fetch(`${BASE}/api/pixiv/series/${seriesId}?page=${page}`,
+                    {credentials: 'same-origin', headers: pixivHeader()});
+                if (!res.ok) {
+                    const data = await res.json().catch(() => ({}));
+                    throw new Error(data.error || `HTTP ${res.status}`);
+                }
+                const data = await res.json();
+                meta = meta || data.series;
+                lastTotal = data.series ? data.series.total : lastTotal;
+                if (Array.isArray(data.items)) allItems.push(...data.items);
+                if (data.isLastPage || !data.items || data.items.length === 0) break;
+                if (lastTotal > 0 && allItems.length >= lastTotal) break;
+            }
+            // De-dupe
+            const seen = new Set();
+            const items = [];
+            for (const it of allItems) {
+                if (seen.has(it.id)) continue;
+                seen.add(it.id);
+                items.push(it);
+            }
+            seriesState.seriesId = seriesId;
+            seriesState.seriesTitle = meta ? meta.title : String(seriesId);
+            seriesState.seriesAuthorId = meta ? meta.authorId : null;
+            seriesState.seriesAuthorName = meta ? meta.authorName : '';
+            seriesState.seriesTotal = lastTotal || items.length;
+            seriesState.items = items;
+            renderSeriesResults();
+            document.getElementById('btn-series-add-all').disabled = items.length === 0;
+            setStatus(bt('status.series-load-success', '系列加载完成：{title}（{count} 个）', {
+                title: seriesState.seriesTitle,
+                count: items.length
+            }), 'success');
+        } catch (e) {
+            document.getElementById('series-results-area').innerHTML =
+                `<div style="color:#dc3545;text-align:center;padding:24px 0;">${esc(bt('status.series-load-failed', '加载失败：{message}', {message: e.message}))}</div>`;
+            setStatus(bt('status.series-load-failed', '加载失败：{message}', {message: e.message}), 'error');
+        }
+    }
+
+    function renderSeriesResults() {
+        const area = document.getElementById('series-results-area');
+        const metaEl = document.getElementById('series-meta-display');
+        if (!seriesState.items.length) {
+            area.innerHTML = `<div style="color:#aaa;text-align:center;padding:24px 0;">${esc(bt('status.series-no-results', '该系列没有可用的作品'))}</div>`;
+            metaEl.textContent = '';
+            return;
+        }
+        const inQueue = new Set(state.queue.map(q => q.id));
+        const authorPart = seriesState.seriesAuthorName
+            ? bt('series.meta.author', '作者：{name}', {name: seriesState.seriesAuthorName})
+            : '';
+        metaEl.innerHTML = [
+            `<strong>${esc(seriesState.seriesTitle)}</strong>`,
+            authorPart ? esc(authorPart) : '',
+            esc(bt('series.meta.total', '共 {count} 话', {count: seriesState.seriesTotal || seriesState.items.length}))
+        ].filter(Boolean).join(' · ');
+        area.innerHTML = `
+    <div class="search-grid">
+      ${seriesState.items.map((item, idx) => {
+            const xr = Number(item.xRestrict ?? 0);
+            const isAi = Number(item.aiType ?? 0) >= 2;
+            const r18Badge = xr === 2
+                ? '<span class="thumb-badge" style="background:#b91c1c;">R-18G</span>'
+                : xr === 1 ? '<span class="thumb-badge">R-18</span>' : '';
+            const aiBadge = isAi ? '<span class="thumb-badge thumb-badge-ai">AI</span>' : '';
+            const seriesOrder = Number(item.seriesOrder || (idx + 1));
+            const orderBadge = `<span class="thumb-badge" style="background:#6366f1;">#${seriesOrder}</span>`;
+            const pagesLabel = item.pageCount > 1 ? `<span class="thumb-pages">${item.pageCount}P</span>` : '';
+            const inQueueClass = inQueue.has(item.id) ? ' in-queue' : '';
+            const queueTip = buildQueueToggleTip(inQueue.has(item.id));
+            return `<div class="search-thumb${inQueueClass}" id="series-thumb-${idx}"
+                     onclick="addSeriesItemToQueue(${idx})" title="#${seriesOrder} ${esc(item.title)} (${esc(item.userName)})${queueTip}">
+          <img id="series-thumb-img-${idx}" src="" alt="${esc(item.title)}">
+          <div class="thumb-badge-stack">${orderBadge}${r18Badge}${aiBadge}</div>
+          ${pagesLabel}
+          <span class="thumb-in-queue-mark">✓</span>
+          <div class="thumb-title">${esc(item.title)}</div>
+        </div>`;
+        }).join('')}
+    </div>`;
+        loadSeriesThumbnailsBatched(seriesState.items);
+    }
+
+    async function loadSeriesThumbnailsBatched(items) {
+        const BATCH = 10;
+        for (let i = 0; i < items.length; i += BATCH) {
+            const batch = items.slice(i, i + BATCH);
+            await Promise.allSettled(batch.map((item, offset) => loadSingleSeriesThumbnail(item, i + offset)));
+        }
+    }
+
+    async function loadSingleSeriesThumbnail(item, idx) {
+        if (!item.thumbnailUrl) return;
+        const imgEl = document.getElementById(`series-thumb-img-${idx}`);
+        if (!imgEl) return;
+        try {
+            const params = new URLSearchParams({url: item.thumbnailUrl});
+            const res = await fetch(`${BASE}/api/pixiv/thumbnail-proxy?${params}`, {headers: pixivHeader()});
+            if (!res.ok) return;
+            const blob = await res.blob();
+            const blobUrl = URL.createObjectURL(blob);
+            seriesState.activeBlobUrls.push(blobUrl);
+            if (imgEl.isConnected) imgEl.src = blobUrl;
+        } catch {
+        }
+    }
+
+    function syncSeriesResultsQueueState() {
+        if (!seriesState.items.length) return;
+        const inQueue = new Set(state.queue.map(q => q.id));
+        seriesState.items.forEach((item, idx) => {
+            const el = document.getElementById(`series-thumb-${idx}`);
+            if (!el) return;
+            el.classList.toggle('in-queue', inQueue.has(item.id));
+        });
+    }
+
+    function addSeriesItemToQueue(idx) {
+        const item = seriesState.items[idx];
+        if (!item) return;
+        const alreadyInQueue = state.queue.find(q => q.id === String(item.id));
+        if (alreadyInQueue) {
+            const removed = removeFromQueue(item.id);
+            if (removed) {
+                setStatus(bt('status.removed-from-queue', '已从队列移除：{title}', {title: item.title}), 'info');
+            } else {
+                setStatus(bt('status.cannot-remove-downloading', '无法移除（正在下载中）：{title}', {title: item.title}), 'warning');
+            }
+            return;
+        }
+        const added = addItemsToQueue([item.id], [{
+            title: item.title,
+            authorId: item.userId || seriesState.seriesAuthorId,
+            authorName: item.userName || seriesState.seriesAuthorName,
+            isAi: Number(item.aiType ?? 0) >= 2,
+            seriesId: seriesState.seriesId,
+            seriesOrder: Number(item.seriesOrder || (idx + 1)),
+            seriesTitle: seriesState.seriesTitle
+        }], 'series', '');
+        setStatus(added > 0
+                ? bt('status.added-to-queue', '已加入队列：{title}', {title: item.title})
+                : bt('status.already-in-queue', '已在队列中：{title}', {title: item.title}),
+            added > 0 ? 'success' : 'info');
+        syncSeriesResultsQueueState();
+    }
+
+    function addAllSeriesResultsToQueue() {
+        if (!seriesState.items.length) return;
+        const ids = seriesState.items.map(r => r.id);
+        const metas = seriesState.items.map((r, idx) => ({
+            title: r.title,
+            authorId: r.userId || seriesState.seriesAuthorId,
+            authorName: r.userName || seriesState.seriesAuthorName,
+            isAi: Number(r.aiType ?? 0) >= 2,
+            seriesId: seriesState.seriesId,
+            seriesOrder: Number(r.seriesOrder || (idx + 1)),
+            seriesTitle: seriesState.seriesTitle
+        }));
+        const added = addItemsToQueue(ids, metas, 'series', '');
+        setStatus(
+            bt(
+                'status.added-many-to-queue',
+                '已将 {added} 个作品加入队列（共 {total} 个，{existing} 个已在队列中）',
+                {added, total: ids.length, existing: ids.length - added}
+            ),
+            'success'
+        );
+        syncSeriesResultsQueueState();
     }
 
     function addAllSearchResultsToQueue() {

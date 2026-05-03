@@ -10,6 +10,8 @@ import top.sywyar.pixivdownload.download.db.PixivDatabase;
 import top.sywyar.pixivdownload.download.db.TagDto;
 import top.sywyar.pixivdownload.download.response.DownloadedResponse;
 import top.sywyar.pixivdownload.download.response.PagedHistoryResponse;
+import top.sywyar.pixivdownload.series.MangaSeries;
+import top.sywyar.pixivdownload.series.MangaSeriesService;
 
 import java.util.*;
 
@@ -22,6 +24,7 @@ public class GalleryService {
     private final PixivDatabase pixivDatabase;
     private final DownloadService downloadService;
     private final AuthorService authorService;
+    private final MangaSeriesService mangaSeriesService;
 
     public PagedHistoryResponse query(GalleryQuery query) {
         GalleryRepository.QueryResult result = galleryRepository.findArtworkIds(query);
@@ -74,6 +77,20 @@ public class GalleryService {
         return toResponses(ids);
     }
 
+    public List<DownloadedResponse> bySeries(long artworkId, int limit) {
+        ArtworkRecord base = downloadService.getDownloadedRecord(artworkId);
+        if (base == null || base.seriesId() == null || base.seriesId() <= 0) {
+            return List.of();
+        }
+        int clamped = clampLimit(limit);
+        List<Long> ids = galleryRepository.findBySeries(base.seriesId(), artworkId, clamped);
+        return toResponses(ids);
+    }
+
+    public GalleryRepository.SeriesNeighbors seriesNeighbors(long artworkId) {
+        return galleryRepository.findSeriesNeighbors(artworkId);
+    }
+
     private int clampLimit(int limit) {
         if (limit <= 0) return 12;
         return Math.min(limit, 60);
@@ -103,6 +120,12 @@ public class GalleryService {
 
     private DownloadedResponse toDownloadedResponse(ArtworkRecord artwork, Map<Long, String> authorNames) {
         List<TagDto> tags = pixivDatabase.getArtworkTags(artwork.artworkId());
+        Long seriesId = artwork.seriesId();
+        String seriesTitle = null;
+        if (seriesId != null && seriesId > 0) {
+            MangaSeries series = mangaSeriesService.getSeries(seriesId);
+            seriesTitle = series == null ? null : series.title();
+        }
         return DownloadedResponse.builder()
                 .artworkId(artwork.artworkId())
                 .title(artwork.title())
@@ -121,6 +144,9 @@ public class GalleryService {
                 .fileName(artwork.fileName())
                 .fileNameTemplate(pixivDatabase.getFileNameTemplate(artwork.fileName() == null ? 1L : artwork.fileName()))
                 .tags(tags)
+                .seriesId(seriesId == null || seriesId <= 0 ? null : seriesId)
+                .seriesOrder(artwork.seriesOrder())
+                .seriesTitle(seriesTitle)
                 .build();
     }
 }

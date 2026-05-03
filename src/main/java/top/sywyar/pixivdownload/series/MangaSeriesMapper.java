@@ -1,0 +1,80 @@
+package top.sywyar.pixivdownload.series;
+
+import org.apache.ibatis.annotations.*;
+
+import java.util.Collection;
+import java.util.List;
+
+@Mapper
+public interface MangaSeriesMapper {
+
+    @Update("CREATE TABLE IF NOT EXISTS manga_series ("
+            + "series_id INTEGER PRIMARY KEY,"
+            + "title TEXT NOT NULL,"
+            + "author_id INTEGER,"
+            + "updated_time INTEGER NOT NULL)")
+    void createMangaSeriesTable();
+
+    @Insert("INSERT OR IGNORE INTO manga_series(series_id, title, author_id, updated_time)"
+            + " VALUES(#{id}, #{title}, #{authorId}, #{updatedTime})")
+    int insertIfAbsent(@Param("id") long id,
+                       @Param("title") String title,
+                       @Param("authorId") Long authorId,
+                       @Param("updatedTime") long updatedTime);
+
+    @Update("UPDATE manga_series SET title = #{title}, author_id = #{authorId},"
+            + " updated_time = #{updatedTime} WHERE series_id = #{id}")
+    int updateInfo(@Param("id") long id,
+                   @Param("title") String title,
+                   @Param("authorId") Long authorId,
+                   @Param("updatedTime") long updatedTime);
+
+    @Select("SELECT series_id, title, author_id, updated_time FROM manga_series WHERE series_id = #{id}")
+    MangaSeries findById(long id);
+
+    @Select("SELECT series_id, title, author_id, updated_time FROM manga_series ORDER BY LOWER(title), series_id")
+    List<MangaSeries> findAll();
+
+    @Select({
+            "<script>",
+            "SELECT series_id, title, author_id, updated_time FROM manga_series",
+            "WHERE series_id IN",
+            "<foreach item='id' collection='ids' open='(' separator=',' close=')'>",
+            "#{id}",
+            "</foreach>",
+            "</script>"
+    })
+    List<MangaSeries> findByIds(@Param("ids") Collection<Long> ids);
+
+    @Select("SELECT COUNT(*) FROM ("
+            + " SELECT a.series_id FROM artworks a"
+            + " LEFT JOIN manga_series ms ON ms.series_id = a.series_id"
+            + " LEFT JOIN authors au ON au.author_id = ms.author_id"
+            + " WHERE a.series_id IS NOT NULL AND a.series_id > 0"
+            + " AND (ms.title LIKE #{search} OR au.name LIKE #{search} OR CAST(a.series_id AS TEXT) LIKE #{search})"
+            + " GROUP BY a.series_id)")
+    long countSeriesWithArtworks(@Param("search") String search);
+
+    @Select("SELECT a.series_id AS seriesId,"
+            + " COALESCE(ms.title, CAST(a.series_id AS TEXT)) AS title,"
+            + " ms.author_id AS authorId,"
+            + " au.name AS authorName,"
+            + " COUNT(*) AS artworkCount"
+            + " FROM artworks a"
+            + " LEFT JOIN manga_series ms ON ms.series_id = a.series_id"
+            + " LEFT JOIN authors au ON au.author_id = ms.author_id"
+            + " WHERE a.series_id IS NOT NULL AND a.series_id > 0"
+            + " AND (ms.title LIKE #{search} OR au.name LIKE #{search} OR CAST(a.series_id AS TEXT) LIKE #{search})"
+            + " GROUP BY a.series_id, ms.title, ms.author_id, au.name"
+            + " ORDER BY"
+            + " CASE WHEN #{sort} = 'artworks' THEN -COUNT(*) END,"
+            + " CASE WHEN #{sort} = 'seriesId' THEN a.series_id END,"
+            + " CASE WHEN #{sort} NOT IN ('artworks','seriesId')"
+            + "      THEN LOWER(COALESCE(ms.title, CAST(a.series_id AS TEXT))) END,"
+            + " a.series_id"
+            + " LIMIT #{limit} OFFSET #{offset}")
+    List<MangaSeriesSummary> findSeriesWithArtworks(@Param("search") String search,
+                                                     @Param("sort") String sort,
+                                                     @Param("limit") int limit,
+                                                     @Param("offset") int offset);
+}

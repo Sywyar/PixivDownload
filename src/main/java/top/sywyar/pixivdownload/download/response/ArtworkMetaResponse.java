@@ -21,4 +21,7 @@ public class ArtworkMetaResponse {
     private final String authorName;
     private final String description;
     private final List<TagDto> tags;
+    private final Long seriesId;
+    private final Long seriesOrder;
+    private final String seriesTitle;
 }

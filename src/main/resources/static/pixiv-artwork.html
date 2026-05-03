@@ -273,6 +273,21 @@
             flex-wrap: wrap;
         }
 
+        .viewer-series-nav {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            width: 100%;
+            flex-wrap: wrap;
+        }
+
+        .viewer-series-nav .expand-btn {
+            max-width: 100%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
         .expand-btn {
             display: inline-flex;
             align-items: center;
@@ -508,6 +523,29 @@
 
         .by-author-title {
             margin-top: 22px;
+        }
+
+        .series-panel-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+
+        .series-panel-head .panel-title {
+            margin-bottom: 0;
+        }
+
+        .series-view-all {
+            font-size: 12px;
+            color: var(--muted);
+            white-space: nowrap;
+            transition: color 0.15s;
+        }
+
+        .series-view-all:hover {
+            color: var(--brand);
         }
 
         .thumb-strip {
@@ -1013,6 +1051,10 @@
                     </a>
                     <span class="meta-info" id="metaInfo"></span>
                 </div>
+                <div class="viewer-series-nav" id="seriesNav" style="display:none">
+                    <a class="expand-btn" id="seriesPrevBtn" href="#" style="display:none"></a>
+                    <a class="expand-btn" id="seriesNextBtn" href="#" style="display:none"></a>
+                </div>
             </div>
         </div>
 
@@ -1022,6 +1064,28 @@
             <div class="artwork-desc" id="artworkDesc"></div>
             <div class="panel-title" id="detailTagsTitle">标签</div>
             <div class="tags" id="tagList"></div>
+        </div>
+
+        <div class="panel" id="seriesPanel" style="display:none">
+            <div class="series-panel-head">
+                <div class="panel-title" id="seriesPanelTitle">本系列漫画</div>
+                <a class="series-view-all" id="seriesViewAllLink" href="/pixiv-gallery.html">查看全部</a>
+            </div>
+            <div class="by-author-wrap">
+                <button class="thumb-strip-arrow left" id="bySeriesPrev" type="button" title="上一组">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                         stroke-linejoin="round">
+                        <polyline points="15 18 9 12 15 6"/>
+                    </svg>
+                </button>
+                <div class="thumb-strip" id="bySeriesList"></div>
+                <button class="thumb-strip-arrow right" id="bySeriesNext" type="button" title="下一组">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                         stroke-linejoin="round">
+                        <polyline points="9 18 15 12 9 6"/>
+                    </svg>
+                </button>
+            </div>
         </div>
 
         <div class="panel" id="relatedPanel" style="display:none">
@@ -1137,6 +1201,8 @@
         document.getElementById('pixivArtworkLinkLabel').textContent = wt('button.pixiv-artwork', 'Open Original on Pixiv');
         document.getElementById('detailTagsTitle').textContent = wt('panel.tags', 'Tags');
         document.getElementById('relatedPanelTitle').textContent = wt('panel.related', 'Related Artworks');
+        document.getElementById('seriesPanelTitle').textContent = wt('panel.series', 'This Series');
+        document.getElementById('seriesViewAllLink').textContent = wt('series.view-all', 'View All');
         document.getElementById('authorPanelTitle').textContent = wt('panel.author', 'Author');
         document.getElementById('byAuthorTitle').textContent = wt('panel.by-author', 'More from This Author');
         document.getElementById('addToCollectionTitle').textContent = wt('panel.add-to-collection', 'Add to Collection');
@@ -1145,6 +1211,8 @@
         document.getElementById('addToCollectionDoneBtn').textContent = wt('button.done', 'Done');
         document.getElementById('byAuthorPrev').title = wt('button.prev-group', 'Previous');
         document.getElementById('byAuthorNext').title = wt('button.next-group', 'Next');
+        document.getElementById('bySeriesPrev').title = wt('button.prev-group', 'Previous');
+        document.getElementById('bySeriesNext').title = wt('button.next-group', 'Next');
         document.getElementById('pixivAuthorLinkLabel').textContent = wt('author.link', 'Pixiv Profile ↗');
         syncExpandButtonText();
     }
@@ -1160,6 +1228,7 @@
                 if (state.artwork) {
                     renderDetail();
                     renderAuthor();
+                    loadSeriesSections();
                     updateHeart();
                 }
             }
@@ -1226,6 +1295,7 @@
         collectionMembership: new Set(),
         lightboxIndex: 0,
         lightboxImages: [],
+        seriesNav: null,
     };
 
     function getQueryParam(name) {
@@ -1286,13 +1356,15 @@
         return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
     }
 
-    function buildGalleryFilterHref({tagId, tagName, tagTranslatedName, authorId, authorName} = {}) {
+    function buildGalleryFilterHref({tagId, tagName, tagTranslatedName, authorId, authorName, seriesId, seriesTitle} = {}) {
         const params = new URLSearchParams();
         if (tagId != null) params.set('filterTagId', String(tagId));
         if (tagName) params.set('filterTag', tagName);
         if (tagTranslatedName) params.set('filterTagTranslated', tagTranslatedName);
         if (authorId != null) params.set('filterAuthorId', String(authorId));
         if (authorName) params.set('filterAuthorName', authorName);
+        if (seriesId != null) params.set('filterSeriesId', String(seriesId));
+        if (seriesTitle) params.set('filterSeriesTitle', seriesTitle);
         params.set('openFilter', '1');
         return `/pixiv-gallery.html?${params.toString()}`;
     }
@@ -1357,6 +1429,7 @@
         renderViewer();
         renderDetail();
         renderAuthor();
+        loadSeriesSections();
         loadRelated();
         loadCollections();
         loadMembership();
@@ -1543,6 +1616,150 @@
         } catch (e) {
             // Ignore
         }
+    }
+
+    async function loadSeriesSections() {
+        const nav = await loadSeriesNav();
+        await loadBySeries(nav);
+    }
+
+    async function loadSeriesNav() {
+        resetSeriesNav();
+        state.seriesNav = null;
+        try {
+            const nav = await api(`/api/gallery/artwork/${state.artworkId}/series`);
+            if (!nav || !nav.seriesId) return null;
+            state.seriesNav = nav;
+            const seriesTitle = nav.seriesTitle || state.artwork.seriesTitle || wt('series.unknown-title', 'Untitled Series');
+            if (state.artwork) {
+                state.artwork.seriesId = nav.seriesId;
+                state.artwork.seriesTitle = seriesTitle;
+                state.artwork.seriesOrder = nav.currentOrder || state.artwork.seriesOrder;
+            }
+            renderSeriesNav(nav);
+            return nav;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    function resetSeriesNav() {
+        const navWrap = document.getElementById('seriesNav');
+        const prevBtn = document.getElementById('seriesPrevBtn');
+        const nextBtn = document.getElementById('seriesNextBtn');
+        navWrap.style.display = 'none';
+        prevBtn.style.display = 'none';
+        nextBtn.style.display = 'none';
+        prevBtn.removeAttribute('href');
+        nextBtn.removeAttribute('href');
+        prevBtn.textContent = '';
+        nextBtn.textContent = '';
+    }
+
+    function numericSeriesOrder(value) {
+        const n = Number(value);
+        return Number.isFinite(n) && n > 0 ? n : null;
+    }
+
+    function findSeriesNeighborFromItems(items, currentOrder, previous) {
+        if (!Array.isArray(items) || currentOrder == null) return null;
+        let best = null;
+        let bestOrder = null;
+        for (const item of items) {
+            if (!item || String(item.artworkId) === String(state.artworkId)) continue;
+            const order = numericSeriesOrder(item.seriesOrder);
+            if (order == null) continue;
+            if (previous) {
+                if (order >= currentOrder) continue;
+                if (bestOrder == null || order > bestOrder) {
+                    best = item;
+                    bestOrder = order;
+                }
+            } else {
+                if (order <= currentOrder) continue;
+                if (bestOrder == null || order < bestOrder) {
+                    best = item;
+                    bestOrder = order;
+                }
+            }
+        }
+        return best;
+    }
+
+    function renderSeriesNav(nav = null, seriesItems = []) {
+        const navWrap = document.getElementById('seriesNav');
+        const prevBtn = document.getElementById('seriesPrevBtn');
+        const nextBtn = document.getElementById('seriesNextBtn');
+        resetSeriesNav();
+
+        const currentOrder = numericSeriesOrder(nav && nav.currentOrder) || numericSeriesOrder(state.artwork && state.artwork.seriesOrder);
+        const prev = (nav && nav.prev) || findSeriesNeighborFromItems(seriesItems, currentOrder, true);
+        const next = (nav && nav.next) || findSeriesNeighborFromItems(seriesItems, currentOrder, false);
+        let visible = false;
+
+        if (prev) {
+            renderSeriesNavButton(prevBtn, 'series.prev', 'Previous #{order} {title}', prev);
+            visible = true;
+        }
+        if (next) {
+            renderSeriesNavButton(nextBtn, 'series.next', 'Next #{order} {title}', next);
+            visible = true;
+        }
+        navWrap.style.display = visible ? 'flex' : 'none';
+    }
+
+    function renderSeriesNavButton(button, key, fallback, item) {
+        button.href = `/pixiv-artwork.html?id=${item.artworkId}`;
+        button.textContent = wt(key, fallback, {
+            order: item.seriesOrder || '',
+            title: item.title || wt('status.unknown-artwork', 'Artwork {id}', {id: item.artworkId})
+        });
+        button.style.display = 'inline-flex';
+    }
+
+    async function loadBySeries(nav) {
+        const panel = document.getElementById('seriesPanel');
+        const list = document.getElementById('bySeriesList');
+        const prevBtn = document.getElementById('bySeriesPrev');
+        const nextBtn = document.getElementById('bySeriesNext');
+        panel.style.display = 'none';
+        list.innerHTML = '';
+        try {
+            const seriesId = (nav && nav.seriesId) || state.artwork.seriesId;
+            if (!seriesId) return;
+            const items = await api(`/api/gallery/artwork/${state.artworkId}/by-series?limit=30`);
+            if (!items.length) return;
+            const seriesTitle = (nav && nav.seriesTitle) || state.artwork.seriesTitle || wt('series.unknown-title', 'Untitled Series');
+            document.getElementById('seriesPanelTitle').textContent =
+                wt('panel.series-with-title', 'This Series · {title}', {title: seriesTitle});
+            document.getElementById('seriesViewAllLink').href = buildGalleryFilterHref({seriesId, seriesTitle});
+            document.getElementById('seriesViewAllLink').textContent = wt('series.view-all', 'View All');
+            renderSeriesNav(nav, items);
+            list.innerHTML = items.map(item => `
+                <a class="thumb-item" href="/pixiv-artwork.html?id=${item.artworkId}">
+                    <div class="thumb-box" data-src="/api/downloaded/thumbnail/${item.artworkId}/0"></div>
+                    <div class="thumb-caption">${escapeHtml(item.seriesOrder ? '#' + item.seriesOrder + ' ' : '')}${escapeHtml(item.title || '')}</div>
+                </a>
+            `).join('');
+            list.querySelectorAll('.thumb-box[data-src]').forEach(box => lazyLoadBox(box));
+            bindThumbStripArrows(list, prevBtn, nextBtn);
+            panel.style.display = '';
+        } catch (e) {
+            panel.style.display = 'none';
+        }
+    }
+
+    function bindThumbStripArrows(list, prevBtn, nextBtn) {
+        const updateArrows = () => {
+            const atStart = list.scrollLeft <= 1;
+            const atEnd = list.scrollLeft + list.clientWidth >= list.scrollWidth - 1;
+            prevBtn.disabled = atStart;
+            nextBtn.disabled = atEnd || list.scrollWidth <= list.clientWidth;
+        };
+        prevBtn.onclick = () => list.scrollBy({left: -list.clientWidth * 0.8, behavior: 'smooth'});
+        nextBtn.onclick = () => list.scrollBy({left: list.clientWidth * 0.8, behavior: 'smooth'});
+        list.addEventListener('scroll', updateArrows);
+        requestAnimationFrame(updateArrows);
     }
 
     async function loadRelated() {

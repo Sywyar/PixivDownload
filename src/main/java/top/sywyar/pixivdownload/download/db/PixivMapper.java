@@ -8,7 +8,8 @@ import java.util.List;
 public interface PixivMapper {
 
     String SELECT_ARTWORK = "SELECT artwork_id, title, folder, count, extensions, time, moved,"
-            + " move_folder, move_time, \"R18\" AS x_restrict, is_ai, author_id, description, file_name, file_author_name_id FROM artworks";
+            + " move_folder, move_time, \"R18\" AS x_restrict, is_ai, author_id, description, file_name, file_author_name_id,"
+            + " series_id, series_order FROM artworks";
 
     // ── DDL ────────────────────────────────────────────────────────────────────
 
@@ -25,6 +26,8 @@ public interface PixivMapper {
             + "description TEXT DEFAULT NULL,"
             + "file_name INTEGER NOT NULL DEFAULT 1,"
             + "file_author_name_id INTEGER,"
+            + "series_id INTEGER DEFAULT NULL,"
+            + "series_order INTEGER DEFAULT NULL,"
             + "moved INTEGER DEFAULT 0,"
             + "move_folder TEXT,"
             + "move_time INTEGER)")
@@ -88,6 +91,12 @@ public interface PixivMapper {
     @Update("ALTER TABLE artworks ADD COLUMN file_author_name_id INTEGER")
     void addFileAuthorNameIdColumn();
 
+    @Update("ALTER TABLE artworks ADD COLUMN series_id INTEGER DEFAULT NULL")
+    void addSeriesIdColumn();
+
+    @Update("ALTER TABLE artworks ADD COLUMN series_order INTEGER DEFAULT NULL")
+    void addSeriesOrderColumn();
+
     @Insert("INSERT OR IGNORE INTO file_name_templates(template) VALUES(#{template})")
     void insertFileNameTemplateIfAbsent(@Param("template") String template);
 
@@ -114,8 +123,10 @@ public interface PixivMapper {
     ArtworkRecord findById(long artworkId);
 
     @Insert("INSERT OR IGNORE INTO artworks"
-            + " (artwork_id, title, folder, count, extensions, time, \"R18\", is_ai, author_id, description, file_name, file_author_name_id)"
-            + " VALUES (#{artworkId}, #{title}, #{folder}, #{count}, #{extensions}, #{time}, #{xRestrict}, #{isAi}, #{authorId}, #{description}, #{fileName}, #{fileAuthorNameId})")
+            + " (artwork_id, title, folder, count, extensions, time, \"R18\", is_ai, author_id, description, file_name, file_author_name_id,"
+            + " series_id, series_order)"
+            + " VALUES (#{artworkId}, #{title}, #{folder}, #{count}, #{extensions}, #{time}, #{xRestrict}, #{isAi}, #{authorId}, #{description},"
+            + " #{fileName}, #{fileAuthorNameId}, #{seriesId}, #{seriesOrder})")
     void insertOrIgnore(@Param("artworkId") long artworkId,
                         @Param("title") String title,
                         @Param("folder") String folder,
@@ -127,7 +138,9 @@ public interface PixivMapper {
                         @Param("authorId") Long authorId,
                         @Param("description") String description,
                         @Param("fileName") long fileName,
-                        @Param("fileAuthorNameId") Long fileAuthorNameId);
+                        @Param("fileAuthorNameId") Long fileAuthorNameId,
+                        @Param("seriesId") Long seriesId,
+                        @Param("seriesOrder") Long seriesOrder);
 
     @Select(SELECT_ARTWORK + " WHERE RTRIM(RTRIM(move_folder, '/'), '\\') = #{moveFolder}")
     ArtworkRecord findByNormalizedMoveFolder(String moveFolder);
@@ -172,6 +185,15 @@ public interface PixivMapper {
 
     @Select("SELECT artwork_id FROM artworks WHERE author_id IS NULL")
     List<Long> findIdsMissingAuthor();
+
+    @Update("UPDATE artworks SET series_id = #{seriesId}, series_order = #{seriesOrder}"
+            + " WHERE artwork_id = #{artworkId}")
+    void updateSeriesInfo(@Param("artworkId") long artworkId,
+                          @Param("seriesId") Long seriesId,
+                          @Param("seriesOrder") Long seriesOrder);
+
+    @Select("SELECT artwork_id FROM artworks WHERE series_id IS NULL")
+    List<Long> findIdsMissingSeries();
 
     // ── Tags ────────────────────────────────────────────────────────────────────
 

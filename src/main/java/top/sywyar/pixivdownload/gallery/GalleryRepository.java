@@ -71,6 +71,7 @@ public class GalleryRepository {
         }
 
         appendTagAuthorFilterClauses(where, params, q);
+        appendSeriesFilterClauses(where, params, q);
         appendGuestRestrictionClauses(where, params, q.getGuestRestriction());
 
         String countSql = "SELECT COUNT(*) FROM artworks a"
@@ -112,6 +113,74 @@ public class GalleryRepository {
     }
 
     /**
+     * 同系列其他作品 ID，按 series_order 升序，排除自身。
+     */
+    public List<Long> findBySeries(long seriesId, long excludeArtworkId, int limit) {
+        String sql = "SELECT artwork_id FROM artworks"
+                + " WHERE series_id = :seriesId AND series_id > 0 AND artwork_id <> :excludeId"
+                + " ORDER BY COALESCE(series_order, 0) ASC, artwork_id ASC LIMIT :limit";
+        MapSqlParameterSource params = new MapSqlParameterSource()
+                .addValue("seriesId", seriesId)
+                .addValue("excludeId", excludeArtworkId)
+                .addValue("limit", limit);
+        return jdbc.query(sql, params, (rs, rowNum) -> rs.getLong("artwork_id"));
+    }
+
+    /**
+     * 在同系列已下载作品中，按 series_order 数值找最近的上一章和下一章（不要求严格相邻）。
+     * 上一章 = series_order < 当前的最大值；下一章 = series_order > 当前的最小值。
+     */
+    public SeriesNeighbors findSeriesNeighbors(long artworkId) {
+        String sql = "SELECT a.series_id AS series_id, a.series_order AS series_order,"
+                + " ms.title AS series_title"
+                + " FROM artworks a"
+                + " LEFT JOIN manga_series ms ON ms.series_id = a.series_id"
+                + " WHERE a.artwork_id = :id";
+        MapSqlParameterSource params = new MapSqlParameterSource().addValue("id", artworkId);
+        List<SeriesContext> ctx = jdbc.query(sql, params, (rs, rowNum) -> {
+            long sid = rs.getLong("series_id");
+            boolean sidNull = rs.wasNull();
+            long ord = rs.getLong("series_order");
+            boolean ordNull = rs.wasNull();
+            return new SeriesContext(
+                    sidNull ? null : sid,
+                    ordNull ? null : ord,
+                    rs.getString("series_title"));
+        });
+        if (ctx.isEmpty()) return null;
+        SeriesContext c = ctx.get(0);
+        if (c.seriesId == null || c.seriesId <= 0 || c.seriesOrder == null) {
+            return null;
+        }
+        Neighbor prev = findNeighbor(c.seriesId, c.seriesOrder, true);
+        Neighbor next = findNeighbor(c.seriesId, c.seriesOrder, false);
+        return new SeriesNeighbors(c.seriesId, c.seriesTitle, c.seriesOrder, prev, next);
+    }
+
+    private Neighbor findNeighbor(long seriesId, long currentOrder, boolean prev) {
+        String op = prev ? "<" : ">";
+        String dir = prev ? "DESC" : "ASC";
+        String sql = "SELECT artwork_id, title, COALESCE(series_order, 0) AS series_order FROM artworks"
+                + " WHERE series_id = :seriesId AND series_id > 0 AND series_order " + op + " :order"
+                + " ORDER BY series_order " + dir + " LIMIT 1";
+        MapSqlParameterSource params = new MapSqlParameterSource()
+                .addValue("seriesId", seriesId)
+                .addValue("order", currentOrder);
+        List<Neighbor> rows = jdbc.query(sql, params, (rs, rowNum) -> new Neighbor(
+                rs.getLong("artwork_id"),
+                rs.getString("title"),
+                rs.getLong("series_order")));
+        return rows.isEmpty() ? null : rows.get(0);
+    }
+
+    private record SeriesContext(Long seriesId, Long seriesOrder, String seriesTitle) {}
+
+    public record Neighbor(long artworkId, String title, long seriesOrder) {}
+
+    public record SeriesNeighbors(long seriesId, String seriesTitle, long currentOrder,
+                                  Neighbor prev, Neighbor next) {}
+
+    /**
      * 相关作品：与给定作品共享至少一个 tag，按共享 tag 数量降序、时间倒序。
      */
     public List<Long> findRelatedByTags(long artworkId, int limit) {
@@ -137,6 +206,7 @@ public class GalleryRepository {
             case "authorId" -> "COALESCE(a.author_id, 9223372036854775807) " + dir + ", a.time DESC";
             case "tags" -> "(SELECT COUNT(*) FROM artwork_tags WHERE artwork_id = a.artwork_id) " + dir
                     + ", a.time DESC";
+            case "series" -> "COALESCE(a.series_id, 0) " + dir + ", COALESCE(a.series_order, 0) ASC, a.time DESC";
             default -> "a.time " + dir;
         };
     }
@@ -245,6 +315,19 @@ public class GalleryRepository {
         params.addValue("excludedTagIds", excludedTagIds);
     }
 
+    private void appendSeriesFilterClauses(StringBuilder where, MapSqlParameterSource params, GalleryQuery q) {
+        List<Long> seriesIds = q.getSeriesIds();
+        if (seriesIds != null && !seriesIds.isEmpty()) {
+            where.append(" AND a.series_id IN (:seriesIds)");
+            params.addValue("seriesIds", seriesIds);
+        }
+        List<Long> excludedSeriesIds = q.getExcludedSeriesIds();
+        if (excludedSeriesIds != null && !excludedSeriesIds.isEmpty()) {
+            where.append(" AND (a.series_id IS NULL OR a.series_id NOT IN (:excludedSeriesIds))");
+            params.addValue("excludedSeriesIds", excludedSeriesIds);
+        }
+    }
+
     public record QueryResult(List<Long> ids, long totalElements) {}
 
     /**
@@ -348,6 +431,18 @@ public class GalleryRepository {
                         + " WHERE a.author_id IS NOT NULL");
         MapSqlParameterSource params = new MapSqlParameterSource();
         appendVisibilityClauses(sql, params, r, "Author");
+        List<Long> ids = jdbc.query(sql.toString(), params, (rs, rowNum) -> rs.getLong(1));
+        return new LinkedHashSet<>(ids);
+    }
+
+    /** 该访客可见的系列 ID 集合（仅统计有可见作品的系列）。 */
+    public Set<Long> findVisibleSeriesIds(GuestRestriction r) {
+        if (r == null) return Collections.emptySet();
+        StringBuilder sql = new StringBuilder(
+                "SELECT DISTINCT a.series_id FROM artworks a"
+                        + " WHERE a.series_id IS NOT NULL AND a.series_id > 0");
+        MapSqlParameterSource params = new MapSqlParameterSource();
+        appendVisibilityClauses(sql, params, r, "Series");
         List<Long> ids = jdbc.query(sql.toString(), params, (rs, rowNum) -> rs.getLong(1));
         return new LinkedHashSet<>(ids);
     }

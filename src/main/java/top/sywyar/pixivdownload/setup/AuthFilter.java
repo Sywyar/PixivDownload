@@ -59,6 +59,7 @@ public class AuthFilter extends OncePerRequestFilter {
             "/api/downloaded/rawfile/",
             "/api/downloaded/image/",
             "/api/authors",
+            "/api/series",
             "/api/gallery/",
             "/api/collections",
             "/api/admin/"
@@ -82,6 +83,7 @@ public class AuthFilter extends OncePerRequestFilter {
             "/api/downloaded/image/",
             "/api/download/status/",
             "/api/authors",
+            "/api/series",
             "/api/gallery/",
             "/api/collections",
             "/api/pixiv/artwork/"

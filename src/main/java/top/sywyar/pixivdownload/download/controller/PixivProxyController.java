@@ -182,6 +182,18 @@ public class PixivProxyController {
                     .body(new ErrorResponse(root.path("message").asText()));
         }
         JsonNode b = root.path("body");
+        JsonNode nav = b.path("seriesNavData");
+        Long seriesId = null;
+        Long seriesOrder = null;
+        String seriesTitle = null;
+        if (nav.isObject()) {
+            long sid = nav.path("seriesId").asLong(0);
+            if (sid > 0) {
+                seriesId = sid;
+                seriesOrder = nav.path("order").asLong(0);
+                seriesTitle = nav.path("title").asText("");
+            }
+        }
         return ResponseEntity.ok(new ArtworkMetaResponse(
                 b.path("illustType").asInt(0),
                 b.path("illustTitle").asText(""),
@@ -191,7 +203,10 @@ public class PixivProxyController {
                 parsePositiveLong(b.path("userId").asText(null)),
                 b.path("userName").asText(""),
                 b.path("description").asText(""),
-                extractTags(b)
+                extractTags(b),
+                seriesId,
+                seriesOrder,
+                seriesTitle
         ));
     }
 
@@ -431,6 +446,116 @@ public class PixivProxyController {
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(new ErrorResponse(e.getMessage()));
         }
+    }
+
+    @GetMapping("/series/{seriesId}")
+    public ResponseEntity<?> getSeries(
+            @PathVariable String seriesId,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestHeader(value = "X-Pixiv-Cookie", required = false) String cookie,
+            HttpServletRequest request) throws IOException {
+        ResponseEntity<?> deny = checkMultiModeAccess(request);
+        if (deny != null) return deny;
+        long parsedId;
+        try {
+            parsedId = Long.parseLong(seriesId);
+        } catch (NumberFormatException e) {
+            return ResponseEntity.badRequest().body(new ErrorResponse(messages.get("pixiv.proxy.series.id.invalid", seriesId)));
+        }
+        int safePage = Math.max(1, page);
+        URI seriesUri = UriComponentsBuilder
+                .fromUriString("https://www.pixiv.net/ajax/series/{seriesId}")
+                .queryParam("p", safePage)
+                .queryParam("lang", "zh")
+                .buildAndExpand(Map.of("seriesId", parsedId))
+                .encode()
+                .toUri();
+        String body = proxyGetUri(seriesUri, cookie);
+        JsonNode root = objectMapper.readTree(body);
+        if (root.path("error").asBoolean(false)) {
+            return ResponseEntity.badRequest().body(new ErrorResponse(root.path("message").asText()));
+        }
+        JsonNode b = root.path("body");
+        // illustSeries[0] holds the series record
+        JsonNode seriesArr = b.path("illustSeries");
+        long sid = parsedId;
+        String title = "";
+        Long authorId = null;
+        String authorName = "";
+        int total = 0;
+        if (seriesArr.isArray() && !seriesArr.isEmpty()) {
+            JsonNode s = seriesArr.get(0);
+            sid = parsePositiveOrDefault(s.path("id").asText(null), parsedId);
+            title = s.path("title").asText("");
+            authorId = parsePositiveLong(s.path("userId").asText(null));
+            total = s.path("total").asInt(0);
+        }
+        // Author name from users object
+        JsonNode usersArr = b.path("users");
+        if (authorId != null && usersArr.isArray()) {
+            for (JsonNode u : usersArr) {
+                if (u.path("userId").asText("").equals(String.valueOf(authorId))) {
+                    authorName = u.path("name").asText("");
+                    break;
+                }
+            }
+        }
+        // Items: thumbnails.illust[]
+        JsonNode thumbsIllust = b.path("thumbnails").path("illust");
+        // Order map: page[].works[] gives series_order via {id, order}
+        Map<String, Integer> orderMap = new LinkedHashMap<>();
+        JsonNode pageArr = b.path("page").path("series");
+        if (pageArr.isArray()) {
+            for (JsonNode entry : pageArr) {
+                String id = entry.path("workId").asText("");
+                int order = entry.path("order").asInt(0);
+                if (!id.isEmpty()) orderMap.put(id, order);
+            }
+        }
+        List<SeriesResponse.SeriesItem> items = new ArrayList<>();
+        if (thumbsIllust.isArray()) {
+            int fallbackOrder = (safePage - 1) * 12;
+            for (JsonNode t : thumbsIllust) {
+                String id = t.path("id").asText("");
+                if (id.isEmpty()) continue;
+                int seriesOrder = orderMap.getOrDefault(id, ++fallbackOrder);
+                items.add(new SeriesResponse.SeriesItem(
+                        id,
+                        t.path("title").asText(""),
+                        t.path("illustType").asInt(0),
+                        t.path("xRestrict").asInt(0),
+                        t.path("aiType").asInt(0),
+                        t.path("url").asText(""),
+                        t.path("pageCount").asInt(1),
+                        t.path("userId").asText(""),
+                        t.path("userName").asText(""),
+                        seriesOrder
+                ));
+            }
+            // Filter to only series members and sort by series order ascending
+            List<SeriesResponse.SeriesItem> filtered = new ArrayList<>();
+            for (SeriesResponse.SeriesItem item : items) {
+                if (orderMap.containsKey(item.getId())) filtered.add(item);
+            }
+            if (!filtered.isEmpty()) {
+                filtered.sort((a, c) -> Integer.compare(
+                        a.getSeriesOrder(),
+                        c.getSeriesOrder()));
+                items = filtered;
+            }
+        }
+        boolean isLastPage = items.size() < 12 || (total > 0 && safePage * 12 >= total);
+        return ResponseEntity.ok(new SeriesResponse(
+                new SeriesResponse.SeriesMeta(sid, title, authorId, authorName, total),
+                items,
+                safePage,
+                isLastPage
+        ));
+    }
+
+    private static long parsePositiveOrDefault(String value, long fallback) {
+        Long parsed = parsePositiveLong(value);
+        return parsed == null ? fallback : parsed;
     }
 
     @GetMapping("/thumbnail-proxy")

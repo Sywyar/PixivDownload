@@ -25,6 +25,7 @@ import top.sywyar.pixivdownload.i18n.AppMessages;
 import top.sywyar.pixivdownload.i18n.LocalizedException;
 import top.sywyar.pixivdownload.i18n.TestI18nBeans;
 import top.sywyar.pixivdownload.quota.UserQuotaService;
+import top.sywyar.pixivdownload.series.MangaSeriesService;
 
 import java.io.File;
 import java.nio.file.Files;
@@ -64,6 +65,8 @@ class DownloadServiceTest {
     private AuthorService authorService;
     @Mock
     private CollectionService collectionService;
+    @Mock
+    private MangaSeriesService mangaSeriesService;
 
     private DownloadService downloadService;
 
@@ -71,7 +74,8 @@ class DownloadServiceTest {
     void setUp() {
         LocaleContextHolder.setLocale(Locale.SIMPLIFIED_CHINESE);
         downloadService = new DownloadService(downloadConfig, eventPublisher, pixivDatabase, userQuotaService,
-                downloadRestTemplate, taskScheduler, pixivBookmarkService, ugoiraService, authorService, collectionService, APP_MESSAGES);
+                downloadRestTemplate, taskScheduler, pixivBookmarkService, ugoiraService, authorService,
+                collectionService, mangaSeriesService, APP_MESSAGES);
     }
 
     // ========== validatePixivUrl (SSRF 防护) ==========
@@ -404,7 +408,7 @@ class DownloadServiceTest {
                     "https://www.pixiv.net/", other, null, null);
 
             verify(pixivDatabase).insertArtwork(12345L, "test", tempDir.resolve("12345").toAbsolutePath().toString(),
-                    1, "webp", 1700000100L, 0, false, 999L, null, 1L, null);
+                    1, "webp", 1700000100L, 0, false, 999L, null, 1L, null, null, null);
         }
     }
 
@@ -445,7 +449,7 @@ class DownloadServiceTest {
             verify(pixivDatabase).insertArtwork(eq(12345L), eq("title"),
                     eq(expected.toAbsolutePath().toString()),
                     eq(1), eq("webp"), eq(1700000100L), eq(1), eq(false),
-                    isNull(), isNull(), eq(1L), isNull());
+                    isNull(), isNull(), eq(1L), isNull(), isNull(), isNull());
         }
 
         @Test
@@ -460,7 +464,7 @@ class DownloadServiceTest {
             verify(pixivDatabase).insertArtwork(eq(22345L), eq("title"),
                     eq(expected.toAbsolutePath().toString()),
                     eq(1), eq("webp"), eq(1700000100L), eq(2), eq(false),
-                    isNull(), isNull(), eq(1L), isNull());
+                    isNull(), isNull(), eq(1L), isNull(), isNull(), isNull());
         }
 
         @Test
@@ -475,7 +479,7 @@ class DownloadServiceTest {
             verify(pixivDatabase).insertArtwork(eq(32345L), eq("title"),
                     eq(expected.toAbsolutePath().toString()),
                     eq(1), eq("webp"), eq(1700000100L), eq(0), eq(false),
-                    isNull(), isNull(), eq(1L), isNull());
+                    isNull(), isNull(), eq(1L), isNull(), isNull(), isNull());
         }
 
         @Test
@@ -491,7 +495,7 @@ class DownloadServiceTest {
             verify(pixivDatabase).insertArtwork(eq(42345L), eq("title"),
                     eq(expected.toAbsolutePath().toString()),
                     eq(1), eq("webp"), eq(1700000100L), eq(2), eq(false),
-                    isNull(), isNull(), eq(1L), isNull());
+                    isNull(), isNull(), eq(1L), isNull(), isNull(), isNull());
         }
     }
 
@@ -532,7 +536,7 @@ class DownloadServiceTest {
                     any()
             );
             verify(pixivDatabase).insertArtwork(12345L, "test", expectedPath.toAbsolutePath().toString(),
-                    1, "webp", 1700000100L, 0, false, null, null, 1L, null);
+                    1, "webp", 1700000100L, 0, false, null, null, 1L, null, null, null);
             verify(collectionService).addArtwork(7L, 12345L);
         }
     }

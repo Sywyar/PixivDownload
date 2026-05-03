@@ -49,5 +49,8 @@ public class DownloadRequest {
         private String fileNameTemplate;
         private List<String> fileNames;
         private Long fileNameTimestamp;
+        private Long seriesId;
+        private Long seriesOrder;
+        private String seriesTitle;
     }
 }

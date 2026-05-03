@@ -368,8 +368,11 @@ public class GuiLauncher {
 
     private static boolean isSupportedStartupAutoBackfillDifference(
             DatabaseSchemaInspector.SchemaDifference difference) {
-        return difference.hasColumn()
-                && ArtworksBackFill.supportsDatabaseColumn(difference.tableName(), difference.columnName());
+        if (difference.hasColumn()) {
+            return ArtworksBackFill.supportsDatabaseColumn(difference.tableName(), difference.columnName());
+        }
+        return difference.kind() == DatabaseSchemaInspector.SchemaDifferenceKind.MISSING_TABLE
+                && ArtworksBackFill.supportsDatabaseTable(difference.tableName());
     }
 
     private static void showStartupBackfillResult(Component owner,

@@ -20,7 +20,7 @@ public class GalleryQuery {
 
     /** 合法排序维度。 */
     public static final Set<String> ALLOWED_SORTS = Set.of(
-            "date", "artworkId", "imgs", "status", "authorId", "tags");
+            "date", "artworkId", "imgs", "status", "authorId", "tags", "series");
 
     /** 合法三态筛选值（用于 AI 筛选）。 */
     public static final Set<String> ALLOWED_TRISTATE = Set.of("any", "yes", "no");
@@ -51,6 +51,10 @@ public class GalleryQuery {
     private List<Long> excludedAuthorIds;
     /** 可选命中的作者 ID（OR 语义，参与“必须标签 OR 可选作者”子句）。 */
     private List<Long> optionalAuthorIds;
+    /** 必须命中的系列 ID（列表内 OR 语义）。 */
+    private List<Long> seriesIds;
+    /** 不能命中的系列 ID。 */
+    private List<Long> excludedSeriesIds;
     /** 访客邀请会话施加的额外限制（年龄分级 + 标签/作者 OR 白名单）；管理员/普通访问为 {@code null}。 */
     private GuestRestriction guestRestriction;
 
@@ -59,7 +63,8 @@ public class GalleryQuery {
                                          List<String> formats, List<Long> collectionIds,
                                          List<Long> tagIds, List<Long> excludedTagIds,
                                          List<Long> optionalTagIds, List<Long> authorIds,
-                                         List<Long> excludedAuthorIds, List<Long> optionalAuthorIds) {
+                                         List<Long> excludedAuthorIds, List<Long> optionalAuthorIds,
+                                         List<Long> seriesIds, List<Long> excludedSeriesIds) {
         return GalleryQuery.builder()
                 .page(Math.max(0, page == null ? 0 : page))
                 .size(clamp(size == null ? 24 : size, 1, 200))
@@ -76,7 +81,20 @@ public class GalleryQuery {
                 .authorIds(normalizeIdList(authorIds))
                 .excludedAuthorIds(normalizeIdList(excludedAuthorIds))
                 .optionalAuthorIds(normalizeIdList(optionalAuthorIds))
+                .seriesIds(normalizeIdList(seriesIds))
+                .excludedSeriesIds(normalizeIdList(excludedSeriesIds))
                 .build();
+    }
+
+    public static GalleryQuery normalize(Integer page, Integer size, String sort, String order,
+                                         String search, String r18, String ai,
+                                         List<String> formats, List<Long> collectionIds,
+                                         List<Long> tagIds, List<Long> excludedTagIds,
+                                         List<Long> optionalTagIds, List<Long> authorIds,
+                                         List<Long> excludedAuthorIds, List<Long> optionalAuthorIds) {
+        return normalize(page, size, sort, order, search, r18, ai, formats, collectionIds,
+                tagIds, excludedTagIds, optionalTagIds, authorIds, excludedAuthorIds, optionalAuthorIds,
+                null, null);
     }
 
     private static List<Long> normalizeIdList(List<Long> ids) {

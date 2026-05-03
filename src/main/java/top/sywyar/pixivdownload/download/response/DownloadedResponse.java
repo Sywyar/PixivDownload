@@ -31,4 +31,7 @@ public class DownloadedResponse {
     private final Long fileName;
     private final String fileNameTemplate;
     private final List<TagDto> tags;
+    private final Long seriesId;
+    private final Long seriesOrder;
+    private final String seriesTitle;
 }
