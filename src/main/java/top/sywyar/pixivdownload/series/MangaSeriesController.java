@@ -2,7 +2,9 @@ package top.sywyar.pixivdownload.series;
 
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -37,6 +39,18 @@ public class MangaSeriesController {
             HttpServletRequest httpRequest) {
         Set<Long> filter = resolveGuestFilter(httpRequest);
         return mangaSeriesService.getPagedSeriesWithArtworks(page, size, search, sort, filter);
+    }
+
+    @GetMapping("/{seriesId}")
+    public ResponseEntity<MangaSeriesDetail> getSeriesDetail(
+            @PathVariable long seriesId,
+            HttpServletRequest httpRequest) {
+        Set<Long> filter = resolveGuestFilter(httpRequest);
+        if (filter != null && !filter.contains(seriesId)) {
+            return ResponseEntity.notFound().build();
+        }
+        MangaSeriesDetail detail = mangaSeriesService.getSeriesDetail(seriesId);
+        return detail == null ? ResponseEntity.notFound().build() : ResponseEntity.ok(detail);
     }
 
     private Set<Long> resolveGuestFilter(HttpServletRequest httpRequest) {

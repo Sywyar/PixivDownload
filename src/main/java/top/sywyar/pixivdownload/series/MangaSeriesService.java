@@ -108,6 +108,11 @@ public class MangaSeriesService {
         return mangaSeriesMapper.findById(seriesId);
     }
 
+    public MangaSeriesDetail getSeriesDetail(long seriesId) {
+        if (seriesId <= 0) return null;
+        return mangaSeriesMapper.findSeriesDetailById(seriesId);
+    }
+
     public void observe(long seriesId, String title, Long authorId) {
         if (seriesId <= 0) return;
         MangaSeries existing = mangaSeriesMapper.findById(seriesId);

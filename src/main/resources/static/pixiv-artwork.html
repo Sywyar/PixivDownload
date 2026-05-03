@@ -1053,6 +1053,7 @@
                 </div>
                 <div class="viewer-series-nav" id="seriesNav" style="display:none">
                     <a class="expand-btn" id="seriesPrevBtn" href="#" style="display:none"></a>
+                    <a class="expand-btn" id="seriesIndexBtn" href="#" style="display:none"></a>
                     <a class="expand-btn" id="seriesNextBtn" href="#" style="display:none"></a>
                 </div>
             </div>
@@ -1202,6 +1203,7 @@
         document.getElementById('detailTagsTitle').textContent = wt('panel.tags', 'Tags');
         document.getElementById('relatedPanelTitle').textContent = wt('panel.related', 'Related Artworks');
         document.getElementById('seriesPanelTitle').textContent = wt('panel.series', 'This Series');
+        document.getElementById('seriesIndexBtn').textContent = wt('series.index', 'Directory');
         document.getElementById('seriesViewAllLink').textContent = wt('series.view-all', 'View All');
         document.getElementById('authorPanelTitle').textContent = wt('panel.author', 'Author');
         document.getElementById('byAuthorTitle').textContent = wt('panel.by-author', 'More from This Author');
@@ -1367,6 +1369,15 @@
         if (seriesTitle) params.set('filterSeriesTitle', seriesTitle);
         params.set('openFilter', '1');
         return `/pixiv-gallery.html?${params.toString()}`;
+    }
+
+    function buildSeriesDirectoryHref(seriesId, currentId, currentOrder) {
+        const params = new URLSearchParams();
+        params.set('seriesId', String(seriesId));
+        if (currentId != null) params.set('currentId', String(currentId));
+        const order = numericSeriesOrder(currentOrder);
+        if (order != null) params.set('order', String(order));
+        return `/pixiv-series.html?${params.toString()}`;
     }
 
     function buildPixivArtworkHref(artworkId) {
@@ -1646,13 +1657,17 @@
     function resetSeriesNav() {
         const navWrap = document.getElementById('seriesNav');
         const prevBtn = document.getElementById('seriesPrevBtn');
+        const indexBtn = document.getElementById('seriesIndexBtn');
         const nextBtn = document.getElementById('seriesNextBtn');
         navWrap.style.display = 'none';
         prevBtn.style.display = 'none';
+        indexBtn.style.display = 'none';
         nextBtn.style.display = 'none';
         prevBtn.removeAttribute('href');
+        indexBtn.removeAttribute('href');
         nextBtn.removeAttribute('href');
         prevBtn.textContent = '';
+        indexBtn.textContent = '';
         nextBtn.textContent = '';
     }
 
@@ -1689,16 +1704,24 @@
     function renderSeriesNav(nav = null, seriesItems = []) {
         const navWrap = document.getElementById('seriesNav');
         const prevBtn = document.getElementById('seriesPrevBtn');
+        const indexBtn = document.getElementById('seriesIndexBtn');
         const nextBtn = document.getElementById('seriesNextBtn');
         resetSeriesNav();
 
         const currentOrder = numericSeriesOrder(nav && nav.currentOrder) || numericSeriesOrder(state.artwork && state.artwork.seriesOrder);
         const prev = (nav && nav.prev) || findSeriesNeighborFromItems(seriesItems, currentOrder, true);
         const next = (nav && nav.next) || findSeriesNeighborFromItems(seriesItems, currentOrder, false);
+        const seriesId = (nav && nav.seriesId) || (state.artwork && state.artwork.seriesId);
         let visible = false;
 
         if (prev) {
             renderSeriesNavButton(prevBtn, 'series.prev', 'Previous #{order} {title}', prev);
+            visible = true;
+        }
+        if (seriesId) {
+            indexBtn.href = buildSeriesDirectoryHref(seriesId, state.artworkId, currentOrder);
+            indexBtn.textContent = wt('series.index', 'Directory');
+            indexBtn.style.display = 'inline-flex';
             visible = true;
         }
         if (next) {

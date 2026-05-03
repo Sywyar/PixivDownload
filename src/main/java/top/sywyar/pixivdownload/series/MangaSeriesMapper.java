@@ -77,4 +77,17 @@ public interface MangaSeriesMapper {
                                                      @Param("sort") String sort,
                                                      @Param("limit") int limit,
                                                      @Param("offset") int offset);
+
+    @Select("SELECT a.series_id AS seriesId,"
+            + " COALESCE(ms.title, CAST(a.series_id AS TEXT)) AS title,"
+            + " ms.author_id AS authorId,"
+            + " au.name AS authorName,"
+            + " COUNT(*) AS artworkCount,"
+            + " ms.updated_time AS updatedTime"
+            + " FROM artworks a"
+            + " LEFT JOIN manga_series ms ON ms.series_id = a.series_id"
+            + " LEFT JOIN authors au ON au.author_id = ms.author_id"
+            + " WHERE a.series_id = #{seriesId} AND a.series_id > 0"
+            + " GROUP BY a.series_id, ms.title, ms.author_id, au.name, ms.updated_time")
+    MangaSeriesDetail findSeriesDetailById(@Param("seriesId") long seriesId);
 }
