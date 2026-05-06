@@ -1016,7 +1016,7 @@
                 <div>
                     <div class="series-kicker" data-i18n="page.kicker"></div>
                     <h1 class="series-title" id="seriesTitle"></h1>
-                    <a class="series-author" id="seriesAuthor" href="#" style="display:none">
+                    <a class="series-author" id="seriesAuthor" href="#" target="_blank" rel="noopener noreferrer" style="display:none">
                         <svg viewBox="0 0 24 24">
                             <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
                             <circle cx="12" cy="7" r="4"/>
@@ -1272,7 +1272,7 @@
                 ? t('author.with-id', '{name} · #{id}', {name, id: detail.authorId})
                 : name;
             if (detail.authorId) {
-                authorEl.href = buildGalleryFilterHref({authorId: detail.authorId, authorName: name});
+                authorEl.href = buildPixivSeriesHref(detail.authorId, detail.seriesId);
             } else {
                 authorEl.removeAttribute('href');
             }
@@ -1456,6 +1456,10 @@
         if (authorId != null) params.set('filterAuthorId', String(authorId));
         if (authorName) params.set('filterAuthorName', authorName);
         return '/pixiv-gallery.html' + (params.toString() ? '?' + params.toString() : '');
+    }
+
+    function buildPixivSeriesHref(authorId, seriesId) {
+        return `https://www.pixiv.net/user/${authorId}/series/${seriesId}`;
     }
 
     function formatTime(seconds) {
