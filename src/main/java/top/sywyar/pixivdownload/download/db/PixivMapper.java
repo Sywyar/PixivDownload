@@ -192,6 +192,16 @@ public interface PixivMapper {
                           @Param("seriesId") Long seriesId,
                           @Param("seriesOrder") Long seriesOrder);
 
+    /**
+     * 查询所有 {@code series_id IS NULL} 的作品 ID，用于 {@link top.sywyar.pixivdownload.tools.ArtworksBackFill}
+     * 一次性回填。
+     *
+     * <p><strong>仅供 CLI 回填工具调用。</strong>新增 series_id 列后，全部历史作品都是 NULL —— 在运行时
+     * 定时任务里调用本方法会瞬间产生大量 Pixiv 请求并被限流。如果未来需要运行时增量回填，必须先
+     * 添加分页/速率限制再使用。
+     *
+     * <p>NULL 与"无系列"哨兵 {@code 0} 的区分见 {@link top.sywyar.pixivdownload.series.MangaSeriesService#NO_SERIES_SENTINEL}。
+     */
     @Select("SELECT artwork_id FROM artworks WHERE series_id IS NULL")
     List<Long> findIdsMissingSeries();
 

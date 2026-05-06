@@ -58,7 +58,8 @@ public class GalleryService {
         ArtworkRecord rec = downloadService.getDownloadedRecord(artworkId);
         if (rec == null) return null;
         Map<Long, String> authorNames = resolveAuthorNames(List.of(rec));
-        return toDownloadedResponse(rec, authorNames);
+        Map<Long, String> seriesTitles = resolveSeriesTitles(List.of(rec));
+        return toDownloadedResponse(rec, authorNames, seriesTitles);
     }
 
     public List<DownloadedResponse> related(long artworkId, int limit) {
@@ -103,9 +104,10 @@ public class GalleryService {
             if (rec != null) records.add(rec);
         }
         Map<Long, String> authorNames = resolveAuthorNames(records);
+        Map<Long, String> seriesTitles = resolveSeriesTitles(records);
         List<DownloadedResponse> out = new ArrayList<>(records.size());
         for (ArtworkRecord rec : records) {
-            out.add(toDownloadedResponse(rec, authorNames));
+            out.add(toDownloadedResponse(rec, authorNames, seriesTitles));
         }
         return out;
     }
@@ -118,14 +120,26 @@ public class GalleryService {
         return authorService.getAuthorNames(authorIds);
     }
 
-    private DownloadedResponse toDownloadedResponse(ArtworkRecord artwork, Map<Long, String> authorNames) {
+    private Map<Long, String> resolveSeriesTitles(Collection<ArtworkRecord> records) {
+        Set<Long> seriesIds = new HashSet<>();
+        for (ArtworkRecord rec : records) {
+            if (rec != null && rec.seriesId() != null && rec.seriesId() > 0) {
+                seriesIds.add(rec.seriesId());
+            }
+        }
+        if (seriesIds.isEmpty()) return Collections.emptyMap();
+        Map<Long, String> out = new HashMap<>(seriesIds.size());
+        for (MangaSeries series : mangaSeriesService.getSeriesByIds(seriesIds)) {
+            out.put(series.seriesId(), series.title());
+        }
+        return out;
+    }
+
+    private DownloadedResponse toDownloadedResponse(ArtworkRecord artwork, Map<Long, String> authorNames,
+                                                    Map<Long, String> seriesTitles) {
         List<TagDto> tags = pixivDatabase.getArtworkTags(artwork.artworkId());
         Long seriesId = artwork.seriesId();
-        String seriesTitle = null;
-        if (seriesId != null && seriesId > 0) {
-            MangaSeries series = mangaSeriesService.getSeries(seriesId);
-            seriesTitle = series == null ? null : series.title();
-        }
+        String seriesTitle = seriesId != null && seriesId > 0 ? seriesTitles.get(seriesId) : null;
         return DownloadedResponse.builder()
                 .artworkId(artwork.artworkId())
                 .title(artwork.title())

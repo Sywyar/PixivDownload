@@ -45,16 +45,35 @@ public class MangaSeriesController {
     public ResponseEntity<MangaSeriesDetail> getSeriesDetail(
             @PathVariable long seriesId,
             HttpServletRequest httpRequest) {
-        Set<Long> filter = resolveGuestFilter(httpRequest);
+        GuestInviteSession session = GuestAccessGuard.extractSession(httpRequest);
+        Set<Long> filter = resolveGuestFilter(session);
         if (filter != null && !filter.contains(seriesId)) {
             return ResponseEntity.notFound().build();
         }
         MangaSeriesDetail detail = mangaSeriesService.getSeriesDetail(seriesId);
-        return detail == null ? ResponseEntity.notFound().build() : ResponseEntity.ok(detail);
+        if (detail == null) {
+            return ResponseEntity.notFound().build();
+        }
+        // 访客可见的章节数 ≠ 系列章节总数；返回前者，避免泄漏访客看不到的章节存在性。
+        if (session != null) {
+            long visibleCount = galleryRepository.countArtworksInSeries(seriesId, GuestRestriction.from(session));
+            detail = new MangaSeriesDetail(
+                    detail.seriesId(),
+                    detail.title(),
+                    detail.authorId(),
+                    detail.authorName(),
+                    visibleCount,
+                    detail.updatedTime()
+            );
+        }
+        return ResponseEntity.ok(detail);
     }
 
     private Set<Long> resolveGuestFilter(HttpServletRequest httpRequest) {
-        GuestInviteSession session = GuestAccessGuard.extractSession(httpRequest);
+        return resolveGuestFilter(GuestAccessGuard.extractSession(httpRequest));
+    }
+
+    private Set<Long> resolveGuestFilter(GuestInviteSession session) {
         if (session == null) return null;
         return galleryRepository.findVisibleSeriesIds(GuestRestriction.from(session));
     }

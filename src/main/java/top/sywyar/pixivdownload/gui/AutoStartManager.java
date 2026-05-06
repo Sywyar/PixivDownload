@@ -16,18 +16,19 @@ public final class AutoStartManager {
     private static final String APP_EXE_NAME = "PixivDownload.exe";
     private static final String SHORTCUT_NAME = "PixivDownload.lnk";
     private static final String STARTUP_FOLDER = "Microsoft\\Windows\\Start Menu\\Programs\\Startup";
+    // 用 `& { ... }` 包裹脚本块以便 powershell.exe -Command 后续位置参数能通过 $args 传入。
+    // 直接 -Command "<string>" arg1 arg2 时，arg1/arg2 会被拼接到命令文本里，$args 仍为空。
     private static final String CREATE_SHORTCUT_SCRIPT = """
-            $shortcutPath = $args[0]
-            $targetPath = $args[1]
-            $arguments = $args[2]
-            $workingDirectory = $args[3]
-            $shell = New-Object -ComObject WScript.Shell
-            $shortcut = $shell.CreateShortcut($shortcutPath)
-            $shortcut.TargetPath = $targetPath
-            $shortcut.Arguments = $arguments
-            $shortcut.WorkingDirectory = $workingDirectory
-            $shortcut.IconLocation = $targetPath
-            $shortcut.Save()
+            & {
+              param($shortcutPath, $targetPath, $arguments, $workingDirectory)
+              $shell = New-Object -ComObject WScript.Shell
+              $shortcut = $shell.CreateShortcut($shortcutPath)
+              $shortcut.TargetPath = $targetPath
+              $shortcut.Arguments = $arguments
+              $shortcut.WorkingDirectory = $workingDirectory
+              $shortcut.IconLocation = $targetPath
+              $shortcut.Save()
+            }
             """;
 
     private AutoStartManager() {

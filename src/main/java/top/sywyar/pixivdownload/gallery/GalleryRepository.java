@@ -447,6 +447,18 @@ public class GalleryRepository {
         return new LinkedHashSet<>(ids);
     }
 
+    /** 系列内对该访客可见的作品数。{@code r == null} 时返回系列总数。 */
+    public long countArtworksInSeries(long seriesId, GuestRestriction r) {
+        StringBuilder sql = new StringBuilder(
+                "SELECT COUNT(*) FROM artworks a WHERE a.series_id = :seriesId AND a.series_id > 0");
+        MapSqlParameterSource params = new MapSqlParameterSource().addValue("seriesId", seriesId);
+        if (r != null) {
+            appendVisibilityClauses(sql, params, r, "SeriesCount");
+        }
+        Long total = jdbc.queryForObject(sql.toString(), params, Long.class);
+        return total == null ? 0 : total;
+    }
+
     /** 该访客可见的"含有可见作品"的收藏夹 ID 集合。 */
     public Set<Long> findVisibleCollectionIds(GuestRestriction r) {
         if (r == null) return Collections.emptySet();

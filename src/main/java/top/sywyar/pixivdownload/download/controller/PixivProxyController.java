@@ -535,12 +535,12 @@ public class PixivProxyController {
             // Filter to only series members and sort by series order ascending
             List<SeriesResponse.SeriesItem> filtered = new ArrayList<>();
             for (SeriesResponse.SeriesItem item : items) {
-                if (orderMap.containsKey(item.getId())) filtered.add(item);
+                if (orderMap.containsKey(item.id())) filtered.add(item);
             }
             if (!filtered.isEmpty()) {
                 filtered.sort((a, c) -> Integer.compare(
-                        a.getSeriesOrder(),
-                        c.getSeriesOrder()));
+                        a.seriesOrder(),
+                        c.seriesOrder()));
                 items = filtered;
             }
         }

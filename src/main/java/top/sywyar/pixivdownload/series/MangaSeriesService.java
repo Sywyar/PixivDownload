@@ -17,6 +17,7 @@ import top.sywyar.pixivdownload.download.db.PixivDatabase;
 import top.sywyar.pixivdownload.i18n.AppMessages;
 
 import java.time.Instant;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Set;
@@ -24,6 +25,18 @@ import java.util.Set;
 @Service
 @Slf4j
 public class MangaSeriesService {
+
+    /**
+     * {@code artworks.series_id} 的"无系列"哨兵值。
+     * <p>三态约定：
+     * <ul>
+     *   <li>{@code NULL} —— 还没查询过；ALTER TABLE 迁移后旧数据默认值，回填工具应把这类行扫掉。</li>
+     *   <li>{@code 0} —— 查询过但 Pixiv 返回的不是系列作品（永久结论，避免重复请求）。</li>
+     *   <li>{@code > 0} —— 实际系列 ID。</li>
+     * </ul>
+     * 所有读取/筛选 series 的查询都必须额外加 {@code series_id > 0}，否则会把哨兵值误当真实 ID。
+     */
+    public static final long NO_SERIES_SENTINEL = 0L;
 
     private static final String PIXIV_REFERER = "https://www.pixiv.net/";
     private static final String USER_AGENT =
@@ -57,6 +70,11 @@ public class MangaSeriesService {
 
     public List<MangaSeries> getAllSeries() {
         return mangaSeriesMapper.findAll();
+    }
+
+    public List<MangaSeries> getSeriesByIds(Collection<Long> ids) {
+        if (ids == null || ids.isEmpty()) return Collections.emptyList();
+        return mangaSeriesMapper.findByIds(ids);
     }
 
     public List<MangaSeries> getAllSeries(Set<Long> filterIds) {
@@ -115,24 +133,34 @@ public class MangaSeriesService {
 
     public void observe(long seriesId, String title, Long authorId) {
         if (seriesId <= 0) return;
-        MangaSeries existing = mangaSeriesMapper.findById(seriesId);
         String normalizedTitle = StringUtils.hasText(title) ? title.trim() : null;
         long now = Instant.now().getEpochSecond();
-        if (existing == null) {
-            String initialTitle = normalizedTitle != null ? normalizedTitle : String.valueOf(seriesId);
-            mangaSeriesMapper.insertIfAbsent(seriesId, initialTitle, authorId, now);
+
+        // 先尝试插入；返回 1 = 新行已建（首次观测），返回 0 = 行已存在（落入合并分支）。
+        // 这样并发的两次 observe 不会都看到 existing == null 然后都走 INSERT OR IGNORE 而漏掉 update。
+        String initialTitle = normalizedTitle != null ? normalizedTitle : String.valueOf(seriesId);
+        int inserted = mangaSeriesMapper.insertIfAbsent(seriesId, initialTitle, authorId, now);
+        if (inserted > 0) {
             log.info(messages.getForLog("series.log.observe.first-record", seriesId, initialTitle));
             if (authorId != null && authorId > 0) {
                 authorService.observe(authorId, null);
             }
             return;
         }
-        // Update only if title or author changes (preserve existing if hint is null)
+
+        MangaSeries existing = mangaSeriesMapper.findById(seriesId);
+        if (existing == null) return; // 极端竞态：被并发删除，放弃 update
+
+        // 仅在 title 或 author 真正发生变化时才写库；空 hint 保留原值。
         String desiredTitle = normalizedTitle != null ? normalizedTitle : existing.title();
         Long desiredAuthorId = authorId != null && authorId > 0 ? authorId : existing.authorId();
         if (!desiredTitle.equals(existing.title())
                 || (desiredAuthorId != null && !desiredAuthorId.equals(existing.authorId()))) {
             mangaSeriesMapper.updateInfo(seriesId, desiredTitle, desiredAuthorId, now);
+            if (authorId != null && authorId > 0
+                    && (existing.authorId() == null || !authorId.equals(existing.authorId()))) {
+                authorService.observe(authorId, null);
+            }
         }
     }
 
@@ -150,14 +178,14 @@ public class MangaSeriesService {
             JsonNode body = root.path("body");
             JsonNode nav = body.path("seriesNavData");
             if (nav.isMissingNode() || nav.isNull() || !nav.isObject()) {
-                pixivDatabase.updateSeriesInfo(artworkId, 0L, 0L);
+                pixivDatabase.updateSeriesInfo(artworkId, NO_SERIES_SENTINEL, NO_SERIES_SENTINEL);
                 return;
             }
             long seriesId = nav.path("seriesId").asLong(0);
             long order = nav.path("order").asLong(0);
             String title = nav.path("title").asText("").trim();
             if (seriesId <= 0) {
-                pixivDatabase.updateSeriesInfo(artworkId, 0L, 0L);
+                pixivDatabase.updateSeriesInfo(artworkId, NO_SERIES_SENTINEL, NO_SERIES_SENTINEL);
                 return;
             }
             Long authorId = parsePositiveLong(body.path("userId").asText(null));

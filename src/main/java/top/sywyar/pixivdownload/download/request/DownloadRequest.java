@@ -52,5 +52,7 @@ public class DownloadRequest {
         private Long seriesId;
         private Long seriesOrder;
         private String seriesTitle;
+        /** Pixiv illustType: 0=illust, 1=manga, 2=ugoira。用于决定是否值得异步回填系列信息。 */
+        private Integer illustType;
     }
 }

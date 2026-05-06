@@ -493,6 +493,15 @@ public class DownloadService {
                 mangaSeriesService.observe(other.getSeriesId(), other.getSeriesTitle(), other.getAuthorId());
                 return;
             }
+            // Pixiv 系列几乎只挂在漫画 (illustType == 1) 上。当前端已经知道作品类型时，
+            // 避免对插画/动图也发一次 /ajax/illust/{id} —— 批量下载时 N 张作品 = N 次额外请求很容易被限流。
+            // illustType 为空（旧前端 / 未传）才回退到代理查询。
+            Integer illustType = other == null ? null : other.getIllustType();
+            if (illustType != null && illustType != 1) {
+                pixivDatabase.updateSeriesInfo(artworkId,
+                        MangaSeriesService.NO_SERIES_SENTINEL, MangaSeriesService.NO_SERIES_SENTINEL);
+                return;
+            }
             mangaSeriesService.asyncLookupMissingSeries(artworkId, cookie);
         } catch (Exception e) {
             log.warn(logMessage("download.log.record-series.failed", id(artworkId)), e);

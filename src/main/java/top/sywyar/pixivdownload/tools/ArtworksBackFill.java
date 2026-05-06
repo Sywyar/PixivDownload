@@ -594,11 +594,14 @@ public class ArtworksBackFill {
 
     private static void upsertSeries(Connection conn, long seriesId, String title, Long authorId) throws SQLException {
         long nowSeconds = Instant.now().getEpochSecond();
+        // 与 MangaSeriesService.observe 对齐：title 或 author 任一变化都触发 update。
+        // 之前 WHERE 含 `AND title <> ?` 会让仅 author 变化的场景无更新，导致回填工具落后于运行时。
         try (PreparedStatement insertSeries = conn.prepareStatement(
                 "INSERT OR IGNORE INTO manga_series(series_id, title, author_id, updated_time) VALUES(?, ?, ?, ?)");
              PreparedStatement updateSeries = conn.prepareStatement(
                      "UPDATE manga_series SET title = ?, author_id = COALESCE(?, author_id),"
-                             + " updated_time = ? WHERE series_id = ? AND title <> ?")) {
+                             + " updated_time = ? WHERE series_id = ?"
+                             + " AND (title <> ? OR (? IS NOT NULL AND (author_id IS NULL OR author_id <> ?)))")) {
             insertSeries.setLong(1, seriesId);
             insertSeries.setString(2, title);
             if (authorId == null) {
@@ -612,8 +615,12 @@ public class ArtworksBackFill {
             updateSeries.setString(1, title);
             if (authorId == null) {
                 updateSeries.setNull(2, java.sql.Types.INTEGER);
+                updateSeries.setNull(6, java.sql.Types.INTEGER);
+                updateSeries.setNull(7, java.sql.Types.INTEGER);
             } else {
                 updateSeries.setLong(2, authorId);
+                updateSeries.setLong(6, authorId);
+                updateSeries.setLong(7, authorId);
             }
             updateSeries.setLong(3, nowSeconds);
             updateSeries.setLong(4, seriesId);
