@@ -6,6 +6,28 @@ The format is based on [Keep a Changelog EN-us](https://keepachangelog.com/en/1.
 
 该格式基于 [Keep a Changelog ZH-cn](https://keepachangelog.com/zh-CN/1.1.0/).
 
+## [v1.7.1] - 2026.5.6
+
+### Features
+- 新增漫画系列元数据支持：`artworks` 表记录 `series_id` / `series_order`，新增 `manga_series` 表、数据库迁移与 schema 管理，下载流程可持久化系列 ID、章节顺序和系列标题，并在缺失时异步通过 Pixiv AJAX 回填
+- 新增漫画系列后端能力：提供 `/api/pixiv/series/{seriesId}` Pixiv 代理、`/api/series` 本地系列列表/分页/详情接口，作品元数据与下载记录响应补充系列字段，并支持本系列作品、上一章/下一章查询
+- 图库新增系列筛选、排除和排序能力，作品详情页展示系列入口、本系列缩略条和章节导航；访客邀请码访问会按可见范围过滤系列列表、章节数量和单作品结果
+- 批量下载页新增漫画系列批量下载模式，支持粘贴系列 URL 或同系列作品 URL，预览章节、批量加载缩略图并加入下载队列
+- 新增本地漫画系列目录页 `pixiv-series.html`，支持搜索、分页、当前章节定位、缩略图缓存、返回作品详情、打开图库系列筛选和跳转 Pixiv 原站系列页
+- Windows GUI 新增开机自启动选项，通过用户 Startup 文件夹创建/删除 `PixivDownload.lnk`；自启动时可静默复用已有实例，并在托盘可用时避免主动弹出主窗口
+
+### Performance
+- 图库作品响应中的系列信息改为批量查询，避免每条作品单独读取 `manga_series` 造成 N+1 查询
+- 下载流程在已知作品 `illustType` 非漫画时直接写入无系列哨兵值，避免批量下载插画时为每个作品额外请求 Pixiv 元数据
+
+### Bug Fixes
+- 修复 Windows 开机自启动创建快捷方式时 PowerShell 位置参数未注入脚本的问题，避免安装版自启动开关无法生效
+- 修复 Pixiv 系列代理响应序列化键名异常，避免 `xRestrict` 出现重复大小写字段、`isLastPage` 丢失并导致前端分页多请求一次
+- 修复系列目录页作者链接目标，改为跳转 Pixiv 原站用户系列页
+- 修复访客查看系列详情时返回系列总章节数的问题，改为仅返回该访客可见的章节数量，避免泄漏不可见章节存在性
+- 修复系列首次观测的并发竞态与回填更新条件，确保标题或作者变化时都能更新 `manga_series` 记录
+- 为 `PixivMapper.findIdsMissingSeries` 补充运行时使用警告，避免旧库迁移后的空系列字段被误接入定时任务并放大 Pixiv 请求
+
 ## [v1.7.0] - 2026-05-03
 
 ### Features
