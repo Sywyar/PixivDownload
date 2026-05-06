@@ -93,6 +93,8 @@ public class GuiLauncher {
                 AppVersion.getDisplayVersionOrDefault(logMessage("app.version.unknown"))));
         log.info(logMessage("gui.launcher.log.starting", Arrays.toString(args)));
 
+        boolean startupLaunch = AutoStartManager.isStartupLaunch(args);
+
         SingleInstanceManager singleInstanceManager;
         try {
             singleInstanceManager = SingleInstanceManager.acquire();
@@ -103,6 +105,10 @@ public class GuiLauncher {
         }
 
         if (singleInstanceManager == null) {
+            if (startupLaunch) {
+                log.info(logMessage("gui.launcher.log.single-instance.startup-existing"));
+                return;
+            }
             boolean activated = SingleInstanceManager.signalExistingInstance();
             log.info(logMessage("gui.launcher.log.single-instance.existing-detected", activated));
             if (!activated && !GraphicsEnvironment.isHeadless()) {
@@ -122,7 +128,7 @@ public class GuiLauncher {
         if (noGui) {
             log.info(logMessage("gui.launcher.log.headless"));
             try {
-                PixivDownloadApplication.start(args);
+                PixivDownloadApplication.start(filterArgs(args));
             } catch (Throwable t) {
                 logStartupFailure(t);
                 throw t;
@@ -164,8 +170,10 @@ public class GuiLauncher {
             FlatLafSetup.apply();
             MainFrame frame = new MainFrame(port, root, configPath);
             singleInstanceManager.setActivationHandler(() -> SwingUtilities.invokeLater(frame::showWindow));
-            SystemTrayManager.install(frame, root);
-            frame.showWindow();
+            boolean trayInstalled = SystemTrayManager.install(frame, root);
+            if (!startupLaunch || !trayInstalled) {
+                frame.showWindow();
+            }
             maybeScheduleStartupBackfillFlow(frame, configPath, root);
         });
     }
@@ -601,6 +609,7 @@ public class GuiLauncher {
     private static String[] filterArgs(String[] args) {
         return Arrays.stream(args)
                 .filter(arg -> !arg.equals("--no-gui"))
+                .filter(arg -> !AutoStartManager.isStartupArg(arg))
                 .toArray(String[]::new);
     }
 }

@@ -3,6 +3,7 @@ package top.sywyar.pixivdownload.gui.panel;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import top.sywyar.pixivdownload.config.RuntimeFiles;
+import top.sywyar.pixivdownload.gui.AutoStartManager;
 import top.sywyar.pixivdownload.gui.config.*;
 import top.sywyar.pixivdownload.gui.i18n.GuiMessages;
 import top.sywyar.pixivdownload.i18n.MessageBundles;
@@ -17,6 +18,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.List;
+import java.util.concurrent.ExecutionException;
 
 /**
  * "配置" 标签页：Schema 驱动的字段渲染，按 group 分为子标签页。
@@ -36,6 +38,7 @@ public class ConfigPanel extends JPanel {
     /** 字段元数据快照（按当前 locale），构造时从 ConfigFieldRegistry 拉取一次。 */
     private final List<ConfigFieldSpec> allFields;
     private final List<String> groups;
+    private final String serverGroup;
     private final String multiModeGroup;
 
     /** key → 渲染后的字段（含取值/赋值方法） */
@@ -43,6 +46,9 @@ public class ConfigPanel extends JPanel {
 
     /** 提示条（保存后显示） */
     private final JLabel noticeBar = new JLabel(" ");
+    private JCheckBox autoStartCheckBox;
+    private boolean autoStartSupported;
+    private boolean updatingAutoStartCheckBox;
 
     public ConfigPanel(Path configPath) {
         this.configPath = configPath;
@@ -50,6 +56,7 @@ public class ConfigPanel extends JPanel {
         this.currentMode = resolveCurrentMode();
         this.allFields = ConfigFieldRegistry.allFields();
         this.groups = ConfigFieldRegistry.groups();
+        this.serverGroup = groups.isEmpty() ? "" : groups.get(0);
         this.multiModeGroup = ConfigFieldRegistry.groupMultiMode();
         buildUi();
         loadCurrentValues();
@@ -93,12 +100,65 @@ public class ConfigPanel extends JPanel {
             content.add(rf.panel());
             content.add(Box.createVerticalStrut(2));
         }
+        if (serverGroup.equals(group)) {
+            JPanel autoStartPanel = buildAutoStartPanel();
+            autoStartPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+            autoStartPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, autoStartPanel.getPreferredSize().height + 20));
+            content.add(autoStartPanel);
+            content.add(Box.createVerticalStrut(2));
+        }
         content.add(Box.createVerticalGlue());
 
         JScrollPane sp = new JScrollPane(content);
         sp.setBorder(null);
         sp.getVerticalScrollBar().setUnitIncrement(16);
         return sp;
+    }
+
+    private JPanel buildAutoStartPanel() {
+        autoStartSupported = AutoStartManager.isSupported();
+        autoStartCheckBox = new JCheckBox();
+        autoStartCheckBox.setSelected(AutoStartManager.isEnabled());
+        autoStartCheckBox.setEnabled(autoStartSupported);
+        autoStartCheckBox.setToolTipText(message(autoStartSupported
+                ? "gui.config.field.autostart.help"
+                : "gui.config.field.autostart.unsupported.help"));
+        autoStartCheckBox.addActionListener(e -> handleAutoStartToggle());
+
+        JPanel panel = new JPanel(new GridBagLayout());
+        panel.setOpaque(false);
+
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.insets = new Insets(4, 4, 4, 4);
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.anchor = GridBagConstraints.WEST;
+
+        JLabel label = new JLabel(message("gui.config.field.autostart.label") + message("gui.punctuation.colon"));
+        label.setPreferredSize(new Dimension(160, 24));
+        gbc.gridx = 0;
+        gbc.gridy = 0;
+        gbc.weightx = 0;
+        panel.add(label, gbc);
+
+        gbc.gridx = 1;
+        gbc.weightx = 1;
+        panel.add(autoStartCheckBox, gbc);
+
+        JLabel help = new JLabel(message(autoStartSupported
+                ? "gui.config.field.autostart.help"
+                : "gui.config.field.autostart.unsupported.help"));
+        help.setFont(help.getFont().deriveFont(Font.PLAIN, 11f));
+        help.setForeground(Color.GRAY);
+        gbc.gridx = 1;
+        gbc.gridy = 1;
+        gbc.weightx = 1;
+        gbc.insets = new Insets(0, 4, 6, 4);
+        panel.add(help, gbc);
+
+        if (!autoStartSupported) {
+            setControlEnabled(panel, false);
+        }
+        return panel;
     }
 
     private boolean shouldHideGroup(String group) {
@@ -353,6 +413,54 @@ public class ConfigPanel extends JPanel {
         }
     }
 
+    private void handleAutoStartToggle() {
+        if (updatingAutoStartCheckBox || autoStartCheckBox == null || !autoStartCheckBox.isEnabled()) {
+            return;
+        }
+
+        boolean targetEnabled = autoStartCheckBox.isSelected();
+        autoStartCheckBox.setEnabled(false);
+
+        SwingWorker<Void, Void> worker = new SwingWorker<>() {
+            @Override
+            protected Void doInBackground() throws Exception {
+                AutoStartManager.setEnabled(targetEnabled);
+                return null;
+            }
+
+            @Override
+            protected void done() {
+                try {
+                    get();
+                    showNotice(message(targetEnabled
+                            ? "gui.config.autostart.notice.enabled"
+                            : "gui.config.autostart.notice.disabled"));
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    handleAutoStartFailure(targetEnabled, e);
+                } catch (ExecutionException e) {
+                    Throwable cause = e.getCause() == null ? e : e.getCause();
+                    handleAutoStartFailure(targetEnabled, cause);
+                } finally {
+                    autoStartCheckBox.setEnabled(autoStartSupported);
+                }
+            }
+        };
+        worker.execute();
+    }
+
+    private void handleAutoStartFailure(boolean targetEnabled, Throwable cause) {
+        updatingAutoStartCheckBox = true;
+        try {
+            autoStartCheckBox.setSelected(!targetEnabled);
+        } finally {
+            updatingAutoStartCheckBox = false;
+        }
+        JOptionPane.showMessageDialog(ConfigPanel.this,
+                message("gui.config.autostart.dialog.apply-failed.message", safeMessage(cause)),
+                message("gui.dialog.error.title"), JOptionPane.ERROR_MESSAGE);
+    }
+
     private void showNotice(String msg) {
         noticeBar.setText("  " + msg);
         noticeBar.setVisible(true);
@@ -360,6 +468,10 @@ public class ConfigPanel extends JPanel {
         javax.swing.Timer t = new javax.swing.Timer(10_000, e -> noticeBar.setVisible(false));
         t.setRepeats(false);
         t.start();
+    }
+
+    private static String safeMessage(Throwable t) {
+        return t.getMessage() == null ? t.getClass().getSimpleName() : t.getMessage();
     }
 
     private static String message(String code, Object... args) {
